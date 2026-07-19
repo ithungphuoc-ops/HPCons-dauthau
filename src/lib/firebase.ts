@@ -1,16 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, doc, getDocs, onSnapshot, writeBatch } from 'firebase/firestore';
 import type { Unsubscribe } from 'firebase/firestore';
-import {
-  getAuth,
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  updatePassword,
-  reauthenticateWithCredential,
-  EmailAuthProvider,
-  signOut,
-} from 'firebase/auth';
+import { getAuth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 
 // Cấu hình Firebase của dự án (web config — không phải bí mật, an toàn khi nằm trong code)
@@ -38,63 +29,13 @@ export const authEmailFor = (username: string): string =>
 export const watchAuth = (cb: (user: User | null) => void): Unsubscribe => onAuthStateChanged(fbAuth, cb);
 
 /**
- * Đăng nhập nhân sự. Trả về null nếu thành công, hoặc chuỗi lỗi tiếng Việt.
- * Tài khoản MỚI (chưa từng đăng nhập): gõ đúng mật khẩu mặc định 123456 sẽ tự kích hoạt
- * (tạo user Firebase ngay lúc đó) — không cần quản trị viên đụng tới Console.
+ * Bản dùng thử nội bộ chưa có màn đăng nhập — đăng nhập ẩn (anonymous) chạy ngầm
+ * để Firestore Rules (yêu cầu request.auth != null) cho phép đọc/ghi dữ liệu.
  */
-export async function signInStaff(username: string, password: string): Promise<string | null> {
-  const email = authEmailFor(username);
-  try {
-    await signInWithEmailAndPassword(fbAuth, email, password);
-    return null;
-  } catch (e: any) {
-    const code: string = e?.code || '';
-    if ((code === 'auth/user-not-found' || code === 'auth/invalid-credential') && password === '123456') {
-      // Có thể là tài khoản mới chưa kích hoạt → thử tạo user với mật khẩu mặc định
-      try {
-        await createUserWithEmailAndPassword(fbAuth, email, password);
-        return null;
-      } catch (e2: any) {
-        const c2: string = e2?.code || '';
-        const m2: string = e2?.message || '';
-        if (c2 === 'auth/email-already-in-use') return 'Tên đăng nhập hoặc mật khẩu không đúng.';
-        if (c2 === 'auth/operation-not-allowed' || c2 === 'auth/admin-restricted-operation' || m2.includes('CONFIGURATION_NOT_FOUND'))
-          return 'Hệ thống xác thực chưa được bật trên Firebase Console (Authentication → Get started → Email/Password).';
-        return 'Lỗi kích hoạt tài khoản: ' + (m2 || c2);
-      }
-    }
-    if (code === 'auth/operation-not-allowed' || (e?.message || '').includes('CONFIGURATION_NOT_FOUND'))
-      return 'Hệ thống xác thực chưa được bật trên Firebase Console (Authentication → Get started → Email/Password).';
-    if (code === 'auth/too-many-requests') return 'Nhập sai quá nhiều lần — vui lòng đợi vài phút rồi thử lại.';
-    if (code === 'auth/network-request-failed') return 'Không kết nối được máy chủ xác thực — kiểm tra đường mạng.';
-    return 'Tên đăng nhập hoặc mật khẩu không đúng.';
-  }
-}
-
-/**
- * Đổi mật khẩu của CHÍNH người đang đăng nhập.
- * oldPw truyền vào khi cần xác thực lại mật khẩu cũ (chế độ tự đổi); bỏ qua ở lần đổi bắt buộc đầu tiên.
- */
-export async function changeOwnPassword(newPw: string, oldPw?: string): Promise<string | null> {
-  const u = fbAuth.currentUser;
-  if (!u || !u.email) return 'Phiên đăng nhập không hợp lệ — hãy đăng nhập lại.';
-  try {
-    if (oldPw !== undefined) {
-      await reauthenticateWithCredential(u, EmailAuthProvider.credential(u.email, oldPw));
-    }
-    await updatePassword(u, newPw);
-    return null;
-  } catch (e: any) {
-    const code: string = e?.code || '';
-    if (code === 'auth/invalid-credential' || code === 'auth/wrong-password') return 'Mật khẩu hiện tại không đúng.';
-    if (code === 'auth/weak-password') return 'Mật khẩu quá yếu (tối thiểu 6 ký tự).';
-    if (code === 'auth/requires-recent-login') return 'Phiên đăng nhập đã cũ — hãy đăng xuất, đăng nhập lại rồi đổi mật khẩu.';
-    return 'Lỗi đổi mật khẩu: ' + (e?.message || code);
-  }
-}
-
-/** Đăng xuất khỏi Firebase Auth. */
-export const signOutFb = (): Promise<void> => signOut(fbAuth);
+export const ensureAnonymousAuth = (): Promise<void> =>
+  signInAnonymously(fbAuth).then(() => undefined).catch((e) => {
+    console.error('[Firebase] Lỗi đăng nhập ẩn danh:', e);
+  });
 
 // Firestore không nhận giá trị `undefined` — làm sạch object trước khi ghi
 const sanitize = <T,>(item: T): T => JSON.parse(JSON.stringify(item));

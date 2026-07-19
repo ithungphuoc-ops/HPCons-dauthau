@@ -1,7 +1,6 @@
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import * as xlsx from "xlsx";
 
 const app = express();
@@ -39,7 +38,12 @@ function initializeDB() {
   }
 }
 
-initializeDB();
+// Ổ đĩa server (vd. Vercel) là chỉ đọc lúc chạy thật — seeding chỉ có ý nghĩa khi chạy local.
+try {
+  initializeDB();
+} catch (e: any) {
+  console.error("[HP-CONS ERP] Bỏ qua seeding dữ liệu cục bộ (môi trường chỉ đọc):", e.message);
+}
 
 // STAFF PERSISTENCE AND SYNC API
 app.get("/api/staff", (req, res) => {
@@ -76,22 +80,18 @@ app.post("/api/staff/sync", (req, res) => {
 });
 
 // 1. DATE RANGE FILTER API
-// Query projects executing or bidding within start_date (YYYY-MM-DD) and end_date (YYYY-MM-DD)
-app.get("/api/projects", (req, res) => {
+// Lọc dự án đang thực hiện/đấu thầu trong khoảng start_date..end_date (YYYY-MM-DD).
+// Nhận danh sách dự án HIỆN CÓ trực tiếp từ trình duyệt (nguồn thật là Firebase/state client) —
+// không đọc file trên server vì ổ đĩa server (Vercel) chỉ đọc và không phản ánh dữ liệu thật.
+app.post("/api/projects/filter", (req, res) => {
   try {
-    const { start_date, end_date } = req.query;
-    
-    if (!fs.existsSync(DB_PATH)) {
-      initializeDB();
-    }
-    
-    const rawData = fs.readFileSync(DB_PATH, "utf-8");
-    let projects = JSON.parse(rawData);
-    
+    const { start_date, end_date } = req.body;
+    let projects = Array.isArray(req.body.projects) ? req.body.projects : [];
+
     if (start_date && end_date) {
       const start = new Date(start_date as string);
       const end = new Date(end_date as string);
-      
+
       if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
         projects = projects.filter((p: any) => {
           const pStart = new Date(p.ngayBatDau);
@@ -101,7 +101,7 @@ app.get("/api/projects", (req, res) => {
         });
       }
     }
-    
+
     res.json(projects);
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -170,21 +170,18 @@ app.post("/api/projects/rollback", (req, res) => {
   }
 });
 
-// 2. SECURE EXCEL IMPORT & AUTO-RECOVERY API
+// 2. SECURE EXCEL IMPORT & VALIDATION API
+// Nhận danh sách dự án + nhân sự HIỆN CÓ trực tiếp từ trình duyệt (nguồn thật là Firebase/state
+// client) để merge — không đọc/ghi file trên server vì ổ đĩa server (Vercel) chỉ đọc.
 app.post("/api/projects/import", (req, res) => {
   try {
     const { fileData } = req.body;
     if (!fileData) {
       return res.status(400).json({ error: "Không tìm thấy dữ liệu tệp được tải lên." });
     }
-    
-    // START TRANSACTION (Local state snapshot fallback)
-    const activeStateRaw = fs.readFileSync(DB_PATH, "utf-8");
-    const activeState = JSON.parse(activeStateRaw);
-    
-    // Preserve last known valid structural state to backup file
-    fs.writeFileSync(BACKUP_PATH, activeStateRaw, "utf-8");
-    
+
+    const activeState = Array.isArray(req.body.projects) ? req.body.projects : [];
+
     // Parse Excel spreadsheet base64
     const buffer = Buffer.from(fileData, "base64");
     // raw:true stops the CSV parser from converting "2/6/2026" to a US-style date; we parse day-first ourselves
@@ -277,9 +274,8 @@ app.post("/api/projects/import", (req, res) => {
       throw new Error(`Cấu trúc tệp không hợp lệ! Thiếu các cột tiêu đề bắt buộc: ${missingHeaders.join(", ")}`);
     }
 
-    // Resolve "NV phụ trách" names against the staff database
-    let staffLookup: any[] = [];
-    try { staffLookup = JSON.parse(fs.readFileSync(STAFF_PATH, "utf-8")); } catch (e) {}
+    // Resolve "NV phụ trách" names against the staff list gửi kèm từ trình duyệt
+    const staffLookup: any[] = Array.isArray(req.body.staff) ? req.body.staff : [];
     const findStaffIdByName = (name: string): string | undefined => {
       const n = name.trim().toLowerCase();
       if (!n) return undefined;
@@ -475,11 +471,8 @@ app.post("/api/projects/import", (req, res) => {
       }
     }
     
-    // TRIGGER VALIDATION EXCEPTION (ROLLBACK TRANSACTION)
+    // VALIDATION EXCEPTION: không sửa gì cả — trả lỗi để client giữ nguyên state hiện tại (không có gì để rollback vì chưa từng ghi)
     if (validationErrors.length > 0) {
-      // Rollback: Keep the unchanged activeState JSON untouched, restoring from backup raw just in case.
-      fs.writeFileSync(DB_PATH, activeStateRaw, "utf-8");
-      
       return res.status(400).json({
         status: "error",
         errors: validationErrors,
@@ -519,29 +512,18 @@ app.post("/api/projects/import", (req, res) => {
         addedCount++;
       }
     }
-    fs.writeFileSync(DB_PATH, JSON.stringify(committedState, null, 2), "utf-8");
-    fs.writeFileSync(BACKUP_PATH, JSON.stringify(committedState, null, 2), "utf-8"); // Update backup to new safe state
-
     res.json({
       status: "success",
       count: validProjectsToImport.length,
-      message: `Đã nhập thành công ${validProjectsToImport.length} hồ sơ thầu (${addedCount} thêm mới, ${updatedCount} cập nhật theo Mã DA)! Giao dịch đã được COMMIT vào cơ sở dữ liệu.`,
+      message: `Đã nhập thành công ${validProjectsToImport.length} hồ sơ thầu (${addedCount} thêm mới, ${updatedCount} cập nhật theo Mã DA)! Trình duyệt sẽ đồng bộ danh sách mới lên Firebase.`,
       projects: committedState
     });
-    
+
   } catch (error: any) {
-    // General rollback fallbacks
-    try {
-      if (fs.existsSync(BACKUP_PATH)) {
-        const rawBackup = fs.readFileSync(BACKUP_PATH, "utf-8");
-        fs.writeFileSync(DB_PATH, rawBackup, "utf-8");
-      }
-    } catch (e) {}
-    
     res.status(400).json({
       status: "error",
       error: error.message,
-      message: `Lỗi xử lý tệp nhập thầu: ${error.message}. Hệ thống đã tự động phục hồi cấu trúc dữ liệu cũ thành công.`
+      message: `Lỗi xử lý tệp nhập thầu: ${error.message}. Dữ liệu hiện tại không bị ảnh hưởng.`
     });
   }
 });
@@ -549,6 +531,8 @@ app.post("/api/projects/import", (req, res) => {
 // Serve Vite build assets and SPA index fallback
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
+    // Import động: chỉ dev/local mới cần vite, tránh gói kèm vào serverless function trên Vercel
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
@@ -571,4 +555,10 @@ async function startServer() {
   });
 }
 
-startServer();
+// Trên Vercel, frontend (dist/) được phục vụ tĩnh và mỗi request /api/* chạy qua
+// api/[...all].ts (import app từ đây) — không cần vite middleware/static serving/listen ở đó.
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;

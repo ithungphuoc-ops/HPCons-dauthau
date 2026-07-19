@@ -55,18 +55,16 @@ import {
   History,
   LayoutGrid,
   Clock,
-  Key,
   Bell,
   CalendarDays,
   X,
   MoreHorizontal
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import ChangePasswordModal from './components/ChangePasswordModal';
 import CdtRevisionModal from './components/CdtRevisionModal';
 import PullBackDelayModal from './components/PullBackDelayModal';
 import DateInput from './components/DateInput';
-import { subscribeCollection, pushCollection, watchAuth, signInStaff, changeOwnPassword, signOutFb, authEmailFor } from './lib/firebase';
+import { subscribeCollection, pushCollection, watchAuth, authEmailFor, ensureAnonymousAuth } from './lib/firebase';
 
 // One-time clean-slate: xóa dữ liệu demo cũ trong trình duyệt (nếu có) và seed tài khoản
 // admin gốc. Dữ liệu cũ được sao lưu vào các khóa "*__predemo_backup" để khôi phục nếu cần.
@@ -408,11 +406,6 @@ export default function App() {
     return null;
   });
 
-  // Form input credential states for Webform login
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
-
   // Dark/Light mode theme state
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     const saved = localStorage.getItem('theme');
@@ -536,8 +529,6 @@ export default function App() {
   const [formMode, setFormMode] = useState<'CREATE_TENDER' | 'ADD_WORK' | 'EDIT_ALL'>('EDIT_ALL');
   const [editingStaff, setEditingStaff] = useState<Staff | null>(null);
   const [isAddingStaff, setIsAddingStaff] = useState<boolean>(false);
-  // Modal đổi mật khẩu: 'forced' = bắt buộc lần đầu; 'self' = người dùng tự đổi
-  const [pwModal, setPwModal] = useState<'forced' | 'self' | null>(null);
   // Chuông thông báo cho Trưởng phòng (báo TP vào nhập tiến độ Phòng)
   const [showNotif, setShowNotif] = useState(false);
   // Công việc đang mở modal "CĐT điều chỉnh"
@@ -723,19 +714,15 @@ export default function App() {
 
   // Trạng thái đăng nhập Firebase Auth (chìa khóa để đọc/ghi Firestore sau khi siết Rules)
   const [fbAuthed, setFbAuthed] = useState<boolean>(false);
-  // Đã nhận bản nhân sự MỚI NHẤT từ cloud sau khi đăng nhập (để chốt vai trò/cờ đổi mật khẩu chính xác)
-  const [staffSynced, setStaffSynced] = useState<boolean>(false);
-  // Tên đăng nhập đang chờ hoàn tất (đã qua Firebase Auth, chờ dữ liệu nhân sự về để vào app)
-  const [pendingLoginUser, setPendingLoginUser] = useState<string | null>(null);
 
   useEffect(() => watchAuth(u => {
     setFbAuthed(!!u);
     if (!u) {
-      // Phiên Firebase kết thúc → khóa dữ liệu, quay về màn đăng nhập
-      setStaffSynced(false);
+      // Phiên Firebase kết thúc → khóa dữ liệu cloud, tự đăng nhập ẩn lại để tiếp tục đồng bộ
       lastRemoteProjects.current = null;
       lastRemoteStaff.current = null;
       lastRemoteNotifs.current = null;
+      ensureAnonymousAuth();
     }
   }), []);
 
@@ -769,13 +756,11 @@ export default function App() {
           }
           return prev;
         });
-        setStaffSynced(true);
         return;
       }
       const sorted = [...items].sort((a, b) => a.id.localeCompare(b.id));
       lastRemoteStaff.current = JSON.stringify(sorted);
       setStaff(sorted);
-      setStaffSynced(true);
     });
     const unsubNotifs = subscribeCollection<AppNotification>('notifications', (items, isEmpty) => {
       if (isEmpty) { lastRemoteNotifs.current = '[]'; setNotifs([]); return; }
@@ -1049,88 +1034,23 @@ export default function App() {
     }
   }, [currentUser, activeTab]);
 
-  // Handle Login submission — xác thực qua FIREBASE AUTH (mật khẩu do Google quản lý, đã mã hóa)
-  const [loginBusy, setLoginBusy] = useState(false);
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError('');
-    const raw = loginEmail.trim().toLowerCase();
-    if (!raw || loginBusy) return;
-
-    // Nhập email thật? → tra ngược ra tên đăng nhập từ danh sách nhân sự đã lưu trên máy
-    let username = raw;
-    if (raw.includes('@')) {
-      const byEmail = staff.find(s => !s.daNghi && s.email && s.email.toLowerCase() === raw);
-      if (byEmail?.username) username = byEmail.username.toLowerCase();
-      else { setLoginError('Không tìm thấy email này — vui lòng đăng nhập bằng tên đăng nhập.'); return; }
-    }
-
-    setLoginBusy(true);
-    const err = await signInStaff(username, loginPassword);
-    setLoginBusy(false);
-    if (err) { setLoginError(err); return; }
-    // Firebase đã xác thực OK — chờ dữ liệu nhân sự từ cloud về để chốt vai trò (effect bên dưới)
-    setPendingLoginUser(username);
-  };
-
-  // Hoàn tất đăng nhập: khi đã có phiên Firebase + bản nhân sự mới nhất từ cloud
-  useEffect(() => {
-    if (!pendingLoginUser || !staffSynced) return;
-    const matched = staff.find(s => !s.daNghi && s.username && s.username.toLowerCase() === pendingLoginUser);
-    if (!matched) {
-      // Đã qua được Firebase nhưng không có trong danh sách nhân sự → chặn (không cấp dữ liệu)
-      setPendingLoginUser(null);
-      signOutFb();
-      setLoginError('Tài khoản không tồn tại trong danh sách nhân sự — liên hệ quản trị viên.');
-      return;
-    }
-    const mappedRole = matched.role || chucVuToRole(matched.chucVu);
+  // Bản dùng thử nội bộ: bấm là vào thẳng app với quyền cao nhất (BOOD), không cần đăng nhập.
+  // Phân quyền/định danh thật sẽ do App Tổng (hpcons-portal) quản lý khi tích hợp chính thức sau này.
+  const handleEnterSystem = () => {
+    const admin = staff.find(s => s.id === 'ADMIN') || staff[0];
     const u = {
-      email: matched.email || matched.username || pendingLoginUser,
-      role: mappedRole as 'BOOD' | 'MANAGER' | 'STAFF',
-      staffId: matched.id,
-      name: `${matched.hoTen} (${matched.chucVu})`
+      email: admin?.email || admin?.username || 'admin',
+      role: 'BOOD' as const,
+      staffId: admin?.id || 'ADMIN',
+      name: admin ? `${admin.hoTen} (${admin.chucVu})` : 'Quản trị viên'
     };
     setCurrentUser(u);
     localStorage.setItem('erp_current_user', JSON.stringify(u));
-    setPendingLoginUser(null);
-
-    // Lần đầu đăng nhập (mật khẩu mặc định) → bắt buộc thêm ảnh + đổi mật khẩu trước khi vào hệ thống
-    if (matched.mustChangePassword) {
-      setPwModal('forced');
-    } else {
-      const roleText = u.role === 'BOOD' ? 'Ban Giám đốc / Trưởng phòng / Phó phòng (Level 1)' : u.role === 'MANAGER' ? 'Quản lý (Level 2)' : 'Chuyên viên thực hiện (Level 3)';
-      triggerToast(`Đăng nhập thành công với vai trò ${roleText}!`);
-    }
-  }, [pendingLoginUser, staffSynced, staff]);
-
-  // Đổi mật khẩu (+ ảnh đại diện lần đầu): đổi trên FIREBASE AUTH rồi cập nhật bản ghi nhân sự.
-  // Trả về chuỗi lỗi (hiện trong modal) hoặc null nếu thành công.
-  const handleChangePassword = async (newPassword: string, oldPassword?: string, avatar?: string): Promise<string | null> => {
-    if (!currentUser) return 'Phiên làm việc không hợp lệ.';
-    const err = await changeOwnPassword(newPassword, pwModal === 'self' ? (oldPassword ?? '') : undefined);
-    if (err) return err;
-    const updatedStaffList = staff.map(s =>
-      s.id === currentUser.staffId
-        ? { ...s, password: undefined, mustChangePassword: false, ...(avatar ? { avatar } : {}) }
-        : s
-    );
-    setStaff(updatedStaffList);
-    localStorage.setItem('erp_staff', JSON.stringify(updatedStaffList));
-    setPwModal(null);
-    triggerToast(avatar ? 'Đã cập nhật ảnh đại diện & đổi mật khẩu thành công!' : 'Đã đổi mật khẩu thành công!');
-    logAction('Đổi mật khẩu', `${currentUser.name} đã đổi mật khẩu đăng nhập.`);
-    return null;
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
-    setPwModal(null);
-    setLoginEmail('');
-    setLoginPassword('');
-    setPendingLoginUser(null);
     localStorage.removeItem('erp_current_user');
-    signOutFb().catch(() => {});
     triggerToast('Đã đăng xuất khỏi hệ thống thầu.');
   };
 
@@ -1542,7 +1462,11 @@ export default function App() {
       return;
     }
     try {
-      const res = await fetch(`/api/projects?start_date=${start || ''}&end_date=${end || ''}`);
+      const res = await fetch('/api/projects/filter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projects, start_date: start, end_date: end })
+      });
       if (res.ok) {
         const data = await res.json();
         setApiFilteredProjects(data);
@@ -1580,7 +1504,7 @@ export default function App() {
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ fileData: base64Data })
+          body: JSON.stringify({ fileData: base64Data, projects, staff })
         });
         
         const resData = await response.json();
@@ -2359,56 +2283,17 @@ export default function App() {
                   </p>
                 </div>
 
-                {loginError && (
-                  <div className="bg-brand-danger/10 border border-brand-danger/20 rounded-xl p-3 text-xs text-brand-danger font-bold flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-brand-danger shrink-0" />
-                    <span>{loginError}</span>
-                  </div>
-                )}
-
-                <form onSubmit={handleLogin} className="space-y-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                      Tên đăng nhập *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      autoComplete="username"
-                      value={loginEmail}
-                      onChange={(e) => setLoginEmail(e.target.value)}
-                      placeholder="Nhập tên đăng nhập"
-                      className="w-full px-4 py-3 bg-dark-card border border-slate-800 rounded-xl text-xs font-semibold text-white placeholder-slate-600 focus:outline-none focus:border-brand-warning/50 focus:ring-1 focus:ring-brand-warning transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
-                      Mật Khẩu Kiểm Soát *
-                    </label>
-                    <input 
-                      type="password"
-                      required
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder="••••••"
-                      className="w-full px-4 py-3 bg-dark-card border border-slate-800 rounded-xl text-xs font-semibold text-white placeholder-slate-600 focus:outline-none focus:border-brand-warning/50 focus:ring-1 focus:ring-brand-warning transition-all"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="w-full py-3 bg-brand-warning hover:bg-brand-warning/85 text-black font-black rounded-xl text-xs uppercase tracking-widest transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    Xác thực hệ thống
-                  </button>
-                </form>
+                <button
+                  type="button"
+                  onClick={handleEnterSystem}
+                  className="w-full py-3 bg-brand-warning hover:bg-brand-warning/85 text-black font-black rounded-xl text-xs uppercase tracking-widest transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  Xác thực hệ thống
+                </button>
 
                 <div className="relative border-t border-slate-800 pt-4">
                   <p className="text-[10px] text-slate-500 text-center font-medium leading-relaxed">
-                    Đăng nhập bằng <strong className="text-slate-300">tên đăng nhập</strong> do quản trị viên cấp.
-                    <br />Lần đầu đăng nhập, hệ thống sẽ yêu cầu thêm ảnh đại diện và đổi mật khẩu.
-                    <br /><span className="text-slate-600">Bảo mật bởi Firebase Authentication — mật khẩu được mã hóa.</span>
+                    Bản dùng thử nội bộ — chưa yêu cầu đăng nhập.
                   </p>
                 </div>
               </div>
@@ -3002,18 +2887,10 @@ export default function App() {
                   <span className="block text-[9px] text-slate-500 uppercase tracking-wider whitespace-nowrap">Quyền: Level {currentUser.role === 'BOOD' ? '1 (Trưởng phòng)' : currentUser.role === 'MANAGER' ? '2 (Quản lý)' : '3 (Nhân viên)'}</span>
                 </div>
                 <button
-                  onClick={() => setPwModal('self')}
-                  title="Đổi mật khẩu"
-                  aria-label="Đổi mật khẩu"
-                  className="p-1 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-brand-accent dark:hover:text-brand-accent-300 rounded transition-colors ml-auto md:ml-2"
-                >
-                  <Key className="w-3.5 h-3.5" />
-                </button>
-                <button
                   onClick={handleLogout}
                   title="Đăng xuất khỏi hệ thống"
                   aria-label="Đăng xuất khỏi hệ thống"
-                  className="p-1 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-brand-danger dark:hover:text-brand-danger rounded transition-colors"
+                  className="p-1 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center text-slate-500 dark:text-slate-400 hover:text-brand-danger dark:hover:text-brand-danger rounded transition-colors ml-auto md:ml-2"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                 </button>
@@ -4892,16 +4769,6 @@ export default function App() {
             </div>
           </div>
         </div>
-      )}
-
-      {pwModal && (
-        <ChangePasswordModal
-          mode={pwModal}
-          currentAvatar={staff.find(s => s.id === currentUser?.staffId)?.avatar}
-          hoTen={staff.find(s => s.id === currentUser?.staffId)?.hoTen}
-          onSubmit={handleChangePassword}
-          onCancel={pwModal === 'forced' ? handleLogout : () => setPwModal(null)}
-        />
       )}
 
     </div>
