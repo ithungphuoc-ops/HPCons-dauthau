@@ -170,8 +170,8 @@ EXECUTE FUNCTION fn_offset_ngay_hoan_thanh();`;
                 {activeTable.columns.map((col, idx) => (
                   <tr key={idx} className="block md:table-row py-2 md:py-0 hover:bg-slate-50/50 dark:hover:bg-dark-card/40">
                     <td className="block md:table-cell px-3 py-0.5 md:p-3 font-mono font-bold text-brand-accent dark:text-brand-accent-300 flex items-center gap-1">
-                      {col.constraints.includes('PRIMARY KEY') && <Key className="w-3.5 h-3.5 text-brand-warning flex-shrink-0" title="Khóa chính" />}
-                      {col.constraints.includes('FOREIGN KEY') && <Database className="w-3.5 h-3.5 text-brand-accent dark:text-brand-accent-300 flex-shrink-0" title="Khóa ngoại" />}
+                      {col.constraints.includes('PRIMARY KEY') && <span title="Khóa chính"><Key className="w-3.5 h-3.5 text-brand-warning flex-shrink-0" /></span>}
+                      {col.constraints.includes('FOREIGN KEY') && <span title="Khóa ngoại"><Database className="w-3.5 h-3.5 text-brand-accent dark:text-brand-accent-300 flex-shrink-0" /></span>}
                       {col.name}
                     </td>
                     <td className="block md:table-cell px-3 py-0.5 md:p-3 font-mono text-slate-600 dark:text-slate-300">{col.type}</td>

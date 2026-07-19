@@ -6,9 +6,9 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --font-sans: "Inter", "Arial", sans-serif;
-  --font-heading: "Inter", "Arial", sans-serif;
-  --font-mono: "JetBrains Mono", "Courier New", monospace;
+  --font-sans: var(--font-inter), "Arial", sans-serif;
+  --font-heading: var(--font-inter), "Arial", sans-serif;
+  --font-mono: var(--font-jetbrains-mono), "Courier New", monospace;
   /* Custom shades used across components; without these definitions
      Tailwind generates no CSS and dark-mode inputs render white-on-white */
   --color-slate-250: #d6dfe9;

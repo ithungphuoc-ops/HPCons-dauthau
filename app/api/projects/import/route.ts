@@ -1,209 +1,41 @@
-import express from "express";
-import path from "path";
-import fs from "fs";
+import { NextRequest, NextResponse } from "next/server";
 import * as xlsx from "xlsx";
-
-const app = express();
-const PORT = Number(process.env.PORT) || 3000;
-
-// Body parser with 10mb limit for base64 encoded Excel spreadsheets
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ limit: "10mb", extended: true }));
-
-const DB_PATH = path.join(process.cwd(), "src/data/db.json");
-const BACKUP_PATH = path.join(process.cwd(), "src/data/db_backup.json");
-const STAFF_PATH = path.join(process.cwd(), "src/data/staff.json");
-const STAFF_BACKUP_PATH = path.join(process.cwd(), "src/data/staff_backup.json");
-
-// Direct references to mock data as safe fallbacks
-import { mockProjects, mockStaff } from "./src/data/mockData.js";
-
-// Seeding standard mock data on server start if db.json is missing
-function initializeDB() {
-  const dir = path.dirname(DB_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  if (!fs.existsSync(DB_PATH)) {
-    fs.writeFileSync(DB_PATH, JSON.stringify(mockProjects, null, 2), "utf-8");
-  }
-  if (!fs.existsSync(BACKUP_PATH)) {
-    fs.writeFileSync(BACKUP_PATH, JSON.stringify(mockProjects, null, 2), "utf-8");
-  }
-  if (!fs.existsSync(STAFF_PATH)) {
-    fs.writeFileSync(STAFF_PATH, JSON.stringify(mockStaff, null, 2), "utf-8");
-  }
-  if (!fs.existsSync(STAFF_BACKUP_PATH)) {
-    fs.writeFileSync(STAFF_BACKUP_PATH, JSON.stringify(mockStaff, null, 2), "utf-8");
-  }
-}
-
-// Ổ đĩa server (vd. Vercel) là chỉ đọc lúc chạy thật — seeding chỉ có ý nghĩa khi chạy local.
-try {
-  initializeDB();
-} catch (e: any) {
-  console.error("[HP-CONS ERP] Bỏ qua seeding dữ liệu cục bộ (môi trường chỉ đọc):", e.message);
-}
-
-// STAFF PERSISTENCE AND SYNC API
-app.get("/api/staff", (req, res) => {
-  try {
-    if (!fs.existsSync(STAFF_PATH)) {
-      initializeDB();
-    }
-    const rawData = fs.readFileSync(STAFF_PATH, "utf-8");
-    const staffList = JSON.parse(rawData);
-    res.json(staffList);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post("/api/staff/sync", (req, res) => {
-  try {
-    const { staff } = req.body;
-    if (!Array.isArray(staff)) {
-      return res.status(400).json({ error: "Dữ liệu nhân sự phải là một mảng." });
-    }
-    
-    // Save backup first
-    const activeState = fs.readFileSync(STAFF_PATH, "utf-8");
-    fs.writeFileSync(STAFF_BACKUP_PATH, activeState, "utf-8");
-    
-    // Commit new state
-    fs.writeFileSync(STAFF_PATH, JSON.stringify(staff, null, 2), "utf-8");
-    
-    res.json({ status: "success", message: "Đã đồng bộ hóa danh sách nhân sự thành công!" });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// 1. DATE RANGE FILTER API
-// Lọc dự án đang thực hiện/đấu thầu trong khoảng start_date..end_date (YYYY-MM-DD).
-// Nhận danh sách dự án HIỆN CÓ trực tiếp từ trình duyệt (nguồn thật là Firebase/state client) —
-// không đọc file trên server vì ổ đĩa server (Vercel) chỉ đọc và không phản ánh dữ liệu thật.
-app.post("/api/projects/filter", (req, res) => {
-  try {
-    const { start_date, end_date } = req.body;
-    let projects = Array.isArray(req.body.projects) ? req.body.projects : [];
-
-    if (start_date && end_date) {
-      const start = new Date(start_date as string);
-      const end = new Date(end_date as string);
-
-      if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
-        projects = projects.filter((p: any) => {
-          const pStart = new Date(p.ngayBatDau);
-          const pEnd = new Date(p.ngayHoanThanhDuKienHienTai || p.ngayHoanThanhDuKienGoc);
-          // Overlap: project interval overlaps with [start, end]
-          return pStart <= end && pEnd >= start;
-        });
-      }
-    }
-
-    res.json(projects);
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Update/Save project state (sync API)
-app.post("/api/projects/sync", (req, res) => {
-  try {
-    const { projects } = req.body;
-    if (!Array.isArray(projects)) {
-      return res.status(400).json({ error: "Dữ liệu dự án phải là một mảng." });
-    }
-    
-    // Save backup first as our rollback insurance before mutating active database
-    const activeState = fs.readFileSync(DB_PATH, "utf-8");
-    fs.writeFileSync(BACKUP_PATH, activeState, "utf-8");
-    
-    // Commit new state
-    fs.writeFileSync(DB_PATH, JSON.stringify(projects, null, 2), "utf-8");
-    
-    res.json({ status: "success", message: "Đã đồng bộ hóa dữ liệu thành công!" });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get database state details and fallback backups
-app.get("/api/projects/status", (req, res) => {
-  try {
-    const activeExists = fs.existsSync(DB_PATH);
-    const backupExists = fs.existsSync(BACKUP_PATH);
-    
-    res.json({
-      activeDatabase: activeExists ? {
-        size: fs.statSync(DB_PATH).size,
-        lastModified: fs.statSync(DB_PATH).mtime
-      } : null,
-      backupDatabase: backupExists ? {
-        size: fs.statSync(BACKUP_PATH).size,
-        lastModified: fs.statSync(BACKUP_PATH).mtime
-      } : null
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Trigger a manual recovery rollback to restore the last known valid structural state
-app.post("/api/projects/rollback", (req, res) => {
-  try {
-    if (!fs.existsSync(BACKUP_PATH)) {
-      return res.status(400).json({ error: "Không tìm thấy bản sao lưu trước đó để phục hồi." });
-    }
-    
-    const backupState = fs.readFileSync(BACKUP_PATH, "utf-8");
-    fs.writeFileSync(DB_PATH, backupState, "utf-8");
-    
-    res.json({ 
-      status: "success", 
-      message: "Đã phục hồi thành công hệ thống về cấu trúc dữ liệu hợp lệ gần nhất!",
-      projects: JSON.parse(backupState)
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
 
 // 2. SECURE EXCEL IMPORT & VALIDATION API
 // Nhận danh sách dự án + nhân sự HIỆN CÓ trực tiếp từ trình duyệt (nguồn thật là Firebase/state
 // client) để merge — không đọc/ghi file trên server vì ổ đĩa server (Vercel) chỉ đọc.
-app.post("/api/projects/import", (req, res) => {
+export async function POST(req: NextRequest) {
   try {
-    const { fileData } = req.body;
+    const body = await req.json();
+    const { fileData } = body;
     if (!fileData) {
-      return res.status(400).json({ error: "Không tìm thấy dữ liệu tệp được tải lên." });
+      return NextResponse.json({ error: "Không tìm thấy dữ liệu tệp được tải lên." }, { status: 400 });
     }
 
-    const activeState = Array.isArray(req.body.projects) ? req.body.projects : [];
+    const activeState: any[] = Array.isArray(body.projects) ? body.projects : [];
 
     // Parse Excel spreadsheet base64
     const buffer = Buffer.from(fileData, "base64");
     // raw:true stops the CSV parser from converting "2/6/2026" to a US-style date; we parse day-first ourselves
     const workbook = xlsx.read(buffer, { type: "buffer", raw: true });
-    
+
     if (workbook.SheetNames.length === 0) {
       throw new Error("Tệp Excel không chứa bất kỳ trang tính nào.");
     }
-    
+
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const rawRows = xlsx.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
-    
+
     if (rawRows.length <= 1) {
       throw new Error("Trang tính rỗng hoặc chỉ có dòng tiêu đề mà không có hàng dữ liệu.");
     }
-    
+
     const headerRow = rawRows[0];
     if (!headerRow || headerRow.length === 0) {
       throw new Error("Không thể tìm thấy dòng tiêu đề trong trang tính.");
     }
-    
+
     // Validation Engine: Dynamic header mapping
     // Supports both the internal HP-CONS template and "Template 2" exported by the sales team
     // (Mã DA, Tên dự án, Chủ đầu tư, Quốc tịch, KCN, Tỉnh/TP, Loại công trình, Hình thức,
@@ -275,7 +107,7 @@ app.post("/api/projects/import", (req, res) => {
     }
 
     // Resolve "NV phụ trách" names against the staff list gửi kèm từ trình duyệt
-    const staffLookup: any[] = Array.isArray(req.body.staff) ? req.body.staff : [];
+    const staffLookup: any[] = Array.isArray(body.staff) ? body.staff : [];
     const findStaffIdByName = (name: string): string | undefined => {
       const n = name.trim().toLowerCase();
       if (!n) return undefined;
@@ -285,36 +117,36 @@ app.post("/api/projects/import", (req, res) => {
       });
       return hit?.id;
     };
-    
+
     // Individual row-by-row structure validation
     const validationErrors: { row: number; col: string; val: any; msg: string }[] = [];
     const validProjectsToImport: any[] = [];
-    
+
     for (let idx = 1; idx < rawRows.length; idx++) {
       const row = rawRows[idx];
       // Skip completely empty rows
       if (!row || row.length === 0 || row.every(cell => cell === undefined || cell === null || cell === "")) {
         continue;
       }
-      
+
       const getVal = (colIndex: number) => {
         if (colIndex === -1 || colIndex >= row.length) return undefined;
         return row[colIndex];
       };
-      
+
       const rawTen = getVal(mappings.tenDuAn);
       // Template 2 has no "Ngày bắt đầu" — fall back to the sales "Ngày tạo" column
       const rawNgayBatDau = getVal(mappings.ngayBatDau) !== undefined ? getVal(mappings.ngayBatDau) : getVal(mappings.ngayTao);
       const rawSoNgay = getVal(mappings.soNgayDuKien);
       const rawId = getVal(mappings.projectId);
-      
+
       const rowNum = idx + 1; // 1-indexed spreadsheet rows
-      
+
       // 1. Project Name validation
       if (!rawTen || rawTen.toString().trim() === "") {
         validationErrors.push({ row: rowNum, col: "Tên Dự Án", val: rawTen, msg: "Tên dự án thầu là bắt buộc và không được để trống." });
       }
-      
+
       // 2. Start date validation
       let formattedDate = "";
       if (!rawNgayBatDau) {
@@ -359,7 +191,7 @@ app.post("/api/projects/import", (req, res) => {
           }
         }
       }
-      
+
       // 4. Timeline / Số ngày dự kiến validation (positive integer, defaults to 10 when the file has no duration column)
       let daysNum = 10;
       if (mappings.soNgayDuKien !== -1 && rawSoNgay !== undefined && rawSoNgay !== null && rawSoNgay !== "") {
@@ -377,27 +209,27 @@ app.post("/api/projects/import", (req, res) => {
       if (!validCats.includes(cat)) {
         validationErrors.push({ row: rowNum, col: "Hạng Mục", val: cat, msg: `Hạng mục thầu không hợp lệ. Chỉ chấp nhận các loại: ${validCats.join(", ")}` });
       }
-      
+
       // If no critical errors on this row, build the official object
       if (validationErrors.length === 0) {
         const pId = rawId ? rawId.toString().trim() : `2026.${String(activeState.length + validProjectsToImport.length + 1).padStart(2, "0")}`;
         const newId = `P${Math.floor(100 + Math.random() * 900)}`;
-        
+
         const startDateObj = new Date(formattedDate);
         const endDateObj = new Date(startDateObj.getTime() + daysNum * 24 * 60 * 60 * 1000);
         const endFormatted = `${endDateObj.getFullYear()}-${String(endDateObj.getMonth() + 1).padStart(2, "0")}-${String(endDateObj.getDate()).padStart(2, "0")}`;
-        
+
         const parseTaskStatus = (rawVal: any) => {
           if (rawVal === undefined || rawVal === null) return false;
           const s = rawVal.toString().trim().toLowerCase();
           return s === "✔" || s === "1" || s === "true" || s === "xong" || s === "hoàn thành" || s === "yes" || s === "completed" || s === "100" || s === "100%";
         };
-        
+
         const t1Done = parseTaskStatus(getVal(mappings.task1));
         const t2Done = parseTaskStatus(getVal(mappings.task2));
         const t3Done = parseTaskStatus(getVal(mappings.task3));
         const t4Done = parseTaskStatus(getVal(mappings.task4));
-        
+
         let calculatedTienDoBoPhan = 0;
         if (t1Done) calculatedTienDoBoPhan += 25;
         if (t2Done) calculatedTienDoBoPhan += 40;
@@ -470,16 +302,16 @@ app.post("/api/projects/import", (req, res) => {
         });
       }
     }
-    
+
     // VALIDATION EXCEPTION: không sửa gì cả — trả lỗi để client giữ nguyên state hiện tại (không có gì để rollback vì chưa từng ghi)
     if (validationErrors.length > 0) {
-      return res.status(400).json({
+      return NextResponse.json({
         status: "error",
         errors: validationErrors,
         message: `Lỗi kiểm tra cấu trúc dữ liệu thầu (${validationErrors.length} lỗi form). Giao dịch đấu thầu đã bị ROLLBACK hoàn toàn để bảo toàn dữ liệu gốc.`
-      });
+      }, { status: 400 });
     }
-    
+
     // COMMIT TRANSACTION
     // Merge by Mã dự án: rows already in the database update sales info (keeping progress/tasks), the rest append
     const committedState = [...activeState];
@@ -512,7 +344,8 @@ app.post("/api/projects/import", (req, res) => {
         addedCount++;
       }
     }
-    res.json({
+
+    return NextResponse.json({
       status: "success",
       count: validProjectsToImport.length,
       message: `Đã nhập thành công ${validProjectsToImport.length} hồ sơ thầu (${addedCount} thêm mới, ${updatedCount} cập nhật theo Mã DA)! Trình duyệt sẽ đồng bộ danh sách mới lên Firebase.`,
@@ -520,45 +353,10 @@ app.post("/api/projects/import", (req, res) => {
     });
 
   } catch (error: any) {
-    res.status(400).json({
+    return NextResponse.json({
       status: "error",
       error: error.message,
       message: `Lỗi xử lý tệp nhập thầu: ${error.message}. Dữ liệu hiện tại không bị ảnh hưởng.`
-    });
+    }, { status: 400 });
   }
-});
-
-// Serve Vite build assets and SPA index fallback
-async function startServer() {
-  if (process.env.NODE_ENV !== "production") {
-    // Import động: chỉ dev/local mới cần vite, tránh gói kèm vào serverless function trên Vercel
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        // Data files are written by the API at runtime; watching them causes an endless reload loop
-        watch: { ignored: ["**/src/data/db.json", "**/src/data/db_backup.json", "**/src/data/staff.json", "**/src/data/staff_backup.json"] },
-      },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
-  }
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[HP-CONS ERP Backend] Server listening on http://localhost:${PORT}`);
-  });
 }
-
-// Trên Vercel, frontend (dist/) được phục vụ tĩnh và mỗi request /api/* chạy qua
-// api/[...all].ts (import app từ đây) — không cần vite middleware/static serving/listen ở đó.
-if (!process.env.VERCEL) {
-  startServer();
-}
-
-export default app;

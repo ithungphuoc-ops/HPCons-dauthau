@@ -1,3 +1,5 @@
+"use client";
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Project, Staff, ProjectTask, ActivityLog, AppNotification, PersonalTask, DelayLog } from './types';
 import { mockProjects, mockStaff, ADMIN_SEED } from './data/mockData';
@@ -974,20 +976,6 @@ export default function App() {
       lastRemoteProjects.current = serialized;
       pushCollection('projects', projects).catch(err => console.error('[Firebase] Lỗi đồng bộ dự án lên cloud:', err));
     }
-
-    // Sync to backend database (bản dự phòng trên máy chủ nội bộ)
-    const syncToServer = async () => {
-      try {
-        await fetch('/api/projects/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projects })
-        });
-      } catch (err) {
-        console.error("Lỗi đồng bộ dữ liệu lên máy chủ:", err);
-      }
-    };
-    syncToServer();
   }, [projects]);
 
   // Sync staff to localStorage, Firestore (cloud) and backend server
@@ -1007,19 +995,6 @@ export default function App() {
         .map(s => ({ id: authEmailFor(s.username!) }));
       pushCollection('authAllow', allowDocs).catch(err => console.error('[Firebase] Lỗi đồng bộ danh sách truy cập:', err));
     }
-
-    const syncStaffToServer = async () => {
-      try {
-        await fetch('/api/staff/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ staff })
-        });
-      } catch (err) {
-        console.error("Lỗi đồng bộ nhân sự lên máy chủ:", err);
-      }
-    };
-    syncStaffToServer();
   }, [staff]);
 
   // Enforce role-based restrictions on tab selection.
@@ -1949,7 +1924,6 @@ export default function App() {
       let resultStyle = 'color: #475569;';
       if (prjResult === 'Đã trúng thầu') resultStyle = 'color: #16a34a; font-weight: bold;';
       else if (prjResult === 'Rớt thầu') resultStyle = 'color: #dc2626;';
-      else if (prjResult === 'Đang thương thảo') resultStyle = 'color: #4f46e5;';
 
       // 3. Security masking based on RBAC Level
       const isStaff = currentUser?.role === 'STAFF';

@@ -1,6 +1,7 @@
 node_modules/
 build/
 dist/
+.next/
 dist-desktop/
 coverage/
 .DS_Store
@@ -8,10 +9,8 @@ coverage/
 .env*
 !.env.example
 .vercel
+next-env.d.ts
+*.tsbuildinfo
 
-# Runtime database files written by server.ts
-src/data/db.json
-src/data/db_backup.json
-src/data/staff.json
-src/data/staff_backup.json
+# Bản backup demo cũ trước khi dọn dữ liệu — có mật khẩu plaintext, không đưa lên Git
 src/data/staff_predemo_backup.json
