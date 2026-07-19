@@ -16,7 +16,7 @@ const STAFF_PATH = path.join(process.cwd(), "src/data/staff.json");
 const STAFF_BACKUP_PATH = path.join(process.cwd(), "src/data/staff_backup.json");
 
 // Direct references to mock data as safe fallbacks
-import { mockProjects, mockStaff } from "./src/data/mockData";
+import { mockProjects, mockStaff } from "./src/data/mockData.js";
 
 // Seeding standard mock data on server start if db.json is missing
 function initializeDB() {
