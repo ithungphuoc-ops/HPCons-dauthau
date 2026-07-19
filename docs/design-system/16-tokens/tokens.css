@@ -1,0 +1,18 @@
+:root {
+  --hp-brand-primary: #60BB46;
+  --hp-brand-accent: #0969A7;
+  --hp-nav-base: #4B4F55;
+  --hp-background: #0F1720;
+  --hp-surface: #121C26;
+  --hp-card: #18232E;
+  --hp-text-primary: #F5F7FA;
+  --hp-text-secondary: #B8C0C8;
+  --hp-danger: #E53935;
+  --hp-warning: #FFA726;
+  --hp-muted: #9E9E9E;
+  --hp-radius-sm: 6px;
+  --hp-radius-md: 8px;
+  --hp-radius-lg: 12px;
+  --hp-header-height: 60px;
+  --hp-mobile-header-height: 56px;
+}

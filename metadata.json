@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Quản lý Tiến độ Phòng Đấu thầu",
+  "description": "Hệ thống quản lý, báo cáo tiến độ và đánh giá hiệu suất (KPI) tích hợp biểu đồ Gantt dành riêng cho Phòng Đấu thầu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

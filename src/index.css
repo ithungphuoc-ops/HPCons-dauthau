@@ -1,0 +1,171 @@
+@import "tailwindcss";
+
+/* Tailwind v4 defaults the dark: variant to the OS prefers-color-scheme.
+   This app toggles a .dark class on <html> instead, so bind dark: to that class
+   — without this, the light/dark switch only changed the root background. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "Inter", "Arial", sans-serif;
+  --font-heading: "Inter", "Arial", sans-serif;
+  --font-mono: "JetBrains Mono", "Courier New", monospace;
+  /* Custom shades used across components; without these definitions
+     Tailwind generates no CSS and dark-mode inputs render white-on-white */
+  --color-slate-250: #d6dfe9;
+  --color-slate-850: #172033;
+
+  /* HPCons Design System V1.1 — brand tokens (HPCons-Design-System-V1.1.md §B1).
+     ĐẢO VAI TRÒ so với V1.0: Primary = XANH DƯƠNG #096AA7 (nút/menu/focus);
+     xanh lá #60BB46 xuống làm SUCCESS (hoàn thành/đã duyệt).
+     Dùng qua class: bg-brand-primary / text-brand-success / border-nav-base ... */
+  --color-brand-primary: #096AA7; /* Primary — hành động chính, nút, menu active, focus, liên kết */
+  --color-brand-primary-hover: #075888; /* Hover của nút chính (xanh dương đậm hơn) */
+  --color-brand-success: #60BB46; /* Success — hoàn thành, đã duyệt, đúng hạn */
+  --color-brand-success-hover: #4EA43A; /* Hover của success */
+  --color-brand-accent: #0969A7;  /* Giữ tương thích: accent ≈ primary (V1.1 gộp accent vào primary) */
+  --color-brand-accent-hover: #075888;
+  --color-nav-base: #4B4F55;      /* Thanh điều hướng (cố định 2 theme) */
+  --color-brand-danger: #E53935;  /* Lỗi, thất bại, xóa, quá hạn */
+  --color-brand-warning: #FFA726; /* Chờ duyệt, cảnh báo, sắp đến hạn */
+  --color-brand-muted: #9E9E9E;   /* Trung tính, hủy, không hoạt động */
+
+  /* Dải sắc độ (50→950) SINH TỪ màu gốc — KHÔNG phải màu mới, chỉ là tint/shade.
+     V1.1: brand-primary = dải XANH DƯƠNG; brand-success = dải XANH LÁ (đổi tên từ primary V1.0). Core = 500. */
+  --color-brand-primary-50:  #e8f2f9;
+  --color-brand-primary-100: #c9e0f0;
+  --color-brand-primary-200: #96c4e1;
+  --color-brand-primary-300: #5ea3cf;
+  --color-brand-primary-400: #2b83bb;
+  --color-brand-primary-500: #096aa7;
+  --color-brand-primary-600: #075888;
+  --color-brand-primary-700: #064970;
+  --color-brand-primary-800: #06395a;
+  --color-brand-primary-900: #072d47;
+  --color-brand-primary-950: #041b2c;
+
+  --color-brand-success-50:  #eef7ea;
+  --color-brand-success-100: #d6ecca;
+  --color-brand-success-200: #b5dfa0;
+  --color-brand-success-300: #93d176;
+  --color-brand-success-400: #78c65a;
+  --color-brand-success-500: #60bb46;
+  --color-brand-success-600: #4ea43a;
+  --color-brand-success-700: #3d8a2e;
+  --color-brand-success-800: #2f6a24;
+  --color-brand-success-900: #234f1b;
+  --color-brand-success-950: #12300f;
+
+  /* brand-accent-* giữ nguyên dải xanh dương để 311 usage cũ không vỡ (accent ≈ primary V1.1) */
+  --color-brand-accent-50:  #e8f2f9;
+  --color-brand-accent-100: #c9e0f0;
+  --color-brand-accent-200: #96c4e1;
+  --color-brand-accent-300: #5ea3cf;
+  --color-brand-accent-400: #2b83bb;
+  --color-brand-accent-500: #0969a7;
+  --color-brand-accent-600: #075888;
+  --color-brand-accent-700: #064970;
+  --color-brand-accent-800: #06395a;
+  --color-brand-accent-900: #072d47;
+  --color-brand-accent-950: #041b2c;
+
+  /* Bộ nền Dark Mode — V1.1 §B2 (đổi nhẹ so với V1.0).
+     Thang: bg < surface < card < elevated. Dùng qua class: dark:bg-dark-bg / dark:bg-dark-card ... */
+  --color-dark-bg: #0F1923;       /* background — nền trang (V1.0 #0F1720) */
+  --color-dark-surface: #131F2B;  /* surface — bề mặt phụ/header (V1.0 #121C26) */
+  --color-dark-card: #182531;     /* card — thẻ nội dung (V1.0 #18232E) */
+  --color-dark-elevated: #1F2F3D; /* elevated — ô nhập, hover, phần tử nổi (V1.0 #1E2B36) */
+}
+
+/* ===== Lớp TOKEN NGỮ NGHĨA 2 THEME — HPCons Design System V1.1 §B2 =====
+   Một bộ token duy nhất, đổi GIÁ TRỊ theo theme (class .dark). Dùng cho component mới
+   (shadcn: bg-background / text-foreground / bg-card / border-hp-border ...).
+   @theme inline giữ tham chiếu var() để chuyển theme chạy đúng lúc runtime. */
+@theme inline {
+  --color-background: var(--hp-background);
+  --color-foreground: var(--hp-foreground);
+  --color-surface: var(--hp-surface);
+  --color-card: var(--hp-card);
+  --color-elevated: var(--hp-elevated);
+  --color-hp-border: var(--hp-border);
+  --color-hp-divider: var(--hp-divider);
+  --color-text-secondary: var(--hp-text-secondary);
+  --color-text-desc: var(--hp-text-desc);
+  --color-text-disabled: var(--hp-text-disabled);
+}
+
+:root {
+  /* Light Mode (V1.1 §B2 — giá trị * do đội triển khai đề xuất, có thể chỉnh) */
+  --hp-background: #F1F5F9;
+  --hp-foreground: #1B2733;
+  --hp-surface: #F8FAFC;
+  --hp-card: #FFFFFF;
+  --hp-elevated: #FFFFFF;
+  --hp-border: rgba(15, 25, 35, 0.10);
+  --hp-divider: rgba(15, 25, 35, 0.06);
+  --hp-text-secondary: #46545F;
+  --hp-text-desc: #64707C;
+  --hp-text-disabled: #9AA5AF;
+}
+
+.dark {
+  /* Dark Mode (V1.1 §B2) */
+  --hp-background: #0F1923;
+  --hp-foreground: #F5F7FA;
+  --hp-surface: #131F2B;
+  --hp-card: #182531;
+  --hp-elevated: #1F2F3D;
+  --hp-border: rgba(255, 255, 255, 0.08);
+  --hp-divider: rgba(255, 255, 255, 0.06);
+  --hp-text-secondary: #B8C0C8;
+  --hp-text-desc: #8F9AA5;
+  --hp-text-disabled: #66717C;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading) !important;
+    letter-spacing: -0.015em;
+  }
+}
+
+/* ===== Focus state cho điều hướng bàn phím (checklist 20-quality: "có focus state") =====
+   :focus-visible chỉ hiện khi dùng bàn phím — không ảnh hưởng thao tác chuột. */
+@layer base {
+  button:focus-visible,
+  a:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--color-brand-accent);
+    outline-offset: 2px;
+  }
+}
+
+/* ===== Sidebar thu gọn 72px (HPCons 08-navigation) =====
+   Kích hoạt bằng class .sidebar-collapsed trên #app-sidebar (chỉ md+; mobile giữ dải nav ngang).
+   Chữ nút chuyển sang dạng sr-only (giấu mắt thường nhưng GIỮ tên cho screen reader — a11y). */
+@media (min-width: 768px) {
+  #app-sidebar.sidebar-collapsed #sidebar-brand,
+  #app-sidebar.sidebar-collapsed #sidebar-tasklabel,
+  #app-sidebar.sidebar-collapsed #sidebar-footer {
+    display: none;
+  }
+  #app-sidebar.sidebar-collapsed #sidebar-nav button {
+    justify-content: center;
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    gap: 0;
+  }
+  #app-sidebar.sidebar-collapsed #sidebar-nav button > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}

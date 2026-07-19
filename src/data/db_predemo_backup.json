@@ -1,0 +1,424 @@
+[
+  {
+    "id": "P001",
+    "projectId": "2026.01",
+    "tenDuAn": "Tổ hợp Căn hộ Cao cấp Riverview (Tháp A & B)",
+    "quanLyId": "S001",
+    "thucHienId": "S004",
+    "thucHienIds": [
+      "S004",
+      "S003"
+    ],
+    "hangMuc": "Báo giá chi tiết",
+    "moTa": "Bóc tách khối lượng (BOQ) và lập đơn giá chi tiết toàn bộ phần kết cấu, kiến trúc và cơ điện (MEPF) cho khối đế và 2 tháp chung cư 35 tầng.",
+    "chuDauTu": "Tập đoàn Bất động sản Riverland",
+    "diaChi": "36 Nguyễn Cơ Thạch, Quận 2, TP. Hồ Chí Minh",
+    "hinhThucDauThau": "Đấu thầu cạnh tranh",
+    "tinhTrangDuAn": "Đã trúng thầu",
+    "ngayBatDau": "2026-06-01",
+    "soNgayDuKien": 15,
+    "ngayHoanThanhDuKienGoc": "2026-06-16",
+    "ngayHoanThanhDuKienHienTai": "2026-06-20",
+    "tienDoBoPhan": 100,
+    "tienDoPhong": 100,
+    "ngayHoanThanhThucTe": "2026-06-19",
+    "trangThai": "HOAN_THANH_DUNG_HAN",
+    "createdBy": "S001",
+    "delayLogs": [
+      {
+        "id": "L001",
+        "ngayThayDoi": "2026-06-10",
+        "ngayCu": "2026-06-16",
+        "ngayMoi": "2026-06-20",
+        "soNgayLech": 4,
+        "lyDo": "Chủ đầu tư thay đổi thiết kế cơ sở trục lõi thang máy tháp A, yêu cầu tính toán lại khối lượng bê tông cốt thép và kết cấu móng.",
+        "nguoiDuyet": "Trưởng phòng Nguyễn Minh Đức"
+      }
+    ],
+    "tasks": [
+      {
+        "id": "T101",
+        "name": "Nghiên cứu hồ sơ thầu & Bản vẽ Concept",
+        "weight": 20,
+        "isCompleted": true,
+        "completedAt": "2026-06-03"
+      },
+      {
+        "id": "T102",
+        "name": "Bóc tách khối lượng (BOQ) Phần Kiến Trúc",
+        "weight": 30,
+        "isCompleted": true,
+        "completedAt": "2026-06-08"
+      },
+      {
+        "id": "T103",
+        "name": "Bóc tách khối lượng (BOQ) Phần Cơ Điện (MEPF)",
+        "weight": 30,
+        "isCompleted": true,
+        "completedAt": "2026-06-14"
+      },
+      {
+        "id": "T104",
+        "name": "Xây dựng đơn giá chi tiết & Áp giá vật tư",
+        "weight": 20,
+        "isCompleted": true,
+        "completedAt": "2026-06-18"
+      }
+    ],
+    "comments": [
+      {
+        "id": "C101",
+        "userId": "S004",
+        "userName": "Lê Thanh Hải",
+        "text": "Đã hoàn thiện BOQ phần thô tháp A và cập nhật lên hệ thống.",
+        "timestamp": "2026-06-08 14:30"
+      }
+    ],
+    "loaiBanGhi": "CONG_VIEC",
+    "soNgayThucHien": 13,
+    "soNgayDuyetTP": 1,
+    "soNgayDuyetBLD": 1
+  },
+  {
+    "id": "P002",
+    "projectId": "2026.02",
+    "tenDuAn": "Bệnh viện Đa khoa Quốc tế An Sinh (Giai đoạn 1)",
+    "quanLyId": "S002",
+    "thucHienId": "S003",
+    "thucHienIds": [
+      "S003"
+    ],
+    "hangMuc": "Khái toán",
+    "moTa": "Lập khái toán tổng mức đầu tư dựa trên bản vẽ thiết kế sơ bộ (Concept Design) phục vụ trình duyệt Hội đồng Quản trị.",
+    "chuDauTu": "Công ty Cổ phần Y tế An Sinh",
+    "diaChi": "150 Trần Hưng Đạo, Quận 5, TP. Hồ Chí Minh",
+    "hinhThucDauThau": "Chỉ định thầu",
+    "tinhTrangDuAn": "Đã trúng thầu",
+    "ngayBatDau": "2026-06-12",
+    "soNgayDuKien": 10,
+    "ngayHoanThanhDuKienGoc": "2026-06-22",
+    "ngayHoanThanhDuKienHienTai": "2026-06-22",
+    "tienDoBoPhan": 100,
+    "tienDoPhong": 100,
+    "ngayHoanThanhThucTe": "2026-06-21",
+    "trangThai": "HOAN_THANH_DUNG_HAN",
+    "createdBy": "S002",
+    "delayLogs": [],
+    "tasks": [
+      {
+        "id": "T201",
+        "name": "Khảo sát và Phân tích thiết kế sơ bộ",
+        "weight": 30,
+        "isCompleted": true,
+        "completedAt": "2026-06-14"
+      },
+      {
+        "id": "T202",
+        "name": "Tính toán chỉ số suất đầu tư tham chiếu",
+        "weight": 45,
+        "isCompleted": true,
+        "completedAt": "2026-06-18"
+      },
+      {
+        "id": "T203",
+        "name": "Lập bảng khái toán trình duyệt Hội đồng",
+        "weight": 25,
+        "isCompleted": true,
+        "completedAt": "2026-06-21"
+      }
+    ],
+    "comments": [],
+    "loaiBanGhi": "CONG_VIEC",
+    "soNgayThucHien": 8,
+    "soNgayDuyetTP": 1,
+    "soNgayDuyetBLD": 1
+  },
+  {
+    "id": "P003",
+    "projectId": "2026.03",
+    "tenDuAn": "Cải tạo và Nâng cấp Trung tâm Thương mại Green Mall",
+    "quanLyId": "S001",
+    "thucHienId": "S006",
+    "thucHienIds": [
+      "S006",
+      "S004"
+    ],
+    "hangMuc": "Cải tạo",
+    "moTa": "Lập dự toán thầu hạng mục cải tạo mặt dựng kính Facade ngoài trời và toàn bộ hệ thống điều hòa trung tâm Chiller công suất lớn.",
+    "chuDauTu": "Tổng công ty Cổ phần Green Group",
+    "diaChi": "88 Lê Lợi, Quận 1, TP. Hồ Chí Minh",
+    "hinhThucDauThau": "Đấu thầu cạnh tranh",
+    "tinhTrangDuAn": "Đang triển khai",
+    "ngayBatDau": "2026-06-15",
+    "soNgayDuKien": 8,
+    "ngayHoanThanhDuKienGoc": "2026-06-23",
+    "ngayHoanThanhDuKienHienTai": "2026-06-23",
+    "tienDoBoPhan": 60,
+    "tienDoPhong": 50,
+    "trangThai": "TRE_TIEN_DO",
+    "nguyenNhanTreHan": "Hiện trường cải tạo phức tạp, bản vẽ hoàn công cũ của hệ thống kính Facade bị thất lạc dẫn đến việc đội khảo sát phải đo đạc thủ công lại từ đầu, làm chậm trễ tiến độ nhập BOQ đầu vào.",
+    "createdBy": "S001",
+    "delayLogs": [],
+    "tasks": [
+      {
+        "id": "T301",
+        "name": "Khảo sát hiện trạng kính Facade Green Mall",
+        "weight": 30,
+        "isCompleted": true,
+        "completedAt": "2026-06-17"
+      },
+      {
+        "id": "T302",
+        "name": "Thiết kế biện pháp cải tạo tháo dỡ kính cũ",
+        "weight": 30,
+        "isCompleted": true,
+        "completedAt": "2026-06-21"
+      },
+      {
+        "id": "T303",
+        "name": "Lập dự toán hệ kính Facade và Chiller",
+        "weight": 40,
+        "isCompleted": false
+      }
+    ],
+    "comments": [
+      {
+        "id": "C301",
+        "userId": "S006",
+        "userName": "Ngô Quốc Bảo",
+        "text": "Bản vẽ Facade cũ bị lệch cốt, cần đo tay lại từ tầng 3 đến tầng 6.",
+        "timestamp": "2026-06-17 10:15"
+      }
+    ],
+    "loaiBanGhi": "CONG_VIEC",
+    "soNgayThucHien": 6,
+    "soNgayDuyetTP": 1,
+    "soNgayDuyetBLD": 1
+  },
+  {
+    "id": "P004",
+    "projectId": "2026.04",
+    "tenDuAn": "Nhà máy Sản xuất Linh kiện Bán dẫn High-Tech Bình Dương",
+    "quanLyId": "S002",
+    "thucHienId": "S005",
+    "thucHienIds": [
+      "S005"
+    ],
+    "hangMuc": "Thiết kế kỹ thuật",
+    "moTa": "Xây dựng đơn giá thầu cho hệ thống phòng sạch (Cleanroom Class 1000) và đường ống công nghệ cấp thoát nước hóa chất đặc chủng.",
+    "chuDauTu": "Tập đoàn Công nghệ High-Tech Korea",
+    "diaChi": "Lô C2, Đường số 5, KCN VSIP II, Tỉnh Bình Dương",
+    "hinhThucDauThau": "Đấu thầu cạnh tranh",
+    "tinhTrangDuAn": "Đang triển khai",
+    "ngayBatDau": "2026-06-20",
+    "soNgayDuKien": 12,
+    "ngayHoanThanhDuKienGoc": "2026-07-02",
+    "ngayHoanThanhDuKienHienTai": "2026-07-02",
+    "tienDoBoPhan": 40,
+    "tienDoPhong": 35,
+    "trangThai": "DANG_THUC_HIEN",
+    "createdBy": "S002",
+    "delayLogs": [],
+    "tasks": [
+      {
+        "id": "T401",
+        "name": "Tính toán thiết lập đơn giá phòng sạch (Cleanroom)",
+        "weight": 40,
+        "isCompleted": true,
+        "completedAt": "2026-06-24"
+      },
+      {
+        "id": "T402",
+        "name": "Dự toán hệ thống cấp thoát nước đặc chủng",
+        "weight": 40,
+        "isCompleted": false
+      },
+      {
+        "id": "T403",
+        "name": "Kiểm duyệt tổng mức và hoàn thiện thuyết minh",
+        "weight": 20,
+        "isCompleted": false
+      }
+    ],
+    "comments": [],
+    "loaiBanGhi": "CONG_VIEC",
+    "soNgayThucHien": 10,
+    "soNgayDuyetTP": 1,
+    "soNgayDuyetBLD": 1
+  },
+  {
+    "id": "P005",
+    "projectId": "2026.05",
+    "tenDuAn": "Trường Liên cấp Quốc tế Maple Leaf (Cơ sở 2)",
+    "quanLyId": "S002",
+    "thucHienId": "S008",
+    "thucHienIds": [
+      "S008",
+      "S006"
+    ],
+    "hangMuc": "Báo giá phát sinh",
+    "moTa": "Khái toán và báo giá bổ sung hạng mục bể bơi bốn mùa có mái che kính di động ngoài kế hoạch thiết kế ban đầu.",
+    "chuDauTu": "Hệ thống Giáo dục Quốc tế Maple Leaf",
+    "diaChi": "Khu đô thị mới Nam Sài Gòn, Quận 7, TP. Hồ Chí Minh",
+    "hinhThucDauThau": "Chỉ định thầu",
+    "tinhTrangDuAn": "Đang triển khai",
+    "ngayBatDau": "2026-06-18",
+    "soNgayDuKien": 7,
+    "ngayHoanThanhDuKienGoc": "2026-06-25",
+    "ngayHoanThanhDuKienHienTai": "2026-06-28",
+    "tienDoBoPhan": 80,
+    "tienDoPhong": 75,
+    "trangThai": "DANG_THUC_HIEN",
+    "createdBy": "S002",
+    "delayLogs": [
+      {
+        "id": "L002",
+        "ngayThayDoi": "2026-06-22",
+        "ngayCu": "2026-06-25",
+        "ngayMoi": "2026-06-28",
+        "soNgayLech": 3,
+        "lyDo": "Hồ sơ pháp lý của mái che kính di động cần thẩm định kỹ thuật từ nhà cung cấp Đức, thời gian phản hồi chậm hơn dự kiến.",
+        "nguoiDuyet": "Phó phòng Trần Thị Mai"
+      }
+    ],
+    "tasks": [
+      {
+        "id": "T501",
+        "name": "Khái toán mái che kính di động của bể bơi",
+        "weight": 50,
+        "isCompleted": true,
+        "completedAt": "2026-06-21"
+      },
+      {
+        "id": "T502",
+        "name": "Thẩm định kỹ thuật mốc thầu từ nhà cung cấp Đức",
+        "weight": 30,
+        "isCompleted": true,
+        "completedAt": "2026-06-25"
+      },
+      {
+        "id": "T503",
+        "name": "Hoàn thiện hồ sơ báo giá bổ sung thầu",
+        "weight": 20,
+        "isCompleted": false
+      }
+    ],
+    "comments": [],
+    "loaiBanGhi": "CONG_VIEC",
+    "soNgayThucHien": 5,
+    "soNgayDuyetTP": 1,
+    "soNgayDuyetBLD": 1
+  },
+  {
+    "id": "P006",
+    "projectId": "2026.06",
+    "tenDuAn": "Tòa nhà Văn phòng Petro Tower Vũng Tàu",
+    "quanLyId": "S001",
+    "thucHienId": "S007",
+    "thucHienIds": [
+      "S007"
+    ],
+    "hangMuc": "Lập hồ sơ thầu",
+    "moTa": "Tổng hợp hoàn thiện Hồ sơ Đề xuất Kỹ thuật và Hồ sơ Tài chính dự án tòa tháp văn phòng hạng A đạt chứng chỉ LEED Gold.",
+    "chuDauTu": "Tổng Công ty Thăm dò Khai thác Dầu khí (PVEP)",
+    "diaChi": "24 Đường 3/2, Phường 8, Thành phố Vũng Tàu",
+    "hinhThucDauThau": "Đấu thầu cạnh tranh",
+    "tinhTrangDuAn": "Rớt thầu",
+    "ngayBatDau": "2026-06-05",
+    "soNgayDuKien": 14,
+    "ngayHoanThanhDuKienGoc": "2026-06-19",
+    "ngayHoanThanhDuKienHienTai": "2026-06-24",
+    "tienDoBoPhan": 100,
+    "tienDoPhong": 100,
+    "ngayHoanThanhThucTe": "2026-06-25",
+    "trangThai": "HOAN_THANH_TRE_HAN",
+    "nguyenNhanTreHan": "Nhân sự thực hiện Đỗ Thùy Linh gặp sự cố sức khỏe đột xuất vào ngày nộp thầu 24/06, bàn giao chậm tài liệu tài chính gốc cho Trưởng phòng kiểm duyệt.",
+    "createdBy": "S001",
+    "delayLogs": [
+      {
+        "id": "L003",
+        "ngayThayDoi": "2026-06-15",
+        "ngayCu": "2026-06-19",
+        "ngayMoi": "2026-06-24",
+        "soNgayLech": 5,
+        "lyDo": "Yêu cầu làm rõ của Chủ đầu tư về biện pháp thi công tầng hầm sâu cạnh biển phức tạp hơn tính toán lý thuyết.",
+        "nguoiDuyet": "Trưởng phòng Nguyễn Minh Đức"
+      }
+    ],
+    "tasks": [
+      {
+        "id": "T601",
+        "name": "Tổng hợp Hồ sơ Đề xuất Kỹ thuật LEED Gold",
+        "weight": 40,
+        "isCompleted": true,
+        "completedAt": "2026-06-12"
+      },
+      {
+        "id": "T602",
+        "name": "Xây dựng Hồ sơ Tài chính chi tiết",
+        "weight": 40,
+        "isCompleted": true,
+        "completedAt": "2026-06-20"
+      },
+      {
+        "id": "T603",
+        "name": "Trưởng phòng kiểm duyệt và nộp thầu",
+        "weight": 20,
+        "isCompleted": true,
+        "completedAt": "2026-06-25"
+      }
+    ],
+    "comments": [
+      {
+        "id": "C601",
+        "userId": "S007",
+        "userName": "Đỗ Thùy Linh",
+        "text": "Hồ sơ đã được đóng gói và bàn giao đầy đủ sáng nay.",
+        "timestamp": "2026-06-25 09:00"
+      }
+    ],
+    "loaiBanGhi": "CONG_VIEC",
+    "soNgayThucHien": 12,
+    "soNgayDuyetTP": 1,
+    "soNgayDuyetBLD": 1
+  },
+  {
+    "id": "P1783480961605",
+    "loaiBanGhi": "DU_AN",
+    "projectId": "2026.07",
+    "tenDuAn": "àdsdfsdfs",
+    "quanLyId": "S002",
+    "thucHienId": "S003",
+    "thucHienIds": [
+      "S003",
+      "S004",
+      "S006"
+    ],
+    "hangMuc": "Báo giá chi tiết",
+    "moTa": "",
+    "ngayBatDau": "2026-07-08",
+    "soNgayDuKien": 14,
+    "ngayHoanThanhDuKienGoc": "2026-07-22",
+    "ngayHoanThanhDuKienHienTai": "2026-07-22",
+    "tienDoBoPhan": 0,
+    "tienDoPhong": 0,
+    "delayLogs": [],
+    "trangThai": "DANG_THUC_HIEN",
+    "tasks": [],
+    "oneDriveLink": "",
+    "kpi": 100,
+    "chuDauTu": "sdfsfsdf",
+    "diaChi": "sdfsfsdfsf",
+    "hinhThucDauThau": "Đấu thầu cạnh tranh",
+    "tinhTrangDuAn": "Đang triển khai",
+    "quocTich": "Đài Loan",
+    "hinhThucXayDung": "Xây mới",
+    "giaiDoanDuAn": "Thiết kế & Báo giá",
+    "dienTichDat": 15000,
+    "mucUuTien": 0,
+    "hoSoPhatThau": "CĐT phát thầu",
+    "soNgayThucHien": 12,
+    "soNgayDuyetTP": 1,
+    "soNgayDuyetBLD": 1
+  }
+]
