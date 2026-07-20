@@ -27,7 +27,10 @@
     "win": {
       "target": "portable"
     },
-    "asar": false
+    "asar": false,
+    "extraMetadata": {
+      "type": "commonjs"
+    }
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
