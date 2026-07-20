@@ -1,9 +1,11 @@
 import type { NextConfig } from "next";
 
-// output: 'standalone' — dùng chung cho cả deploy Vercel lẫn đóng gói desktop (Electron
-// spawn .next/standalone/server.js làm server nội bộ thay cho server Express cũ).
+// output: 'standalone' chỉ cần cho bản đóng gói desktop (Electron spawn
+// .next/standalone/server.js làm server nội bộ). Trên Vercel (biến env VERCEL
+// tự có sẵn lúc build) KHÔNG được bật — Vercel dùng định dạng build/routing
+// riêng của họ, bật standalone ở đây làm Vercel trả 404 cho mọi route.
 const nextConfig: NextConfig = {
-  output: "standalone",
+  ...(process.env.VERCEL ? {} : { output: "standalone" }),
 };
 
 export default nextConfig;
