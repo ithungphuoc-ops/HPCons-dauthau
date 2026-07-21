@@ -711,6 +711,9 @@ export default function App() {
 
   // Trạng thái đăng nhập Firebase Auth (chìa khóa để đọc/ghi Firestore sau khi siết Rules)
   const [fbAuthed, setFbAuthed] = useState<boolean>(false);
+  // Lỗi cầu nối SSO (khác 401) — hiện thông báo + nút thử lại thay vì treo màn hình mãi.
+  const [ssoError, setSsoError] = useState<string | null>(null);
+  const [ssoRetryTick, setSsoRetryTick] = useState(0);
 
   useEffect(() => watchAuth(u => {
     setFbAuthed(!!u);
@@ -728,6 +731,7 @@ export default function App() {
   useEffect(() => {
     if (fbAuthed) return;
     let cancelled = false;
+    setSsoError(null);
     (async () => {
       try {
         const res = await fetch('/api/auth/hpcore-session');
@@ -738,19 +742,21 @@ export default function App() {
         }
         if (!res.ok) {
           // Lỗi khác (vd. server chưa cấu hình đủ biến môi trường) — không redirect vòng lặp,
-          // chỉ log để còn chẩn đoán được.
+          // hiện thông báo + nút thử lại thay vì treo màn hình mãi.
           const body = await res.json().catch(() => ({}));
           console.error('[SSO] Lỗi cấp Custom Token:', res.status, body);
+          if (!cancelled) setSsoError(body?.error || `Lỗi ${res.status}`);
           return;
         }
         const { token } = await res.json();
         if (!cancelled) await signInWithHpcoreToken(token);
-      } catch (e) {
+      } catch (e: any) {
         console.error('[SSO] Lỗi đăng nhập qua App Tổng:', e);
+        if (!cancelled) setSsoError(e?.message || 'Lỗi kết nối');
       }
     })();
     return () => { cancelled = true; };
-  }, [fbAuthed]);
+  }, [fbAuthed, ssoRetryTick]);
 
   useEffect(() => {
     if (!fbAuthed) return; // Rules yêu cầu đăng nhập — chỉ lắng nghe dữ liệu sau khi có phiên Firebase
@@ -2277,24 +2283,40 @@ export default function App() {
                 <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-brand-warning via-brand-warning to-brand-accent rounded-t-2xl" />
 
                 <div className="text-center space-y-2">
-                  <div className="mx-auto w-12 h-12 bg-brand-warning/10 text-brand-warning rounded-full flex items-center justify-center border border-brand-warning/20 animate-pulse">
+                  <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center border ${ssoError ? 'bg-brand-danger/10 text-brand-danger border-brand-danger/20' : 'bg-brand-warning/10 text-brand-warning border-brand-warning/20 animate-pulse'}`}>
                     <Lock className="w-5 h-5" />
                   </div>
                   <h2 className="text-lg font-black text-white uppercase tracking-wider">
-                    Đang Xác Thực...
+                    {ssoError ? 'Không Thể Xác Thực' : 'Đang Xác Thực...'}
                   </h2>
                   <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wide">
                     Phòng Đấu Thầu - HP CONS BPM
                   </p>
                 </div>
 
-                <div className="relative border-t border-slate-800 pt-4">
-                  <p className="text-[10px] text-slate-500 text-center font-medium leading-relaxed">
-                    Đang kiểm tra phiên đăng nhập từ App Tổng (hpcore.vn)...
-                    <br />Nếu không tự chuyển trang, Sếp vui lòng đăng nhập tại{' '}
-                    <a href="https://account.hpcore.vn/login" className="text-brand-warning underline">account.hpcore.vn</a>.
-                  </p>
-                </div>
+                {ssoError ? (
+                  <>
+                    <div className="bg-brand-danger/10 border border-brand-danger/20 rounded-xl p-3 text-xs text-brand-danger font-bold flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-brand-danger shrink-0" />
+                      <span>{ssoError}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSsoRetryTick(t => t + 1)}
+                      className="w-full py-3 bg-brand-warning hover:bg-brand-warning/85 text-black font-black rounded-xl text-xs uppercase tracking-widest transition-all shadow-md hover:shadow-lg cursor-pointer"
+                    >
+                      Thử lại
+                    </button>
+                  </>
+                ) : (
+                  <div className="relative border-t border-slate-800 pt-4">
+                    <p className="text-[10px] text-slate-500 text-center font-medium leading-relaxed">
+                      Đang kiểm tra phiên đăng nhập từ App Tổng (hpcore.vn)...
+                      <br />Nếu không tự chuyển trang, Sếp vui lòng đăng nhập tại{' '}
+                      <a href="https://account.hpcore.vn/login" className="text-brand-warning underline">account.hpcore.vn</a>.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 

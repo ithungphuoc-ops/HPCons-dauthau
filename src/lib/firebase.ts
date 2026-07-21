@@ -4,15 +4,16 @@ import type { Unsubscribe } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 
-// Cấu hình Firebase của dự án (web config — không phải bí mật, an toàn khi nằm trong code)
+// Cấu hình Firebase của dự án (web config — không phải bí mật, an toàn khi nằm trong code).
+// Project "hpcons-dauthau" — do Sếp tự tạo và quản lý (project cũ "app-bao-cao-tien-do-du-an"
+// không thuộc quyền quản lý của Sếp nên đã chuyển hẳn sang project này).
 const firebaseConfig = {
-  apiKey: 'AIzaSyAS-TMwQ_45Nx226sFOSDrt0fuq7-q1mbc',
-  authDomain: 'app-bao-cao-tien-do-du-an.firebaseapp.com',
-  projectId: 'app-bao-cao-tien-do-du-an',
-  storageBucket: 'app-bao-cao-tien-do-du-an.firebasestorage.app',
-  messagingSenderId: '204087218028',
-  appId: '1:204087218028:web:0fb4d97143886f4401ad49',
-  measurementId: 'G-LFD4H9YK3W',
+  apiKey: 'AIzaSyDqvfIwBIC1Cnm5DNVbgJk2apn-SE1pLLg',
+  authDomain: 'hpcons-dauthau.firebaseapp.com',
+  projectId: 'hpcons-dauthau',
+  storageBucket: 'hpcons-dauthau.firebasestorage.app',
+  messagingSenderId: '232555333681',
+  appId: '1:232555333681:web:a91c5fcd137035c50c6d10',
 };
 
 export const fbApp = initializeApp(firebaseConfig);
