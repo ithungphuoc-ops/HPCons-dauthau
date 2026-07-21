@@ -718,6 +718,9 @@ export default function App() {
   // Lỗi cầu nối SSO (khác 401) — hiện thông báo + nút thử lại thay vì treo màn hình mãi.
   const [ssoError, setSsoError] = useState<string | null>(null);
   const [ssoRetryTick, setSsoRetryTick] = useState(0);
+  // Đã đăng nhập App Tổng hợp lệ NHƯNG chưa được cấp quyền dùng app Đấu Thầu
+  // (app_permissions/{uid}.dauthau chưa gán) — chặn hẳn, không tự cấp STAFF mặc định nữa.
+  const [ssoUnauthorized, setSsoUnauthorized] = useState(false);
 
   useEffect(() => watchAuth(u => {
     setFbAuthed(!!u);
@@ -733,15 +736,27 @@ export default function App() {
   // đăng nhập. Không có phiên hpcore hợp lệ (cookie thiếu/hết hạn) → rời sang trang
   // đăng nhập App Tổng, quay lại đúng URL hiện tại sau khi đăng nhập xong.
   useEffect(() => {
-    if (fbAuthed) return;
+    // CỐ Ý không "if (fbAuthed) return" — phiên Firebase cũ (đăng nhập từ trước khi bị thu hồi
+    // quyền, hoặc cache currentUser trong localStorage) vẫn phải được đối chiếu lại với quyền
+    // trung tâm MỖI LẦN mở app, không thì người đã bị gỡ quyền vẫn lọt vào bằng phiên cũ.
     let cancelled = false;
     setSsoError(null);
+    setSsoUnauthorized(false);
     (async () => {
       try {
         const res = await fetch('/api/auth/hpcore-session');
         if (res.status === 401) {
           // Không có phiên hpcore hợp lệ (thiếu/hết hạn cookie) → sang trang đăng nhập App Tổng.
           window.location.href = `https://account.hpcore.vn/login?next=${encodeURIComponent(window.location.href)}`;
+          return;
+        }
+        if (res.status === 403) {
+          // Đăng nhập App Tổng hợp lệ nhưng chưa/không còn được cấp quyền dùng app này —
+          // đăng xuất khỏi Firebase + xóa cache hiển thị cũ, dừng hẳn tại đây.
+          localStorage.removeItem('erp_current_user');
+          if (!cancelled) setCurrentUser(null);
+          await signOutFb().catch(() => {});
+          if (!cancelled) setSsoUnauthorized(true);
           return;
         }
         if (!res.ok) {
@@ -760,7 +775,9 @@ export default function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, [fbAuthed, ssoRetryTick]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cố ý KHÔNG phụ thuộc fbAuthed
+    // (xem comment đầu effect) — chỉ chạy lại khi mount lần đầu hoặc bấm "Thử lại".
+  }, [ssoRetryTick]);
 
   useEffect(() => {
     if (!fbAuthed) return; // Rules yêu cầu đăng nhập — chỉ lắng nghe dữ liệu sau khi có phiên Firebase
@@ -2287,18 +2304,36 @@ export default function App() {
                 <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-brand-warning via-brand-warning to-brand-accent rounded-t-2xl" />
 
                 <div className="text-center space-y-2">
-                  <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center border ${ssoError ? 'bg-brand-danger/10 text-brand-danger border-brand-danger/20' : 'bg-brand-warning/10 text-brand-warning border-brand-warning/20 animate-pulse'}`}>
+                  <div className={`mx-auto w-12 h-12 rounded-full flex items-center justify-center border ${ssoUnauthorized ? 'bg-brand-warning/10 text-brand-warning border-brand-warning/20' : ssoError ? 'bg-brand-danger/10 text-brand-danger border-brand-danger/20' : 'bg-brand-warning/10 text-brand-warning border-brand-warning/20 animate-pulse'}`}>
                     <Lock className="w-5 h-5" />
                   </div>
                   <h2 className="text-lg font-black text-white uppercase tracking-wider">
-                    {ssoError ? 'Không Thể Xác Thực' : 'Đang Xác Thực...'}
+                    {ssoUnauthorized ? 'Không Có Quyền Truy Cập' : ssoError ? 'Không Thể Xác Thực' : 'Đang Xác Thực...'}
                   </h2>
                   <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wide">
                     Phòng Đấu Thầu - HP CONS BPM
                   </p>
                 </div>
 
-                {ssoError ? (
+                {ssoUnauthorized ? (
+                  <>
+                    <div className="bg-brand-warning/10 border border-brand-warning/20 rounded-xl p-3 text-xs text-brand-warning font-bold flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-brand-warning shrink-0" />
+                      <span>Bạn không thuộc quyền xem trang này.</span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 text-center font-medium leading-relaxed">
+                      Liên hệ Ban Giám đốc / Trưởng phòng để được cấp quyền tại{' '}
+                      <a href="https://account.hpcore.vn/dashboard/apps/dauthau" className="text-brand-warning underline">account.hpcore.vn</a>.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => { window.location.href = 'https://account.hpcore.vn'; }}
+                      className="w-full py-3 bg-brand-warning hover:bg-brand-warning/85 text-black font-black rounded-xl text-xs uppercase tracking-widest transition-all shadow-md hover:shadow-lg cursor-pointer"
+                    >
+                      Quay Lại App Tổng
+                    </button>
+                  </>
+                ) : ssoError ? (
                   <>
                     <div className="bg-brand-danger/10 border border-brand-danger/20 rounded-xl p-3 text-xs text-brand-danger font-bold flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-brand-danger shrink-0" />

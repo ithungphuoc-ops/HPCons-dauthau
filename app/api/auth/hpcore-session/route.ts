@@ -37,6 +37,14 @@ export async function GET(req: NextRequest) {
     const adminAuth = getAdminAuth();
     const adminDb = getAdminDb();
 
+    const centralRole = (await fetchCentralRole(identity.uid)) as Role | null;
+    // Chưa được Sếp phân quyền ở "Quản lý ứng dụng" (account.hpcore.vn) → KHÔNG tự cấp
+    // quyền STAFF mặc định nữa, từ chối thẳng (không tạo Auth user/staff doc/token).
+    if (!centralRole || !(centralRole in CHUC_VU_BY_ROLE)) {
+      return NextResponse.json({ error: "NOT_AUTHORIZED" }, { status: 403 });
+    }
+    const role: Role = centralRole;
+
     try {
       await adminAuth.updateUser(identity.uid, { email: identity.email, emailVerified: true });
     } catch {
@@ -44,9 +52,6 @@ export async function GET(req: NextRequest) {
         .createUser({ uid: identity.uid, email: identity.email, emailVerified: true })
         .catch(() => {});
     }
-
-    const centralRole = (await fetchCentralRole(identity.uid)) as Role | null;
-    const role: Role = centralRole && centralRole in CHUC_VU_BY_ROLE ? centralRole : "STAFF";
 
     const staffRef = adminDb.collection("staff").doc(identity.uid);
     const existing = await staffRef.get();
