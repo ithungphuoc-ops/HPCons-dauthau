@@ -721,6 +721,10 @@ export default function App() {
   // Đã đăng nhập App Tổng hợp lệ NHƯNG chưa được cấp quyền dùng app Đấu Thầu
   // (app_permissions/{uid}.dauthau chưa gán) — chặn hẳn, không tự cấp STAFF mặc định nữa.
   const [ssoUnauthorized, setSsoUnauthorized] = useState(false);
+  // Đã đối chiếu quyền với App Tổng THÀNH CÔNG lần này chưa — false thì luôn hiện màn
+  // xác thực/chặn, KHÔNG render app chính bằng currentUser cache cũ (tránh lọt hình 1-2s
+  // trước khi bị khóa khi quyền đã bị thu hồi).
+  const [sessionVerified, setSessionVerified] = useState(false);
 
   useEffect(() => watchAuth(u => {
     setFbAuthed(!!u);
@@ -769,6 +773,7 @@ export default function App() {
         }
         const { token } = await res.json();
         if (!cancelled) await signInWithHpcoreToken(token);
+        if (!cancelled) setSessionVerified(true);
       } catch (e: any) {
         console.error('[SSO] Lỗi đăng nhập qua App Tổng:', e);
         if (!cancelled) setSsoError(e?.message || 'Lỗi kết nối');
@@ -2230,8 +2235,9 @@ export default function App() {
     }
   };
 
-  // If not logged in, render the beautiful, secured Webform Login
-  if (!currentUser) {
+  // If not logged in — hoặc CHƯA đối chiếu xong quyền với App Tổng lần này (tránh lọt hình
+  // app chính bằng currentUser cache cũ trước khi kịp bị khóa) — render màn xác thực/chặn.
+  if (!currentUser || !sessionVerified) {
     return (
       <div className="min-h-screen bg-dark-bg text-slate-100 flex flex-col justify-between relative overflow-hidden font-sans">
         {/* Ambient radial blur backdrops */}
