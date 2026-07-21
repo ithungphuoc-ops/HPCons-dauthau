@@ -2663,7 +2663,7 @@ export default function App() {
       {/* Main Enterprise Header */}
       <header className="bg-white text-slate-800 border-b border-slate-200 dark:bg-dark-card dark:text-white dark:border-slate-800 shrink-0 shadow-sm dark:shadow-md">
         {/* V1.1 §C: Header desktop cao 60px (chỉ chức năng phụ); mobile giữ 2 hàng đã tinh chỉnh */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 md:py-0 md:h-[60px] md:flex md:items-center">
+        <div className="px-4 sm:px-6 lg:px-8 py-3 md:py-0 md:h-[60px] md:flex md:items-center">
           <div className="flex items-center justify-between gap-3 w-full">
             {/* Logo mobile: giữ hình, bỏ chữ (chị chốt 14/07) — cao 104px = đúng mép trên/dưới của 2 hàng công tắc (44 + 6 + 54) */}
             <div className="md:hidden flex items-center shrink-0">
@@ -2693,7 +2693,7 @@ export default function App() {
                   setActiveTab('PROJECTS');
                   setShowForm(false);
                 }}
-                className="hidden md:block md:w-52 lg:w-64 shrink-0"
+                className="hidden lg:block lg:w-48 xl:w-64 shrink-0"
               >
                 <div className="relative">
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
