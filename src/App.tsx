@@ -15,6 +15,7 @@ import KanbanBoard, { KANBAN_STEPS } from './components/KanbanBoard';
 import MyTasksPanel, { DEFAULT_PROJECT_TASKS, taskDeadlineISO, todayISO } from './components/MyTasksPanel';
 import StaffTaskResultPanel from './components/StaffTaskResultPanel';
 import SubtaskGantt, { DEFAULT_TASK_DAYS } from './components/SubtaskGantt';
+import { AppLauncher } from './components/AppLauncher';
 import { Badge, TimelineProgress, EmptyState } from './components/ui';
 import { updateTaskInTree, calculateProjectProgress, getTaskProgress } from './utils/taskTree';
 import { fmtDateVN, fmtDateTimeVN } from './utils/dateVN';
@@ -449,7 +450,10 @@ export default function App() {
     localStorage.setItem('ui_sidebar_collapsed', v ? '0' : '1');
     return !v;
   });
-  
+
+  // Lưới ứng dụng HPCons App Tổng — mở khi bấm logo ở đầu Sidebar (giống pkd_crm-next/Task Manager)
+  const [appLauncherOpen, setAppLauncherOpen] = useState(false);
+
   // Activity logging state & helper
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => {
     const saved = localStorage.getItem('erp_activity_logs');
@@ -2354,32 +2358,20 @@ export default function App() {
         {/* Left Sidebar / Thanh tác vụ bên trái */}
         <aside className={`w-full ${sidebarCollapsed ? 'md:w-18 sidebar-collapsed' : 'md:w-[260px]'} bg-nav-base text-slate-100 border-r border-white/10 p-4 shrink-0 hidden md:flex flex-col justify-between transition-all duration-200`} id="app-sidebar">
           <div className="space-y-6">
-            {/* Nút thu/mở sidebar (chỉ md+; mobile giữ dải nav ngang) */}
+            {/* Logo + tên app — bấm để mở lưới ứng dụng HPCons App Tổng (giống pkd_crm-next/Task Manager) */}
             <button
               type="button"
-              onClick={toggleSidebar}
-              title={sidebarCollapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng'}
-              aria-label={sidebarCollapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng'}
-              className="hidden md:flex items-center justify-center w-full py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-all"
-              id="sidebar-toggle"
+              onClick={() => setAppLauncherOpen(true)}
+              title="Mở danh sách ứng dụng"
+              className="hidden md:flex w-full items-center gap-2.5 rounded-lg border-b border-white/10 pb-4 text-left transition-colors hover:bg-white/10"
+              id="sidebar-brand"
             >
-              {sidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+              <HpConsLogo iconSize="w-9 h-9" className="shrink-0" />
+              <span className="min-w-0 leading-tight">
+                <span className="block truncate text-sm font-bold text-white">HPCons</span>
+                <span className="block truncate text-xs text-slate-400">Construction</span>
+              </span>
             </button>
-
-            {/* Brand Logo & System Name inside Sidebar */}
-            <div className="hidden md:flex flex-col items-center text-center gap-4 bg-black/15 p-4 rounded-2xl border border-white/10 relative" id="sidebar-brand">
-              <div className="absolute top-3 right-3">
-                <span className="bg-brand-warning/20 text-brand-warning dark:text-brand-warning text-[8px] px-1.5 py-0.5 rounded font-black border border-brand-warning/30 uppercase tracking-wider">
-                  ERP v1.4
-                </span>
-              </div>
-              <HpConsLogo className="h-10 shrink-0" light={true} />
-              <div className="mt-1">
-                <h1 className="text-xs font-black uppercase tracking-widest text-slate-200 leading-snug">
-                  Phòng Đấu Thầu
-                </h1>
-              </div>
-            </div>
 
             <div className="hidden md:block" id="sidebar-tasklabel">
               <span className="text-[10px] uppercase font-black tracking-wider text-slate-300">
@@ -2530,17 +2522,43 @@ export default function App() {
             </nav>
           </div>
 
-          {/* Quick Stats or Footer in sidebar for Desktop */}
-          <div className="hidden md:block border-t border-white/10 pt-4 mt-6 space-y-3" id="sidebar-footer">
-            <div className="bg-black/15 p-3 rounded-xl border border-white/10">
-              <div className="text-[10px] text-slate-300 uppercase font-black tracking-wider mb-1">Dự án thầu</div>
-              <div className="text-xl font-black text-brand-primary">{filteredProjects.length} <span className="text-xs text-slate-300 font-medium">hồ sơ</span></div>
+          {/* Footer: thống kê nhanh + nút thu/mở sidebar (dồn xuống cuối trang) */}
+          <div className="space-y-3">
+            <div className="hidden md:block border-t border-white/10 pt-4 space-y-3" id="sidebar-footer">
+              <div className="bg-black/15 p-3 rounded-xl border border-white/10">
+                <div className="text-[10px] text-slate-300 uppercase font-black tracking-wider mb-1">Dự án thầu</div>
+                <div className="text-xl font-black text-brand-primary">{filteredProjects.length} <span className="text-xs text-slate-300 font-medium">hồ sơ</span></div>
+              </div>
+              <div className="flex items-center justify-center gap-1.5 text-[9px] text-slate-400 font-medium">
+                <span>HP-CONS ERP • 2026</span>
+                <span className="bg-brand-warning/20 text-brand-warning dark:text-brand-warning px-1.5 py-0.5 rounded font-black border border-brand-warning/30 uppercase tracking-wider">
+                  v1.4
+                </span>
+              </div>
             </div>
-            <div className="text-[9px] text-slate-400 text-center font-medium">
-              HP-CONS ERP • 2026
-            </div>
+
+            {/* Nút thu/mở sidebar (chỉ md+; mobile giữ dải nav ngang) */}
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              title={sidebarCollapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng'}
+              aria-label={sidebarCollapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng'}
+              className="hidden md:flex items-center justify-center w-full py-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-all border-t border-white/10 pt-3"
+              id="sidebar-toggle"
+            >
+              {sidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            </button>
           </div>
         </aside>
+
+        {appLauncherOpen && (
+          <AppLauncher
+            displayName={currentUser?.name}
+            email={currentUser?.email}
+            role={currentUser?.role}
+            onClose={() => setAppLauncherOpen(false)}
+          />
+        )}
 
         {/* ===== Bottom Navigation mobile <768px (06-mobile/layout.md + 08-navigation/bottom-navigation.md):
               tối đa 5 mục = 4 tab chính + "Thêm" (bottom sheet chứa tab còn lại); vùng chạm ≥44px (luật 10) ===== */}

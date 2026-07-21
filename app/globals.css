@@ -146,18 +146,21 @@
    Kích hoạt bằng class .sidebar-collapsed trên #app-sidebar (chỉ md+; mobile giữ dải nav ngang).
    Chữ nút chuyển sang dạng sr-only (giấu mắt thường nhưng GIỮ tên cho screen reader — a11y). */
 @media (min-width: 768px) {
-  #app-sidebar.sidebar-collapsed #sidebar-brand,
   #app-sidebar.sidebar-collapsed #sidebar-tasklabel,
   #app-sidebar.sidebar-collapsed #sidebar-footer {
     display: none;
   }
-  #app-sidebar.sidebar-collapsed #sidebar-nav button {
+  /* #sidebar-brand (logo bấm mở lưới ứng dụng) GIỮ hiển thị khi thu gọn — chỉ còn icon,
+     căn giữa, chữ chuyển sr-only — để luôn bấm mở được lưới ứng dụng dù đang thu gọn. */
+  #app-sidebar.sidebar-collapsed #sidebar-nav button,
+  #app-sidebar.sidebar-collapsed #sidebar-brand {
     justify-content: center;
     padding-left: 0.5rem;
     padding-right: 0.5rem;
     gap: 0;
   }
-  #app-sidebar.sidebar-collapsed #sidebar-nav button > span {
+  #app-sidebar.sidebar-collapsed #sidebar-nav button > span,
+  #app-sidebar.sidebar-collapsed #sidebar-brand > span {
     position: absolute;
     width: 1px;
     height: 1px;
