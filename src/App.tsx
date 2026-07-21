@@ -731,8 +731,16 @@ export default function App() {
     (async () => {
       try {
         const res = await fetch('/api/auth/hpcore-session');
-        if (!res.ok) {
+        if (res.status === 401) {
+          // Không có phiên hpcore hợp lệ (thiếu/hết hạn cookie) → sang trang đăng nhập App Tổng.
           window.location.href = `https://account.hpcore.vn/login?next=${encodeURIComponent(window.location.href)}`;
+          return;
+        }
+        if (!res.ok) {
+          // Lỗi khác (vd. server chưa cấu hình đủ biến môi trường) — không redirect vòng lặp,
+          // chỉ log để còn chẩn đoán được.
+          const body = await res.json().catch(() => ({}));
+          console.error('[SSO] Lỗi cấp Custom Token:', res.status, body);
           return;
         }
         const { token } = await res.json();
