@@ -148,12 +148,12 @@ export default function StatsDashboard({
         variants={containerVariants}
         initial="hidden"
         animate="show"
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5"
+        className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5"
       >
         {/* CARD 1: Nhiệm vụ cần làm */}
         <motion.div 
           variants={itemVariants}
-          className="relative overflow-hidden bg-gradient-to-br from-brand-accent-500 via-brand-accent-600 to-brand-accent-800 text-white p-5 rounded-2xl border border-brand-accent-400/30 shadow-lg group hover:scale-[1.02] transition-transform duration-300"
+          className="relative overflow-hidden bg-gradient-to-br from-brand-accent-500 via-brand-accent-600 to-brand-accent-800 text-white p-5 rounded-xl border border-brand-accent-400/30 shadow-lg group hover:scale-[1.02] transition-transform duration-300"
           id="staff-card-pending-tasks"
         >
           <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-white/10 rounded-full blur-xl group-hover:scale-125 transition-transform" />
@@ -185,7 +185,7 @@ export default function StatsDashboard({
         {/* CARD 2: Tiến độ hoàn thành */}
         <motion.div 
           variants={itemVariants}
-          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
+          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
           id="staff-card-completion"
         >
           <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-brand-success/5 rounded-full blur-xl group-hover:scale-125 transition-transform" />
@@ -226,7 +226,7 @@ export default function StatsDashboard({
         {/* CARD 3: KPI Cá nhân */}
         <motion.div 
           variants={itemVariants}
-          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
+          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
           id="staff-card-kpi"
         >
           <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-brand-accent/5 rounded-full blur-xl group-hover:scale-125 transition-transform" />
@@ -259,7 +259,7 @@ export default function StatsDashboard({
         {/* CARD 4: Dự án liên quan */}
         <motion.div 
           variants={itemVariants}
-          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
+          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
           id="staff-card-projects"
         >
           <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-brand-warning/5 rounded-full blur-xl group-hover:scale-125 transition-transform" />
@@ -306,12 +306,12 @@ export default function StatsDashboard({
         variants={containerVariants}
         initial="hidden"
         animate="show"
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5"
+        className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5"
       >
         {/* CARD 1: Tổng số gói thầu */}
         <motion.div 
           variants={itemVariants}
-          className="relative overflow-hidden bg-gradient-to-br from-brand-accent-500 via-brand-accent-600 to-brand-accent-800 text-white p-5 rounded-2xl border border-brand-accent-400/30 shadow-lg group hover:scale-[1.02] transition-transform duration-300"
+          className="relative overflow-hidden bg-gradient-to-br from-brand-accent-500 via-brand-accent-600 to-brand-accent-800 text-white p-5 rounded-xl border border-brand-accent-400/30 shadow-lg group hover:scale-[1.02] transition-transform duration-300"
           id="stat-card-total-projects"
         >
           <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-white/10 rounded-full blur-xl group-hover:scale-125 transition-transform" />
@@ -343,7 +343,7 @@ export default function StatsDashboard({
         {/* CARD 2: Số dự án đã thực hiện */}
         <motion.div 
           variants={itemVariants}
-          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
+          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
           id="stat-card-completed-projects"
         >
           <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-brand-success/5 rounded-full blur-xl group-hover:scale-125 transition-transform" />
@@ -384,7 +384,7 @@ export default function StatsDashboard({
         {/* CARD 3: Số công việc đã thực hiện */}
         <motion.div 
           variants={itemVariants}
-          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
+          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
           id="stat-card-completed-tasks"
         >
           <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-brand-accent/5 rounded-full blur-xl group-hover:scale-125 transition-transform" />
@@ -425,7 +425,7 @@ export default function StatsDashboard({
         {/* CARD 4: KPI Trung bình đội ngũ */}
         <motion.div 
           variants={itemVariants}
-          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-2xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
+          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
           id="stat-card-avg-kpi"
         >
           <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-brand-warning/5 rounded-full blur-xl group-hover:scale-125 transition-transform" />
@@ -462,7 +462,7 @@ export default function StatsDashboard({
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="bg-white dark:bg-dark-card p-6 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-xs"
+        className="bg-white dark:bg-dark-card p-6 rounded-xl border border-slate-100 dark:border-slate-800 shadow-xs"
       >
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-4 mb-5">
           <div>
@@ -501,9 +501,9 @@ export default function StatsDashboard({
           const offset4 = -(strokePending + strokeOnTime + strokeLate);
 
           return (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-center">
               {/* Left Column: Visual Donut */}
-              <div className="lg:col-span-5 flex flex-col items-center justify-center p-4">
+              <div className="xl:col-span-5 flex flex-col items-center justify-center p-4">
                 <div className="relative w-48 h-48 flex items-center justify-center shrink-0">
                   <svg className="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
                     <circle
@@ -577,7 +577,7 @@ export default function StatsDashboard({
               </div>
 
               {/* Right Column: Dynamic interactive stats breakdown */}
-              <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="xl:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {/* 1. Pending */}
                 <div className="bg-slate-50/50 dark:bg-dark-card/30 p-4 rounded-xl border border-slate-100/75 dark:border-slate-800/60 flex items-center gap-3">
                   <div className="w-3.5 h-3.5 rounded-full bg-brand-accent shrink-0 shadow-xs" />

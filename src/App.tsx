@@ -2218,7 +2218,7 @@ export default function App() {
         <div className="absolute bottom-[-15%] right-[-10%] w-[60%] h-[60%] bg-brand-warning/10 rounded-full blur-[150px] pointer-events-none" />
 
         {/* Global tiny grid pattern */}
-        <div className="absolute inset-0 bg-[radial-gradient(#ffffff05_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(color-mix(in_srgb,white_2%,transparent)_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none" />
 
         {/* Header containing HP CONS Logo with empty logo slot */}
         <header className="p-6 shrink-0 z-20">
@@ -2237,10 +2237,10 @@ export default function App() {
 
         {/* Bố cục 2 cột: Bảng thương hiệu vs Biểu mẫu đăng nhập */}
         <main className="flex-grow flex items-center justify-center p-6 z-10">
-          <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
-            
+          <div className="w-full max-w-5xl grid grid-cols-1 xl:grid-cols-12 gap-8 items-center">
+
             {/* LEFT SIDE: Bảng thương hiệu HP-CONS / Phòng Đấu Thầu */}
-            <div className="lg:col-span-6 hidden lg:flex flex-col space-y-7">
+            <div className="xl:col-span-6 hidden xl:flex flex-col space-y-7">
               <div className="space-y-3">
                 <span className="text-[10px] font-black uppercase tracking-widest text-brand-warning bg-brand-warning/10 px-2.5 py-1 rounded-full w-max font-bold border border-brand-warning/20">
                   HP-CONS • Phòng Đấu Thầu
@@ -2276,7 +2276,7 @@ export default function App() {
             </div>
 
             {/* RIGHT SIDE: Immersive Tactical Login Form */}
-            <div className="lg:col-span-6 flex flex-col justify-center">
+            <div className="xl:col-span-6 flex flex-col justify-center">
               <div className="w-full max-w-md mx-auto bg-dark-card border border-slate-800 shadow-2xl rounded-2xl p-6 md:p-8 space-y-6 relative">
                 
                 {/* Yellow tactical border accent line */}
@@ -2352,7 +2352,7 @@ export default function App() {
       {/* Sidebar tràn full chiều cao + cột phải (Header/Main/Footer) */}
       <div className="flex-grow flex flex-col md:flex-row min-h-0">
         {/* Left Sidebar / Thanh tác vụ bên trái */}
-        <aside className={`w-full ${sidebarCollapsed ? 'md:w-18 sidebar-collapsed' : 'md:w-64'} bg-nav-base text-slate-100 border-r border-white/10 p-4 shrink-0 hidden md:flex flex-col justify-between transition-all duration-200`} id="app-sidebar">
+        <aside className={`w-full ${sidebarCollapsed ? 'md:w-18 sidebar-collapsed' : 'md:w-[260px]'} bg-nav-base text-slate-100 border-r border-white/10 p-4 shrink-0 hidden md:flex flex-col justify-between transition-all duration-200`} id="app-sidebar">
           <div className="space-y-6">
             {/* Nút thu/mở sidebar (chỉ md+; mobile giữ dải nav ngang) */}
             <button
@@ -2625,7 +2625,7 @@ export default function App() {
                         type="button"
                         onClick={() => go(it.key)}
                         aria-current={isActive(it.key) ? 'page' : undefined}
-                        className={`w-full h-12 min-h-[44px] px-4 rounded-xl flex items-center gap-3 text-left font-bold text-xs transition-colors ${isActive(it.key) ? 'text-white bg-brand-accent/25 border-l-4 border-brand-accent' : 'text-slate-300 hover:text-white hover:bg-white/10 border-l-4 border-transparent'}`}
+                        className={`w-full h-12 min-h-[44px] px-4 rounded-lg flex items-center gap-3 text-left font-bold text-xs transition-colors ${isActive(it.key) ? 'text-white bg-brand-accent/25 border-l-4 border-brand-accent' : 'text-slate-300 hover:text-white hover:bg-white/10 border-l-4 border-transparent'}`}
                       >
                         <it.icon className="w-5 h-5 shrink-0" />
                         {it.label}
@@ -2714,7 +2714,7 @@ export default function App() {
               {currentUser.role === 'BOOD' && (
                 <button
                   onClick={handleCreateClick}
-                  className="text-[11px] bg-brand-success hover:bg-brand-success-hover text-white font-black px-2 md:px-3 py-1.5 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 rounded-xl flex items-center justify-center gap-1 transition-all shadow-md hover:shadow-lg cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
+                  className="text-[11px] bg-brand-success hover:bg-brand-success-hover text-white font-black px-2 md:px-3 py-1.5 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 rounded-lg flex items-center justify-center gap-1 transition-all shadow-md hover:shadow-lg cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
                   title="Đăng ký một DỰ ÁN mới (chỉ tên/CĐT — không lên Kanban). Sau đó thêm công việc con vào dự án này."
                   aria-label="Đăng ký dự án mới"
                 >
@@ -2727,7 +2727,7 @@ export default function App() {
               {(currentUser.role === 'BOOD' || currentUser.role === 'MANAGER') && (
                 <button
                   onClick={handleAddWorkClick}
-                  className="text-[11px] bg-brand-accent hover:bg-brand-accent-700 text-white font-black px-2 md:px-3 py-1.5 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 rounded-xl flex items-center justify-center gap-1 transition-all shadow-md hover:shadow-lg cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
+                  className="text-[11px] bg-brand-accent hover:bg-brand-accent-700 text-white font-black px-2 md:px-3 py-1.5 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 rounded-lg flex items-center justify-center gap-1 transition-all shadow-md hover:shadow-lg cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
                   title="Thêm một CÔNG VIỆC (báo giá chi tiết, khái toán, VE...) vào một Dự án — công việc này sẽ lên Kanban"
                   aria-label="Thêm công việc mới"
                 >
@@ -2973,7 +2973,7 @@ export default function App() {
                         description="IT sẽ bổ sung liên kết tới ứng dụng các phòng ban tại đây."
                       />
                     ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                         {deptLinks.map((lnk) => (
                           <a
                             key={lnk.url}
@@ -3032,9 +3032,9 @@ export default function App() {
 
                 {currentUser.role === 'STAFF' ? (
                   /* STAFF PERSONAL WORKSPACE VIEW */
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+                  <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 animate-fade-in">
                     {/* Left Columns: Assigned Tasks List */}
-                    <div className="lg:col-span-2 space-y-4">
+                    <div className="xl:col-span-2 space-y-4">
                       <MyTasksPanel
                         projects={rbacProjects}
                         currentUserId={currentUser.staffId}
@@ -3123,7 +3123,7 @@ export default function App() {
                                 key={p.id}
                                 onClick={() => { setActiveTab('PROJECTS'); setExpandedProjectId(p.id); }}
                                 title="Bấm để xem chi tiết gói thầu, tiến độ và KPI công việc con"
-                                className="py-3 px-2 -mx-2 flex items-start justify-between gap-4 lg:grid lg:grid-cols-[22rem_1fr_auto] lg:items-center cursor-pointer rounded-lg hover:bg-brand-accent/10 dark:hover:bg-brand-accent/5 transition-colors"
+                                className="py-3 px-2 -mx-2 flex items-start justify-between gap-4 xl:grid xl:grid-cols-[22rem_1fr_auto] xl:items-center cursor-pointer rounded-lg hover:bg-brand-accent/10 dark:hover:bg-brand-accent/5 transition-colors"
                               >
                                 <div className="space-y-1.5 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
@@ -3198,7 +3198,7 @@ export default function App() {
                       </div>
 
                       {/* Mobile <768px: hiện ~3 người, còn lại trượt xuống (chị chốt 15/07); md+: lưới đầy đủ */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 max-h-60 overflow-y-auto md:max-h-none md:overflow-visible pr-1 md:pr-0">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 max-h-60 overflow-y-auto md:max-h-none md:overflow-visible pr-1 md:pr-0">
                         {[...kpiStaff].sort((a,b) => b.kpiDiem - a.kpiDiem).map((member, index) => (
                           <div key={member.id} className="flex items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-dark-bg/40 rounded-xl border border-slate-200/40 dark:border-slate-800/60">
                             <div className="flex items-center gap-2">
@@ -3423,7 +3423,7 @@ export default function App() {
                     {applyStatusFilter(parentProjects, isParentDone).length === 0 ? (
                       <p className="text-center text-[11px] text-slate-400 dark:text-slate-500 py-4 italic">Không có dự án nào ở trạng thái này.</p>
                     ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                       {applyStatusFilter(parentProjects, isParentDone).map(dp => {
                         const childCount = projects.filter(p => p.duAnChaId === dp.id).length;
                         return (
@@ -3546,27 +3546,42 @@ export default function App() {
                           </div>
                         </div>
 
-                        <div className="overflow-x-auto border border-brand-danger/20 dark:border-brand-danger/20 rounded-lg max-h-48 overflow-y-auto">
-                          <table className="w-full text-left text-[11px] border-collapse bg-white dark:bg-dark-card/50">
-                            <thead>
-                              <tr className="bg-brand-danger/15 dark:bg-brand-danger/20 text-brand-danger dark:text-brand-danger text-[10px] uppercase font-bold tracking-wider">
-                                <th className="p-2 border-b border-brand-danger/20 dark:border-brand-danger/20 text-center w-14">Dòng</th>
-                                <th className="p-2 border-b border-brand-danger/20 dark:border-brand-danger/20 w-24">Cột / Trường</th>
-                                <th className="p-2 border-b border-brand-danger/20 dark:border-brand-danger/20 max-w-xs truncate">Giá trị lỗi</th>
-                                <th className="p-2 border-b border-brand-danger/20 dark:border-brand-danger/20">Chi tiết lý do từ chối</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {validationErrors.map((err, idx) => (
-                                <tr key={idx} className="hover:bg-brand-danger/5 dark:hover:bg-brand-danger/10 text-slate-700 dark:text-slate-300 border-b border-brand-danger/15 dark:border-brand-danger/10">
-                                  <td className="p-2 font-bold text-center text-brand-danger dark:text-brand-danger">{err.row}</td>
-                                  <td className="p-2 font-semibold text-slate-800 dark:text-slate-200">{err.col}</td>
-                                  <td className="p-2 font-mono text-xs text-slate-500 dark:text-slate-400 max-w-xs truncate">{String(err.val !== undefined ? err.val : '')}</td>
-                                  <td className="p-2 text-brand-danger dark:text-brand-danger font-medium">{err.msg}</td>
+                        <div className="border border-brand-danger/20 dark:border-brand-danger/20 rounded-lg max-h-48 overflow-y-auto">
+                          {/* Mobile <768px: Card List thay bảng 4 cột (luật 9) */}
+                          <div className="md:hidden divide-y divide-brand-danger/15 dark:divide-brand-danger/10 bg-white dark:bg-dark-card/50">
+                            {validationErrors.map((err, idx) => (
+                              <div key={idx} className="p-2.5 space-y-1 text-[11px] text-slate-700 dark:text-slate-300">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-bold text-brand-danger dark:text-brand-danger">Dòng {err.row}</span>
+                                  <span className="font-semibold text-slate-800 dark:text-slate-200">{err.col}</span>
+                                </div>
+                                <div className="font-mono text-slate-500 dark:text-slate-400 truncate">{String(err.val !== undefined ? err.val : '')}</div>
+                                <p className="text-brand-danger dark:text-brand-danger font-medium">{err.msg}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="hidden md:block md:overflow-x-auto">
+                            <table className="w-full text-left text-[11px] border-collapse bg-white dark:bg-dark-card/50">
+                              <thead>
+                                <tr className="bg-brand-danger/15 dark:bg-brand-danger/20 text-brand-danger dark:text-brand-danger text-[10px] uppercase font-bold tracking-wider">
+                                  <th className="p-2 border-b border-brand-danger/20 dark:border-brand-danger/20 text-center w-14">Dòng</th>
+                                  <th className="p-2 border-b border-brand-danger/20 dark:border-brand-danger/20 w-24">Cột / Trường</th>
+                                  <th className="p-2 border-b border-brand-danger/20 dark:border-brand-danger/20 max-w-xs truncate">Giá trị lỗi</th>
+                                  <th className="p-2 border-b border-brand-danger/20 dark:border-brand-danger/20">Chi tiết lý do từ chối</th>
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                              </thead>
+                              <tbody>
+                                {validationErrors.map((err, idx) => (
+                                  <tr key={idx} className="hover:bg-brand-danger/5 dark:hover:bg-brand-danger/10 text-slate-700 dark:text-slate-300 border-b border-brand-danger/15 dark:border-brand-danger/10">
+                                    <td className="p-2 font-bold text-center text-brand-danger dark:text-brand-danger">{err.row}</td>
+                                    <td className="p-2 font-semibold text-slate-800 dark:text-slate-200">{err.col}</td>
+                                    <td className="p-2 font-mono text-xs text-slate-500 dark:text-slate-400 max-w-xs truncate">{String(err.val !== undefined ? err.val : '')}</td>
+                                    <td className="p-2 text-brand-danger dark:text-brand-danger font-medium">{err.msg}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -3919,28 +3934,43 @@ export default function App() {
                                                 Gói thầu này bám sát tiến độ gốc, không dời mốc nộp hồ sơ.
                                               </p>
                                             ) : (
-                                              <div className="bg-white dark:bg-dark-card border border-slate-200/60 dark:border-slate-800 rounded-xl overflow-x-auto">
-                                                <table className="w-full text-left text-[11px]">
-                                                  <thead>
-                                                    <tr className="bg-slate-50 dark:bg-dark-elevated/50 text-slate-500 border-b border-slate-200/50 dark:border-slate-800 text-[9px] uppercase font-bold">
-                                                      <th className="p-2">Ngày cập nhật</th>
-                                                      <th className="p-2">Mốc mới</th>
-                                                      <th className="p-2">Offset</th>
-                                                      <th className="p-2">Lý do</th>
-                                                    </tr>
-                                                  </thead>
-                                                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-600 dark:text-slate-300">
-                                                    {p.delayLogs.map(log => (
-                                                      <tr key={log.id}>
-                                                        <td className="p-2">{fmtDateVN(log.ngayThayDoi)}</td>
-                                                        <td className="p-2 font-bold text-brand-accent dark:text-brand-accent-300">{fmtDateVN(log.ngayMoi)}</td>
-                                                        {/* Lệch hiển thị tính từ cặp hạn cũ/mới (log dời do kế hoạch có soNgayLech=0 tránh cộng trùng) */}
-                                                        <td className="p-2 font-black text-brand-warning">+{Math.max(0, Math.round((new Date(log.ngayMoi).getTime() - new Date(log.ngayCu).getTime()) / 86400000))}d</td>
-                                                        <td className="p-2 italic max-w-xs truncate" title={log.lyDo}>{log.lyDo}</td>
+                                              <div className="bg-white dark:bg-dark-card border border-slate-200/60 dark:border-slate-800 rounded-xl overflow-hidden">
+                                                {/* Mobile <768px: Card List thay bảng 4 cột (luật 9) */}
+                                                <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+                                                  {p.delayLogs.map(log => (
+                                                    <div key={log.id} className="p-3 space-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+                                                      <div className="flex items-center justify-between gap-2">
+                                                        <span className="font-bold text-slate-700 dark:text-slate-200">{fmtDateVN(log.ngayThayDoi)}</span>
+                                                        <span className="font-black text-brand-warning">+{Math.max(0, Math.round((new Date(log.ngayMoi).getTime() - new Date(log.ngayCu).getTime()) / 86400000))}d</span>
+                                                      </div>
+                                                      <div>Mốc mới: <span className="font-bold text-brand-accent dark:text-brand-accent-300">{fmtDateVN(log.ngayMoi)}</span></div>
+                                                      <p className="italic truncate" title={log.lyDo}>{log.lyDo}</p>
+                                                    </div>
+                                                  ))}
+                                                </div>
+                                                <div className="hidden md:block md:overflow-x-auto">
+                                                  <table className="w-full text-left text-[11px]">
+                                                    <thead>
+                                                      <tr className="bg-slate-50 dark:bg-dark-elevated/50 text-slate-500 border-b border-slate-200/50 dark:border-slate-800 text-[9px] uppercase font-bold">
+                                                        <th className="p-2">Ngày cập nhật</th>
+                                                        <th className="p-2">Mốc mới</th>
+                                                        <th className="p-2">Offset</th>
+                                                        <th className="p-2">Lý do</th>
                                                       </tr>
-                                                    ))}
-                                                  </tbody>
-                                                </table>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-600 dark:text-slate-300">
+                                                      {p.delayLogs.map(log => (
+                                                        <tr key={log.id}>
+                                                          <td className="p-2">{fmtDateVN(log.ngayThayDoi)}</td>
+                                                          <td className="p-2 font-bold text-brand-accent dark:text-brand-accent-300">{fmtDateVN(log.ngayMoi)}</td>
+                                                          {/* Lệch hiển thị tính từ cặp hạn cũ/mới (log dời do kế hoạch có soNgayLech=0 tránh cộng trùng) */}
+                                                          <td className="p-2 font-black text-brand-warning">+{Math.max(0, Math.round((new Date(log.ngayMoi).getTime() - new Date(log.ngayCu).getTime()) / 86400000))}d</td>
+                                                          <td className="p-2 italic max-w-xs truncate" title={log.lyDo}>{log.lyDo}</td>
+                                                        </tr>
+                                                      ))}
+                                                    </tbody>
+                                                  </table>
+                                                </div>
                                               </div>
                                             )}
                                           </div>
@@ -4055,7 +4085,7 @@ export default function App() {
                 {/* Staff Cards Grid — dùng kpiStaff (theo đội ngũ):
                     Trưởng phòng (L1) thấy tất cả; Quản lý (L2) chỉ thấy bản thân + nhân viên được gán
                     "Quản lý phụ trách" = mình; nhân viên chưa gán quản lý thì chỉ Trưởng phòng thấy. */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" id="staff-grid">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4" id="staff-grid">
                   {kpiStaff.map(member => {
                     const progressOnTime = member.tiLeDungHan;
                     // Find projects assigned — Quản lý chỉ thấy dự án do chính mình quản lý

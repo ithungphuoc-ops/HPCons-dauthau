@@ -1,4 +1,5 @@
 // Thư viện component dùng chung HPCons — Design System V1.1 (§E).
+export { Card } from './Card';
 export { Badge, badgeVariants, type BadgeProps } from './Badge';
 export { KpiCard, type KpiCardProps } from './KpiCard';
 export { TimelineProgress, type TimelineProgressProps } from './TimelineProgress';

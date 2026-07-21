@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { cn } from '../../lib/utils';
+import { Card } from './Card';
 
 /**
  * KPI Card — HPCons Design System V1.1 §E1.
@@ -29,12 +30,7 @@ export interface KpiCardProps {
 
 export function KpiCard({ icon, title, value, sub, tone = 'primary', className }: KpiCardProps) {
   return (
-    <div
-      className={cn(
-        'flex flex-col gap-3 rounded-xl border border-hp-border bg-card p-4 shadow-sm',
-        className,
-      )}
-    >
+    <Card className={cn('flex flex-col gap-3 p-4', className)}>
       <div className="flex items-center justify-between">
         <span className="text-xs font-bold uppercase tracking-wide text-text-secondary">{title}</span>
         <span className={cn('flex h-9 w-9 items-center justify-center rounded-xl', iconTone[tone])}>
@@ -43,6 +39,6 @@ export function KpiCard({ icon, title, value, sub, tone = 'primary', className }
       </div>
       <div className="text-2xl font-black tracking-tight text-foreground">{value}</div>
       {sub != null && <div className="text-xs font-medium text-text-desc">{sub}</div>}
-    </div>
+    </Card>
   );
 }

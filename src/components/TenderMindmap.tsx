@@ -184,10 +184,10 @@ export default function TenderMindmap() {
               key={selected.id}
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`p-5 rounded-xl border ${selected.bgLight} ${selected.bgDark} ${selected.borderColor} grid grid-cols-1 lg:grid-cols-12 gap-5`}
+              className={`p-5 rounded-xl border ${selected.bgLight} ${selected.bgDark} ${selected.borderColor} grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-12 gap-5`}
             >
               {/* Left Detail Summary */}
-              <div className="lg:col-span-4 space-y-3 border-r border-slate-200/50 dark:border-slate-800/80 pr-4">
+              <div className="xl:col-span-4 space-y-3 xl:border-r border-slate-200/50 dark:border-slate-800/80 xl:pr-4">
                 <div className="flex items-center gap-2">
                   <div className={`p-2 rounded-lg bg-white dark:bg-dark-card border border-slate-200/60 dark:border-slate-800 ${selected.color}`}>
                     <SelectedIcon className="w-5 h-5" />
@@ -207,7 +207,7 @@ export default function TenderMindmap() {
               </div>
 
               {/* Middle Data Pipelines (Inputs/Outputs) */}
-              <div className="lg:col-span-4 space-y-3 border-r border-slate-200/50 dark:border-slate-800/80 pr-4">
+              <div className="xl:col-span-4 space-y-3 xl:border-r border-slate-200/50 dark:border-slate-800/80 xl:pr-4">
                 <div>
                   <span className="text-[8px] font-black uppercase text-slate-400 block tracking-wider mb-1.5">
                     📥 Dữ liệu đầu vào (Inputs)
@@ -238,7 +238,7 @@ export default function TenderMindmap() {
               </div>
 
               {/* Right Trigger & Automation Actions */}
-              <div className="lg:col-span-4 space-y-2">
+              <div className="xl:col-span-4 space-y-2">
                 <span className="text-[8px] font-black uppercase text-slate-400 block tracking-wider">
                   ⚙️ Các trigger &amp; logic hệ thống (Smart Triggers)
                 </span>

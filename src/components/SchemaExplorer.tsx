@@ -81,9 +81,9 @@ EXECUTE FUNCTION fn_offset_ngay_hoan_thanh();`;
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" id="schema-explorer-container">
+    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6" id="schema-explorer-container">
       {/* Tables Selection & Details */}
-      <div className="lg:col-span-1 flex flex-col gap-4">
+      <div className="xl:col-span-1 flex flex-col gap-4">
         <div className="bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-xs">
           <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <Database className="w-4 h-4 text-brand-accent dark:text-brand-accent-300" />
@@ -142,7 +142,7 @@ EXECUTE FUNCTION fn_offset_ngay_hoan_thanh();`;
       </div>
 
       {/* Table schema explorer & script preview */}
-      <div className="lg:col-span-2 flex flex-col gap-4">
+      <div className="xl:col-span-2 flex flex-col gap-4">
         {/* Schema Column Grid */}
         <div className="bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-xs">
           <div className="flex items-center justify-between mb-4 border-b border-slate-100 dark:border-slate-800 pb-3">
