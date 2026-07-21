@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, collection, doc, getDocs, onSnapshot, writeBatch } from 'firebase/firestore';
 import type { Unsubscribe } from 'firebase/firestore';
-import { getAuth, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, signInWithCustomToken, signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 
 // Cấu hình Firebase của dự án (web config — không phải bí mật, an toàn khi nằm trong code)
@@ -28,14 +28,12 @@ export const authEmailFor = (username: string): string =>
 /** Lắng nghe trạng thái đăng nhập Firebase (đăng nhập/đăng xuất, kể cả phiên lưu sẵn). */
 export const watchAuth = (cb: (user: User | null) => void): Unsubscribe => onAuthStateChanged(fbAuth, cb);
 
-/**
- * Bản dùng thử nội bộ chưa có màn đăng nhập — đăng nhập ẩn (anonymous) chạy ngầm
- * để Firestore Rules (yêu cầu request.auth != null) cho phép đọc/ghi dữ liệu.
- */
-export const ensureAnonymousAuth = (): Promise<void> =>
-  signInAnonymously(fbAuth).then(() => undefined).catch((e) => {
-    console.error('[Firebase] Lỗi đăng nhập ẩn danh:', e);
-  });
+/** Đăng nhập bằng Custom Token do cầu nối SSO App Tổng (/api/auth/hpcore-session) cấp. */
+export const signInWithHpcoreToken = (token: string): Promise<void> =>
+  signInWithCustomToken(fbAuth, token).then(() => undefined);
+
+/** Đăng xuất khỏi Firebase Auth — dùng khi rời app, phiên đăng nhập thật nằm ở App Tổng. */
+export const signOutFb = (): Promise<void> => signOut(fbAuth);
 
 // Firestore không nhận giá trị `undefined` — làm sạch object trước khi ghi
 const sanitize = <T,>(item: T): T => JSON.parse(JSON.stringify(item));

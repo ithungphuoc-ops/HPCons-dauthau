@@ -66,7 +66,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import CdtRevisionModal from './components/CdtRevisionModal';
 import PullBackDelayModal from './components/PullBackDelayModal';
 import DateInput from './components/DateInput';
-import { subscribeCollection, pushCollection, watchAuth, authEmailFor, ensureAnonymousAuth } from './lib/firebase';
+import { subscribeCollection, pushCollection, watchAuth, authEmailFor, signInWithHpcoreToken, signOutFb, fbAuth } from './lib/firebase';
 
 // One-time clean-slate: xóa dữ liệu demo cũ trong trình duyệt (nếu có) và seed tài khoản
 // admin gốc. Dữ liệu cũ được sao lưu vào các khóa "*__predemo_backup" để khôi phục nếu cần.
@@ -388,19 +388,14 @@ export default function App() {
     return mockStaff;
   });
 
-  // Current logged in user (RBAC state)
+  // Current logged in user (RBAC state) — danh tính + vai trò do SSO App Tổng (hpcore.vn)
+  // xác lập; localStorage chỉ là cache hiển thị tức thời khi mở lại app, effect SSO bên
+  // dưới sẽ đối chiếu lại với bản ghi staff/{uid} thật ngay khi có phiên Firebase.
   const [currentUser, setCurrentUser] = useState<{ email: string; role: 'BOOD' | 'MANAGER' | 'STAFF'; staffId: string; name: string } | null>(() => {
     const saved = localStorage.getItem('erp_current_user');
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        if (parsed) {
-          if (parsed.staffId === 'S001') parsed.email = 'bood@hpcons.vn';
-          if (parsed.staffId === 'S002') parsed.email = 'manager@hpcons.vn';
-          if (parsed.staffId === 'S003') parsed.email = 'nam@hpcons.vn';
-          localStorage.setItem('erp_current_user', JSON.stringify(parsed));
-        }
-        return parsed;
+        return JSON.parse(saved);
       } catch (e) {
         return null;
       }
@@ -720,13 +715,34 @@ export default function App() {
   useEffect(() => watchAuth(u => {
     setFbAuthed(!!u);
     if (!u) {
-      // Phiên Firebase kết thúc → khóa dữ liệu cloud, tự đăng nhập ẩn lại để tiếp tục đồng bộ
+      // Phiên Firebase kết thúc → khóa dữ liệu cloud
       lastRemoteProjects.current = null;
       lastRemoteStaff.current = null;
       lastRemoteNotifs.current = null;
-      ensureAnonymousAuth();
     }
   }), []);
+
+  // Cầu nối SSO: chưa có phiên Firebase → xin Custom Token từ App Tổng (hpcore.vn) rồi
+  // đăng nhập. Không có phiên hpcore hợp lệ (cookie thiếu/hết hạn) → rời sang trang
+  // đăng nhập App Tổng, quay lại đúng URL hiện tại sau khi đăng nhập xong.
+  useEffect(() => {
+    if (fbAuthed) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/hpcore-session');
+        if (!res.ok) {
+          window.location.href = `https://account.hpcore.vn/login?next=${encodeURIComponent(window.location.href)}`;
+          return;
+        }
+        const { token } = await res.json();
+        if (!cancelled) await signInWithHpcoreToken(token);
+      } catch (e) {
+        console.error('[SSO] Lỗi đăng nhập qua App Tổng:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [fbAuthed]);
 
   useEffect(() => {
     if (!fbAuthed) return; // Rules yêu cầu đăng nhập — chỉ lắng nghe dữ liệu sau khi có phiên Firebase
@@ -1009,24 +1025,31 @@ export default function App() {
     }
   }, [currentUser, activeTab]);
 
-  // Bản dùng thử nội bộ: bấm là vào thẳng app với quyền cao nhất (BOOD), không cần đăng nhập.
-  // Phân quyền/định danh thật sẽ do App Tổng (hpcons-portal) quản lý khi tích hợp chính thức sau này.
-  const handleEnterSystem = () => {
-    const admin = staff.find(s => s.id === 'ADMIN') || staff[0];
+  // Sau khi có phiên Firebase thật (qua cầu nối SSO App Tổng bên dưới) VÀ đã nhận
+  // được bản ghi staff/{uid} tương ứng từ Firestore (route /api/auth/hpcore-session
+  // đã upsert sẵn, vai trò lấy từ App Tổng) → dựng currentUser từ đúng bản ghi đó.
+  useEffect(() => {
+    if (!fbAuthed || currentUser) return;
+    const uid = fbAuth.currentUser?.uid;
+    if (!uid) return;
+    const matched = staff.find(s => s.id === uid);
+    if (!matched) return; // Doc Firestore có thể tới sau vài trăm ms — effect tự chạy lại khi staff cập nhật
     const u = {
-      email: admin?.email || admin?.username || 'admin',
-      role: 'BOOD' as const,
-      staffId: admin?.id || 'ADMIN',
-      name: admin ? `${admin.hoTen} (${admin.chucVu})` : 'Quản trị viên'
+      email: matched.email || '',
+      role: (matched.role || 'STAFF') as 'BOOD' | 'MANAGER' | 'STAFF',
+      staffId: matched.id,
+      name: matched.hoTen
     };
     setCurrentUser(u);
     localStorage.setItem('erp_current_user', JSON.stringify(u));
-  };
+  }, [fbAuthed, staff, currentUser]);
 
   const handleLogout = () => {
     setCurrentUser(null);
     localStorage.removeItem('erp_current_user');
-    triggerToast('Đã đăng xuất khỏi hệ thống thầu.');
+    signOutFb().finally(() => {
+      window.location.href = 'https://account.hpcore.vn';
+    });
   };
 
   // Handle saving staff member updates
@@ -2246,28 +2269,22 @@ export default function App() {
                 <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-brand-warning via-brand-warning to-brand-accent rounded-t-2xl" />
 
                 <div className="text-center space-y-2">
-                  <div className="mx-auto w-12 h-12 bg-brand-warning/10 text-brand-warning rounded-full flex items-center justify-center border border-brand-warning/20">
+                  <div className="mx-auto w-12 h-12 bg-brand-warning/10 text-brand-warning rounded-full flex items-center justify-center border border-brand-warning/20 animate-pulse">
                     <Lock className="w-5 h-5" />
                   </div>
                   <h2 className="text-lg font-black text-white uppercase tracking-wider">
-                    Đăng Nhập Hệ Thống
+                    Đang Xác Thực...
                   </h2>
                   <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wide">
                     Phòng Đấu Thầu - HP CONS BPM
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleEnterSystem}
-                  className="w-full py-3 bg-brand-warning hover:bg-brand-warning/85 text-black font-black rounded-xl text-xs uppercase tracking-widest transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  Xác thực hệ thống
-                </button>
-
                 <div className="relative border-t border-slate-800 pt-4">
                   <p className="text-[10px] text-slate-500 text-center font-medium leading-relaxed">
-                    Bản dùng thử nội bộ — chưa yêu cầu đăng nhập.
+                    Đang kiểm tra phiên đăng nhập từ App Tổng (hpcore.vn)...
+                    <br />Nếu không tự chuyển trang, Sếp vui lòng đăng nhập tại{' '}
+                    <a href="https://account.hpcore.vn/login" className="text-brand-warning underline">account.hpcore.vn</a>.
                   </p>
                 </div>
               </div>
