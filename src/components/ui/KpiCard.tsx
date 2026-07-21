@@ -30,15 +30,15 @@ export interface KpiCardProps {
 
 export function KpiCard({ icon, title, value, sub, tone = 'primary', className }: KpiCardProps) {
   return (
-    <Card className={cn('flex flex-col gap-3 p-4', className)}>
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-bold uppercase tracking-wide text-text-secondary">{title}</span>
-        <span className={cn('flex h-9 w-9 items-center justify-center rounded-xl', iconTone[tone])}>
-          {icon}
-        </span>
+    <Card className={cn('flex items-start gap-4 p-4', className)}>
+      <span className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-lg', iconTone[tone])}>
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-medium text-text-secondary">{title}</p>
+        <p className="mt-0.5 truncate text-2xl font-bold leading-tight text-foreground">{value}</p>
+        {sub != null && <div className="mt-1 text-xs text-text-desc">{sub}</div>}
       </div>
-      <div className="text-2xl font-black tracking-tight text-foreground">{value}</div>
-      {sub != null && <div className="text-xs font-medium text-text-desc">{sub}</div>}
     </Card>
   );
 }

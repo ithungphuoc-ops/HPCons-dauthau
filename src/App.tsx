@@ -2393,10 +2393,10 @@ export default function App() {
               <button
                 id="btn-nav-deptlinks"
                 onClick={() => { setActiveTab('DEPTLINKS'); setShowForm(false); }}
-                className={`w-full h-11 px-4 font-bold transition-all rounded-xl flex items-center gap-3 text-left border-l-4 ${
+                className={`w-full h-11 px-4 font-bold transition-all rounded-lg flex items-center gap-3 text-left ${
                   activeTab === 'DEPTLINKS' && !showForm
-                    ? 'border-brand-accent text-white bg-brand-accent/25 shadow-sm'
-                    : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
+                    ? 'bg-brand-accent text-white font-semibold shadow-sm'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
                 }`}
               >
                 <Building2 className="w-4 h-4 shrink-0" />
@@ -2408,10 +2408,10 @@ export default function App() {
               <button
                 id="btn-nav-dashboard"
                 onClick={() => { setActiveTab('DASHBOARD'); setShowForm(false); }}
-                className={`w-full h-11 px-4 font-bold transition-all rounded-xl flex items-center gap-3 text-left border-l-4 ${
+                className={`w-full h-11 px-4 font-bold transition-all rounded-lg flex items-center gap-3 text-left ${
                   activeTab === 'DASHBOARD' && !showForm
-                    ? 'border-brand-accent text-white bg-brand-accent/25 shadow-sm' 
-                    : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
+                    ? 'bg-brand-accent text-white font-semibold shadow-sm' 
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
                 }`}
               >
                 <Briefcase className="w-4 h-4 shrink-0" />
@@ -2424,10 +2424,10 @@ export default function App() {
                   <button
                     id="btn-nav-projects"
                     onClick={() => { setActiveTab('PROJECTS'); setShowForm(false); }}
-                    className={`w-full h-11 px-4 font-bold transition-all rounded-xl flex items-center gap-3 text-left border-l-4 ${
+                    className={`w-full h-11 px-4 font-bold transition-all rounded-lg flex items-center gap-3 text-left ${
                       activeTab === 'PROJECTS' || showForm
-                        ? 'border-brand-accent text-white bg-brand-accent/25 shadow-sm'
-                        : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
+                        ? 'bg-brand-accent text-white font-semibold shadow-sm'
+                        : 'text-slate-300 hover:text-white hover:bg-white/10'
                     }`}
                   >
                     <ListTodo className="w-4 h-4 shrink-0" />
@@ -2440,10 +2440,10 @@ export default function App() {
                   <button
                     id="btn-nav-kanban"
                     onClick={() => { setActiveTab('KANBAN'); setShowForm(false); }}
-                    className={`w-full h-11 px-4 font-bold transition-all rounded-xl flex items-center gap-3 text-left border-l-4 ${
+                    className={`w-full h-11 px-4 font-bold transition-all rounded-lg flex items-center gap-3 text-left ${
                       activeTab === 'KANBAN' && !showForm
-                        ? 'border-brand-accent text-white bg-brand-accent/25 shadow-sm'
-                        : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
+                        ? 'bg-brand-accent text-white font-semibold shadow-sm'
+                        : 'text-slate-300 hover:text-white hover:bg-white/10'
                     }`}
                   >
                     <LayoutGrid className="w-4 h-4 shrink-0" />
@@ -2453,10 +2453,10 @@ export default function App() {
                   <button
                     id="btn-nav-gantt"
                     onClick={() => { setActiveTab('GANTT'); setShowForm(false); }}
-                    className={`w-full h-11 px-4 font-bold transition-all rounded-xl flex items-center gap-3 text-left border-l-4 ${
+                    className={`w-full h-11 px-4 font-bold transition-all rounded-lg flex items-center gap-3 text-left ${
                       activeTab === 'GANTT' && !showForm
-                        ? 'border-brand-accent text-white bg-brand-accent/25 shadow-sm'
-                        : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
+                        ? 'bg-brand-accent text-white font-semibold shadow-sm'
+                        : 'text-slate-300 hover:text-white hover:bg-white/10'
                     }`}
                   >
                     <Calendar className="w-4 h-4 shrink-0" />
@@ -2470,10 +2470,10 @@ export default function App() {
                 <button
                   id="btn-nav-staff"
                   onClick={() => { setActiveTab('STAFF'); setShowForm(false); }}
-                  className={`w-full h-11 px-4 font-bold transition-all rounded-xl flex items-center gap-3 text-left border-l-4 ${
+                  className={`w-full h-11 px-4 font-bold transition-all rounded-lg flex items-center gap-3 text-left ${
                     activeTab === 'STAFF' && !showForm
-                      ? 'border-brand-accent text-white bg-brand-accent/25 shadow-sm'
-                      : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
+                      ? 'bg-brand-accent text-white font-semibold shadow-sm'
+                      : 'text-slate-300 hover:text-white hover:bg-white/10'
                   }`}
                 >
                   <Users className="w-4 h-4 shrink-0" />
@@ -2486,10 +2486,10 @@ export default function App() {
                 <button
                   id="btn-nav-system"
                   onClick={() => { setActiveTab('SYSTEM'); setShowForm(false); }}
-                  className={`w-full h-11 px-4 font-bold transition-all rounded-xl flex items-center gap-3 text-left border-l-4 ${
+                  className={`w-full h-11 px-4 font-bold transition-all rounded-lg flex items-center gap-3 text-left ${
                     activeTab === 'SYSTEM' && !showForm
-                      ? 'border-brand-accent text-white bg-brand-accent/25 shadow-sm'
-                      : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
+                      ? 'bg-brand-accent text-white font-semibold shadow-sm'
+                      : 'text-slate-300 hover:text-white hover:bg-white/10'
                   }`}
                 >
                   <Database className="w-4 h-4 shrink-0" />
@@ -2502,10 +2502,10 @@ export default function App() {
               <button
                 id="btn-nav-calendar"
                 onClick={() => { setActiveTab('CALENDAR'); setShowForm(false); }}
-                className={`w-full h-11 px-4 font-bold transition-all rounded-xl flex items-center gap-3 text-left border-l-4 ${
+                className={`w-full h-11 px-4 font-bold transition-all rounded-lg flex items-center gap-3 text-left ${
                   activeTab === 'CALENDAR' && !showForm
-                    ? 'border-brand-accent text-white bg-brand-accent/25 shadow-sm'
-                    : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
+                    ? 'bg-brand-accent text-white font-semibold shadow-sm'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
                 }`}
               >
                 <CalendarDays className="w-4 h-4 shrink-0" />
@@ -2518,10 +2518,10 @@ export default function App() {
               <button
                 id="btn-nav-history"
                 onClick={() => { setActiveTab('HISTORY'); setShowForm(false); }}
-                className={`w-full h-11 px-4 font-bold transition-all rounded-xl flex items-center gap-3 text-left border-l-4 ${
+                className={`w-full h-11 px-4 font-bold transition-all rounded-lg flex items-center gap-3 text-left ${
                   activeTab === 'HISTORY' && !showForm
-                    ? 'border-brand-accent text-white bg-brand-accent/25 shadow-sm'
-                    : 'border-transparent text-slate-300 hover:text-white hover:bg-white/10'
+                    ? 'bg-brand-accent text-white font-semibold shadow-sm'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
                 }`}
               >
                 <History className="w-4 h-4 shrink-0" />
@@ -2625,7 +2625,7 @@ export default function App() {
                         type="button"
                         onClick={() => go(it.key)}
                         aria-current={isActive(it.key) ? 'page' : undefined}
-                        className={`w-full h-12 min-h-[44px] px-4 rounded-lg flex items-center gap-3 text-left font-bold text-xs transition-colors ${isActive(it.key) ? 'text-white bg-brand-accent/25 border-l-4 border-brand-accent' : 'text-slate-300 hover:text-white hover:bg-white/10 border-l-4 border-transparent'}`}
+                        className={`w-full h-12 min-h-[44px] px-4 rounded-lg flex items-center gap-3 text-left font-bold text-xs transition-colors ${isActive(it.key) ? 'text-white bg-brand-accent font-semibold shadow-sm' : 'text-slate-300 hover:text-white hover:bg-white/10'}`}
                       >
                         <it.icon className="w-5 h-5 shrink-0" />
                         {it.label}

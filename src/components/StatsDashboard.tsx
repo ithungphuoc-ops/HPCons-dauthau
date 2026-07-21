@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { chucVuToRole } from '../App';
+import { KpiCard } from './ui';
 
 interface StatsDashboardProps {
   projects: Project[];
@@ -150,142 +151,45 @@ export default function StatsDashboard({
         animate="show"
         className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5"
       >
-        {/* CARD 1: Nhiệm vụ cần làm */}
-        <motion.div 
-          variants={itemVariants}
-          className="relative overflow-hidden bg-gradient-to-br from-brand-accent-500 via-brand-accent-600 to-brand-accent-800 text-white p-5 rounded-xl border border-brand-accent-400/30 shadow-lg group hover:scale-[1.02] transition-transform duration-300"
-          id="staff-card-pending-tasks"
-        >
-          <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-white/10 rounded-full blur-xl group-hover:scale-125 transition-transform" />
-          
-          <div className="relative z-10 flex flex-col justify-between h-full">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-brand-accent-100 bg-white/15 px-2 py-0.5 rounded-full">
-                Tác vụ Đấu Thầu
-              </span>
-              <div className="p-2 bg-white/10 rounded-xl text-white">
-                <ListTodo className="w-4 h-4" />
-              </div>
-            </div>
-            
-            <div className="mt-4">
-              <span className="text-[10px] text-brand-accent-100 font-bold block uppercase">Công việc cần xử lý</span>
-              <h3 className="text-3xl font-black tracking-tight mt-1">
-                {pendingMyTasks} Việc Con
-              </h3>
-            </div>
-            
-            <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[10px] text-brand-accent-100 font-medium">
-              <span>Tổng số việc được giao:</span>
-              <span className="font-bold font-mono">{totalMyTasks} tác vụ</span>
-            </div>
-          </div>
+        <motion.div variants={itemVariants} id="staff-card-pending-tasks">
+          <KpiCard
+            tone="primary"
+            icon={<ListTodo className="size-5" />}
+            title="Tác vụ Đấu Thầu"
+            value={`${pendingMyTasks} Việc Con`}
+            sub={`Tổng số việc được giao: ${totalMyTasks} tác vụ`}
+          />
         </motion.div>
 
-        {/* CARD 2: Tiến độ hoàn thành */}
-        <motion.div 
-          variants={itemVariants}
-          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
-          id="staff-card-completion"
-        >
-          <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-brand-success/5 rounded-full blur-xl group-hover:scale-125 transition-transform" />
-          
-          <div className="relative z-10 flex flex-col justify-between h-full">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-brand-success dark:text-brand-success-300 bg-brand-success/10 dark:bg-brand-success/15 px-2 py-0.5 rounded-full">
-                Hiệu Suất Tiến Độ
-              </span>
-              <div className="p-2 bg-brand-success/10 dark:bg-brand-success/15 text-brand-success dark:text-brand-success-300 rounded-xl">
-                <Percent className="w-4 h-4" />
-              </div>
-            </div>
-            
-            <div className="mt-4">
-              <span className="text-[10px] text-slate-400 font-bold block uppercase">Tỉ lệ hoàn thành của bạn</span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <h3 className="text-2xl font-black tracking-tight text-brand-success dark:text-brand-success-300">
-                  {myCompletionRate}%
-                </h3>
-                <span className="text-[10px] text-slate-400 font-bold">
-                  ({completedMyTasks}/{totalMyTasks})
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <div className="w-full bg-slate-100 dark:bg-dark-elevated h-1.5 rounded-full overflow-hidden">
-                <div 
-                  className="bg-brand-success h-full transition-all duration-500" 
-                  style={{ width: `${myCompletionRate}%` }}
-                />
-              </div>
-            </div>
-          </div>
+        <motion.div variants={itemVariants} id="staff-card-completion">
+          <KpiCard
+            tone="success"
+            icon={<Percent className="size-5" />}
+            title="Hiệu Suất Tiến Độ"
+            value={`${myCompletionRate}%`}
+            sub={`${completedMyTasks}/${totalMyTasks} tác vụ hoàn thành`}
+          />
         </motion.div>
 
-        {/* CARD 3: KPI Cá nhân */}
-        <motion.div 
-          variants={itemVariants}
-          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
-          id="staff-card-kpi"
-        >
-          <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-brand-accent/5 rounded-full blur-xl group-hover:scale-125 transition-transform" />
-          
-          <div className="relative z-10 flex flex-col justify-between h-full">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-brand-accent dark:text-brand-accent-300 bg-brand-accent/10 dark:bg-brand-accent/15 px-2 py-0.5 rounded-full">
-                Điểm Đánh Giá KPI
-              </span>
-              <div className="p-2 bg-brand-accent/10 dark:bg-brand-accent/15 text-brand-accent dark:text-brand-accent-300 rounded-xl">
-                <Award className="w-4 h-4" />
-              </div>
-            </div>
-            
-            {/* Nhân viên không được xem KPI của mình — chỉ Quản lý/Trưởng phòng theo dõi */}
-            <div className="mt-4">
-              <span className="text-[10px] text-slate-400 font-bold block uppercase">KPI Cá Nhân</span>
-              <h3 className="text-lg font-black tracking-tight text-slate-400 dark:text-slate-500 mt-1 flex items-center gap-1.5">
-                🔒 Do Quản lý theo dõi
-              </h3>
-            </div>
-            
-            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400 font-bold">
-              <span>Vai trò chuyên môn:</span>
-              <span className="text-brand-accent dark:text-brand-accent-300 font-black">{myProfile?.chucVu || "Chuyên viên đấu thầu"}</span>
-            </div>
-          </div>
+        {/* Nhân viên không được xem KPI của mình — chỉ Quản lý/Trưởng phòng theo dõi */}
+        <motion.div variants={itemVariants} id="staff-card-kpi">
+          <KpiCard
+            tone="neutral"
+            icon={<Award className="size-5" />}
+            title="Điểm Đánh Giá KPI"
+            value="🔒 Do Quản lý theo dõi"
+            sub={`Vai trò chuyên môn: ${myProfile?.chucVu || "Chuyên viên đấu thầu"}`}
+          />
         </motion.div>
 
-        {/* CARD 4: Dự án liên quan */}
-        <motion.div 
-          variants={itemVariants}
-          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
-          id="staff-card-projects"
-        >
-          <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-brand-warning/5 rounded-full blur-xl group-hover:scale-125 transition-transform" />
-          
-          <div className="relative z-10 flex flex-col justify-between h-full">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-brand-warning dark:text-brand-warning bg-brand-warning/10 dark:bg-brand-warning/15 px-2 py-0.5 rounded-full">
-                Gói Thầu Tham Gia
-              </span>
-              <div className="p-2 bg-brand-warning/10 dark:bg-brand-warning/15 text-brand-warning dark:text-brand-warning rounded-xl">
-                <Briefcase className="w-4 h-4" />
-              </div>
-            </div>
-            
-            <div className="mt-4">
-              <span className="text-[10px] text-slate-400 font-bold block uppercase">Số lượng gói thầu phụ trách</span>
-              <h3 className="text-2xl font-black tracking-tight text-brand-warning dark:text-brand-warning mt-1">
-                {projects.length} Gói Thầu
-              </h3>
-            </div>
-            
-            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400 font-bold">
-              <span>Thời gian thực tế:</span>
-              <span className="text-slate-800 dark:text-slate-200 font-black">Theo hạn đấu thầu</span>
-            </div>
-          </div>
+        <motion.div variants={itemVariants} id="staff-card-projects">
+          <KpiCard
+            tone="warning"
+            icon={<Briefcase className="size-5" />}
+            title="Gói Thầu Tham Gia"
+            value={`${projects.length} Gói Thầu`}
+            sub="Số lượng gói thầu phụ trách — theo hạn đấu thầu"
+          />
         </motion.div>
       </motion.div>
     );
@@ -308,152 +212,44 @@ export default function StatsDashboard({
         animate="show"
         className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5"
       >
-        {/* CARD 1: Tổng số gói thầu */}
-        <motion.div 
-          variants={itemVariants}
-          className="relative overflow-hidden bg-gradient-to-br from-brand-accent-500 via-brand-accent-600 to-brand-accent-800 text-white p-5 rounded-xl border border-brand-accent-400/30 shadow-lg group hover:scale-[1.02] transition-transform duration-300"
-          id="stat-card-total-projects"
-        >
-          <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-white/10 rounded-full blur-xl group-hover:scale-125 transition-transform" />
-          
-          <div className="relative z-10 flex flex-col justify-between h-full">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-brand-accent-100 bg-white/15 px-2 py-0.5 rounded-full">
-                Tổng Quan Gói Thầu
-              </span>
-              <div className="p-2 bg-white/10 rounded-xl text-white">
-                <Briefcase className="w-4 h-4" />
-              </div>
-            </div>
-            
-            <div className="mt-4">
-              <span className="text-[10px] text-brand-accent-100 font-bold block uppercase">Số lượng gói thầu</span>
-              <h3 className="text-2xl font-black tracking-tight mt-1">
-                {projects.length} Gói Thầu
-              </h3>
-            </div>
-            
-            <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-[10px] text-brand-accent-100 font-medium">
-              <span>Đang hoạt động:</span>
-              <span className="font-bold font-mono">{activeProjects.length} gói thầu</span>
-            </div>
-          </div>
+        <motion.div variants={itemVariants} id="stat-card-total-projects">
+          <KpiCard
+            tone="primary"
+            icon={<Briefcase className="size-5" />}
+            title="Tổng Quan Gói Thầu"
+            value={`${projects.length} Gói Thầu`}
+            sub={`Đang hoạt động: ${activeProjects.length} gói thầu`}
+          />
         </motion.div>
 
-        {/* CARD 2: Số dự án đã thực hiện */}
-        <motion.div 
-          variants={itemVariants}
-          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
-          id="stat-card-completed-projects"
-        >
-          <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-brand-success/5 rounded-full blur-xl group-hover:scale-125 transition-transform" />
-          
-          <div className="relative z-10 flex flex-col justify-between h-full">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-brand-success dark:text-brand-success-300 bg-brand-success/10 dark:bg-brand-success/15 px-2 py-0.5 rounded-full">
-                Số Dự Án Đã Thực Hiện
-              </span>
-              <div className="p-2 bg-brand-success/10 dark:bg-brand-success/15 text-brand-success dark:text-brand-success-300 rounded-xl">
-                <CheckCircle className="w-4 h-4" />
-              </div>
-            </div>
-            
-            <div className="mt-4">
-              <span className="text-[10px] text-slate-400 font-bold block uppercase">Số dự án hoàn thành</span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <h3 className="text-2xl font-black tracking-tight text-brand-success dark:text-brand-success-300">
-                  {completedProjectsCount} / {totalProjectsCount}
-                </h3>
-                <span className="text-[10px] text-slate-400 font-bold">
-                  ({projectCompletionRate}% tỷ lệ)
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <div className="w-full bg-slate-100 dark:bg-dark-elevated h-1.5 rounded-full overflow-hidden">
-                <div 
-                  className="bg-brand-success h-full transition-all duration-500" 
-                  style={{ width: `${projectCompletionRate}%` }}
-                />
-              </div>
-            </div>
-          </div>
+        <motion.div variants={itemVariants} id="stat-card-completed-projects">
+          <KpiCard
+            tone="success"
+            icon={<CheckCircle className="size-5" />}
+            title="Số Dự Án Đã Thực Hiện"
+            value={`${completedProjectsCount} / ${totalProjectsCount}`}
+            sub={`${projectCompletionRate}% tỷ lệ hoàn thành`}
+          />
         </motion.div>
 
-        {/* CARD 3: Số công việc đã thực hiện */}
-        <motion.div 
-          variants={itemVariants}
-          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
-          id="stat-card-completed-tasks"
-        >
-          <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-brand-accent/5 rounded-full blur-xl group-hover:scale-125 transition-transform" />
-          
-          <div className="relative z-10 flex flex-col justify-between h-full">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-brand-accent dark:text-brand-accent-300 bg-brand-accent/10 dark:bg-brand-accent/15 px-2 py-0.5 rounded-full">
-                Số Công Việc Đã Thực Hiện
-              </span>
-              <div className="p-2 bg-brand-accent/10 dark:bg-brand-accent/15 text-brand-accent dark:text-brand-accent-300 rounded-xl">
-                <CheckSquare className="w-4 h-4" />
-              </div>
-            </div>
-            
-            <div className="mt-4">
-              <span className="text-[10px] text-slate-400 font-bold block uppercase">Tổng số công việc con</span>
-              <div className="flex items-baseline gap-2 mt-1">
-                <h3 className="text-2xl font-black tracking-tight text-brand-accent dark:text-brand-accent-300">
-                  {totalCalculatedTasks} cv
-                </h3>
-                <span className="text-[10px] text-slate-400 font-bold">
-                  (Xong {totalCompletedTasksCount} cv)
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-3">
-              <div className="w-full bg-slate-100 dark:bg-dark-elevated h-1.5 rounded-full overflow-hidden">
-                <div 
-                  className="bg-brand-accent h-full transition-all duration-500" 
-                  style={{ width: `${taskCompletionRate}%` }}
-                />
-              </div>
-            </div>
-          </div>
+        <motion.div variants={itemVariants} id="stat-card-completed-tasks">
+          <KpiCard
+            tone="primary"
+            icon={<CheckSquare className="size-5" />}
+            title="Số Công Việc Đã Thực Hiện"
+            value={`${totalCalculatedTasks} cv`}
+            sub={`Xong ${totalCompletedTasksCount} cv`}
+          />
         </motion.div>
 
-        {/* CARD 4: KPI Trung bình đội ngũ */}
-        <motion.div 
-          variants={itemVariants}
-          className="relative overflow-hidden bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-200/60 dark:border-slate-800 shadow-sm group hover:scale-[1.02] transition-transform duration-300"
-          id="stat-card-avg-kpi"
-        >
-          <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-brand-warning/5 rounded-full blur-xl group-hover:scale-125 transition-transform" />
-          
-          <div className="relative z-10 flex flex-col justify-between h-full">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest text-brand-warning dark:text-brand-warning bg-brand-warning/10 dark:bg-brand-warning/15 px-2 py-0.5 rounded-full">
-                Chỉ Số Đội Ngũ &amp; KPI
-              </span>
-              <div className="p-2 bg-brand-warning/10 dark:bg-brand-warning/15 text-brand-warning dark:text-brand-warning rounded-xl">
-                <Award className="w-4 h-4" />
-              </div>
-            </div>
-            
-            <div className="mt-4">
-              <span className="text-[10px] text-slate-400 font-bold block uppercase">KPI Trung Bình Đội Ngũ</span>
-              <div className="flex items-baseline gap-1 mt-1">
-                <h3 className="text-2xl font-black tracking-tight text-brand-warning dark:text-brand-warning">
-                  {avgKPI} / 100 đ
-                </h3>
-              </div>
-            </div>
-            
-            <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-[10px] text-slate-400 font-bold">
-              <span>Tổng số nhân sự:</span>
-              <span className="text-brand-warning dark:text-brand-warning font-black">{staff.length} nhân sự</span>
-            </div>
-          </div>
+        <motion.div variants={itemVariants} id="stat-card-avg-kpi">
+          <KpiCard
+            tone="warning"
+            icon={<Award className="size-5" />}
+            title="Chỉ Số Đội Ngũ & KPI"
+            value={`${avgKPI} / 100 đ`}
+            sub={`Tổng số nhân sự: ${staff.length} nhân sự`}
+          />
         </motion.div>
       </motion.div>
 
