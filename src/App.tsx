@@ -2675,86 +2675,6 @@ export default function App() {
               {/* Hàng công tắc mobile: trải đều hết bề rộng (justify-between) để công tắc canh trái,
                   chuông canh phải — thẳng 2 mép với khối tài khoản hàng dưới. md+: display contents (hàng ngang desktop). */}
               <div className="flex items-center justify-between w-full gap-1 md:contents">
-              {/* Theme Toggle Switch (Thanh gạt) — mobile đồng bộ chiều cao 44px với các nút khác */}
-              <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-dark-elevated border border-slate-200 dark:border-slate-700 px-2.5 md:px-2 py-1 min-h-[44px] md:min-h-0 rounded-xl shrink-0">
-                <Sun className="w-3.5 h-3.5 text-brand-warning dark:text-slate-400" />
-                <button 
-                  onClick={() => setDarkMode(!darkMode)}
-                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                    darkMode ? 'bg-brand-accent' : 'bg-slate-600'
-                  }`}
-                  title={darkMode ? "Chuyển qua Chế độ sáng" : "Chuyển qua Chế độ tối"}
-                >
-                  <span
-                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
-                      darkMode ? 'translate-x-4' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-                <Moon className="w-3.5 h-3.5 text-brand-accent-400" />
-              </div>
-
-              {/* Cỡ chữ A− / A+ (desktop) — phóng to cả app bằng CSS zoom cho người mắt kém.
-                  Bấm nút hoặc Ctrl + lăn chuột; mức phóng được ghi nhớ. */}
-              <div className="hidden md:flex items-center gap-0.5 bg-slate-100 dark:bg-dark-elevated border border-slate-200 dark:border-slate-700 px-1 py-1 rounded-xl shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setFontScale(prev => Math.max(0.85, Math.round((prev - 0.1) * 100) / 100))}
-                  disabled={fontScale <= 0.85}
-                  title="Giảm cỡ chữ (Ctrl + lăn chuột xuống)"
-                  aria-label="Giảm cỡ chữ"
-                  className="w-6 h-6 flex items-center justify-center rounded-lg text-[11px] font-black text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  A−
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFontScale(1)}
-                  title={`Cỡ chữ ${Math.round(fontScale * 100)}% — bấm để về 100%`}
-                  aria-label="Đặt lại cỡ chữ 100%"
-                  className="min-w-[34px] h-6 px-1 flex items-center justify-center rounded-lg text-[10px] font-bold text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700 transition-colors tabular-nums"
-                >
-                  {Math.round(fontScale * 100)}%
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFontScale(prev => Math.min(1.4, Math.round((prev + 0.1) * 100) / 100))}
-                  disabled={fontScale >= 1.4}
-                  title="Tăng cỡ chữ (Ctrl + lăn chuột lên)"
-                  aria-label="Tăng cỡ chữ"
-                  className="w-6 h-6 flex items-center justify-center rounded-lg text-[14px] font-black text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                >
-                  A+
-                </button>
-              </div>
-
-              {/* Add Project button - ONLY visible/clickable for Level 1 (BOOD) */}
-              {currentUser.role === 'BOOD' && (
-                <button
-                  onClick={handleCreateClick}
-                  className="text-[11px] bg-brand-success hover:bg-brand-success-hover text-white font-black px-2 md:px-3 py-1.5 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 rounded-lg flex items-center justify-center gap-1 transition-all shadow-md hover:shadow-lg cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
-                  title="Đăng ký một DỰ ÁN mới (chỉ tên/CĐT — không lên Kanban). Sau đó thêm công việc con vào dự án này."
-                  aria-label="Đăng ký dự án mới"
-                >
-                  <Plus className="w-4 h-4 shrink-0" />
-                  <span className="hidden md:inline">DỰ ÁN MỚI</span>
-                </button>
-              )}
-
-              {/* Add Task/Work button - Visible for Level 1 (BOOD) & Level 2 (MANAGER) */}
-              {(currentUser.role === 'BOOD' || currentUser.role === 'MANAGER') && (
-                <button
-                  onClick={handleAddWorkClick}
-                  className="text-[11px] bg-brand-accent hover:bg-brand-accent-700 text-white font-black px-2 md:px-3 py-1.5 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 rounded-lg flex items-center justify-center gap-1 transition-all shadow-md hover:shadow-lg cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
-                  title="Thêm một CÔNG VIỆC (báo giá chi tiết, khái toán, VE...) vào một Dự án — công việc này sẽ lên Kanban"
-                  aria-label="Thêm công việc mới"
-                >
-                  <Plus className="w-4 h-4 shrink-0 md:hidden" />
-                  <CheckSquare className="hidden md:block w-4 h-4 shrink-0" />
-                  <span className="hidden md:inline">CÔNG VIỆC MỚI</span>
-                </button>
-              )}
-
               {/* Ngày giờ hệ thống — header chỉ chứa thông tin phụ (08-navigation/header.md) */}
               <div className="hidden sm:flex items-center gap-1.5 bg-slate-100 dark:bg-dark-elevated/80 border border-slate-200 dark:border-slate-700 px-2.5 py-1.5 rounded-xl shrink-0 text-[11px] font-bold text-slate-600 dark:text-slate-300 whitespace-nowrap">
                 <Calendar className="w-3.5 h-3.5 text-brand-accent dark:text-brand-accent-300 shrink-0" />
@@ -2762,6 +2682,30 @@ export default function App() {
                 <span className="text-slate-400 dark:text-slate-500">•</span>
                 <span className="font-black text-slate-700 dark:text-slate-200">{String(localNow.getHours()).padStart(2, '0')}:{String(localNow.getMinutes()).padStart(2, '0')}</span>
               </div>
+
+              {/* Tìm kiếm nhanh dự án/công việc — Enter để nhảy sang Báo Cáo Tiến Độ với bộ lọc điền sẵn (giống cấu trúc header pkd_crm-next/Task Manager) */}
+              <form
+                role="search"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const q = new FormData(e.currentTarget).get('q');
+                  setSearchQuery(String(q ?? ''));
+                  setActiveTab('PROJECTS');
+                  setShowForm(false);
+                }}
+                className="hidden md:block md:w-52 lg:w-64 shrink-0"
+              >
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    name="q"
+                    defaultValue={searchQuery}
+                    placeholder="Tìm dự án, gói thầu..."
+                    aria-label="Tìm kiếm dự án, công việc"
+                    className="h-8 w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-dark-elevated pl-8 pr-3 text-[11px] font-bold text-slate-700 dark:text-slate-200 placeholder:text-slate-400 placeholder:font-medium outline-none focus:ring-2 focus:ring-brand-accent"
+                  />
+                </div>
+              </form>
 
               {/* Chuông thông báo: TP thấy hàng chờ duyệt; Quản lý & Nhân viên thấy thông báo của mình */}
               {(
@@ -2895,6 +2839,86 @@ export default function App() {
                     </>
                   )}
                 </div>
+              )}
+
+              {/* Theme Toggle Switch (Thanh gạt) — mobile đồng bộ chiều cao 44px với các nút khác */}
+              <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-dark-elevated border border-slate-200 dark:border-slate-700 px-2.5 md:px-2 py-1 min-h-[44px] md:min-h-0 rounded-xl shrink-0">
+                <Sun className="w-3.5 h-3.5 text-brand-warning dark:text-slate-400" />
+                <button
+                  onClick={() => setDarkMode(!darkMode)}
+                  className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                    darkMode ? 'bg-brand-accent' : 'bg-slate-600'
+                  }`}
+                  title={darkMode ? "Chuyển qua Chế độ sáng" : "Chuyển qua Chế độ tối"}
+                >
+                  <span
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                      darkMode ? 'translate-x-4' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+                <Moon className="w-3.5 h-3.5 text-brand-accent-400" />
+              </div>
+
+              {/* Cỡ chữ A− / A+ (desktop) — phóng to cả app bằng CSS zoom cho người mắt kém.
+                  Bấm nút hoặc Ctrl + lăn chuột; mức phóng được ghi nhớ. */}
+              <div className="hidden md:flex items-center gap-0.5 bg-slate-100 dark:bg-dark-elevated border border-slate-200 dark:border-slate-700 px-1 py-1 rounded-xl shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setFontScale(prev => Math.max(0.85, Math.round((prev - 0.1) * 100) / 100))}
+                  disabled={fontScale <= 0.85}
+                  title="Giảm cỡ chữ (Ctrl + lăn chuột xuống)"
+                  aria-label="Giảm cỡ chữ"
+                  className="w-6 h-6 flex items-center justify-center rounded-lg text-[11px] font-black text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  A−
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFontScale(1)}
+                  title={`Cỡ chữ ${Math.round(fontScale * 100)}% — bấm để về 100%`}
+                  aria-label="Đặt lại cỡ chữ 100%"
+                  className="min-w-[34px] h-6 px-1 flex items-center justify-center rounded-lg text-[10px] font-bold text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700 transition-colors tabular-nums"
+                >
+                  {Math.round(fontScale * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFontScale(prev => Math.min(1.4, Math.round((prev + 0.1) * 100) / 100))}
+                  disabled={fontScale >= 1.4}
+                  title="Tăng cỡ chữ (Ctrl + lăn chuột lên)"
+                  aria-label="Tăng cỡ chữ"
+                  className="w-6 h-6 flex items-center justify-center rounded-lg text-[14px] font-black text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  A+
+                </button>
+              </div>
+
+              {/* Add Project button - ONLY visible/clickable for Level 1 (BOOD) */}
+              {currentUser.role === 'BOOD' && (
+                <button
+                  onClick={handleCreateClick}
+                  className="text-[11px] bg-brand-success hover:bg-brand-success-hover text-white font-black px-2 md:px-3 py-1.5 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 rounded-lg flex items-center justify-center gap-1 transition-all shadow-md hover:shadow-lg cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
+                  title="Đăng ký một DỰ ÁN mới (chỉ tên/CĐT — không lên Kanban). Sau đó thêm công việc con vào dự án này."
+                  aria-label="Đăng ký dự án mới"
+                >
+                  <Plus className="w-4 h-4 shrink-0" />
+                  <span className="hidden md:inline">DỰ ÁN MỚI</span>
+                </button>
+              )}
+
+              {/* Add Task/Work button - Visible for Level 1 (BOOD) & Level 2 (MANAGER) */}
+              {(currentUser.role === 'BOOD' || currentUser.role === 'MANAGER') && (
+                <button
+                  onClick={handleAddWorkClick}
+                  className="text-[11px] bg-brand-accent hover:bg-brand-accent-700 text-white font-black px-2 md:px-3 py-1.5 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 rounded-lg flex items-center justify-center gap-1 transition-all shadow-md hover:shadow-lg cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
+                  title="Thêm một CÔNG VIỆC (báo giá chi tiết, khái toán, VE...) vào một Dự án — công việc này sẽ lên Kanban"
+                  aria-label="Thêm công việc mới"
+                >
+                  <Plus className="w-4 h-4 shrink-0 md:hidden" />
+                  <CheckSquare className="hidden md:block w-4 h-4 shrink-0" />
+                  <span className="hidden md:inline">CÔNG VIỆC MỚI</span>
+                </button>
               )}
               </div>
 
