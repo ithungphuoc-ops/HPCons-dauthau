@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyHpcore, fetchCentralRole, SSO_COOKIE_NAME } from "@/src/lib/hpcore";
+import { verifyHpcore, fetchCentralRole, fetchCentralAvatar, SSO_COOKIE_NAME } from "@/src/lib/hpcore";
 import { getAdminAuth, getAdminDb } from "@/src/lib/firebase-admin";
 
 type Role = "BOOD" | "MANAGER" | "STAFF";
@@ -55,12 +55,16 @@ export async function GET(req: NextRequest) {
 
     const staffRef = adminDb.collection("staff").doc(identity.uid);
     const existing = await staffRef.get();
+    // Avatar: ưu tiên ảnh thật từ hồ sơ App Tổng (account.hpcore.vn/profile), đọc sống mỗi
+    // lần đăng nhập — đổi avatar bên đó thì app này cũng cập nhật theo ngay lần sau, không
+    // còn kẹt cứng ảnh cũ nữa. Chỉ giữ ảnh local cũ khi App Tổng chưa có avatar nào.
+    const centralAvatar = await fetchCentralAvatar(identity.uid);
     await staffRef.set(
       {
         id: identity.uid,
         hoTen: identity.fullName || existing.data()?.hoTen || identity.email,
         chucVu: CHUC_VU_BY_ROLE[role],
-        avatar: existing.data()?.avatar || "",
+        avatar: centralAvatar || existing.data()?.avatar || "",
         kpiDiem: existing.data()?.kpiDiem ?? 0,
         soDuAnDangLam: existing.data()?.soDuAnDangLam ?? 0,
         tiLeDungHan: existing.data()?.tiLeDungHan ?? 100,

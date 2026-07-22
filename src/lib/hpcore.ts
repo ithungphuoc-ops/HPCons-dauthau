@@ -73,3 +73,18 @@ export async function fetchCentralRole(uid: string): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Avatar thật của người dùng, lấy trực tiếp từ hồ sơ App Tổng (users/{uid}.avatarUrl —
+ * account.hpcore.vn/profile). Đọc sống mỗi lần SSO thay vì chỉ đồng bộ 1 lần lúc tạo tài
+ * khoản, để đổi avatar bên App Tổng là các app con cũng thấy ngay trong lần đăng nhập kế tiếp.
+ */
+export async function fetchCentralAvatar(uid: string): Promise<string | null> {
+  try {
+    const snap = await getHpcoreDb().collection("users").doc(uid).get();
+    const url = snap.data()?.avatarUrl;
+    return typeof url === "string" && url ? url : null;
+  } catch {
+    return null;
+  }
+}

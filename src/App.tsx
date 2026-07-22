@@ -123,6 +123,12 @@ import { subscribeCollection, pushCollection, watchAuth, authEmailFor, signInWit
   }
 })();
 
+// Chấp nhận cả ảnh upload local (data: base64) lẫn avatar thật đồng bộ từ hồ sơ
+// App Tổng (https://... Firebase Storage) — trước đây chỉ nhận data: nên avatar
+// đồng bộ từ account.hpcore.vn bị bỏ qua, luôn hiện chữ viết tắt thay vì ảnh thật.
+export const isAvatarUrl = (v?: string | null): v is string =>
+  !!v && (v.startsWith('data:') || v.startsWith('http://') || v.startsWith('https://'));
+
 export const getInitials = (name: string) => {
   if (!name) return '??';
   const parts = name.trim().split(' ');
@@ -2970,7 +2976,7 @@ export default function App() {
                   const myAvatar = staff.find(s => s.id === currentUser.staffId)?.avatar;
                   return (
                     <div className="flex md:hidden items-center gap-2 pl-1">
-                      {myAvatar && myAvatar.startsWith('data:') ? (
+                      {isAvatarUrl(myAvatar) ? (
                         <img src={myAvatar} alt={currentUser.name} className="w-8 h-8 rounded-full border border-slate-200 dark:border-slate-700 object-cover" />
                       ) : (
                         <div className={`w-8 h-8 rounded-full border flex items-center justify-center text-[10px] font-black uppercase ${getInitialsColor(currentUser.name)}`}>
@@ -3286,7 +3292,7 @@ export default function App() {
                           <div key={member.id} className="flex items-center justify-between gap-3 p-3 bg-slate-50 dark:bg-dark-bg/40 rounded-xl border border-slate-200/40 dark:border-slate-800/60">
                             <div className="flex items-center gap-2">
                               <div className="relative">
-                                {member.avatar && member.avatar.startsWith('data:') ? (
+                                {isAvatarUrl(member.avatar) ? (
                                   <img 
                                     src={member.avatar} 
                                     alt={member.hoTen}
@@ -4188,7 +4194,7 @@ export default function App() {
                                 onClick={() => { if (currentUser?.role === 'BOOD') setEditingStaff(member); }}
                                 title={currentUser?.role === 'BOOD' ? 'Nhấp để thay đổi ảnh đại diện' : undefined}
                               >
-                                {member.avatar && member.avatar.startsWith('data:') ? (
+                                {isAvatarUrl(member.avatar) ? (
                                   <img
                                     src={member.avatar}
                                     alt={member.hoTen}
@@ -4565,7 +4571,7 @@ export default function App() {
                                 <span className="flex flex-wrap gap-0.5 justify-end items-center min-w-0">
                                   {Array.from(day.values()).map(({ member, jobs }) => {
                                     const tip = `${member.hoTen} — ${jobs.length} việc:\n${jobs.map(j => '• ' + j).join('\n')}`;
-                                    return member.avatar && member.avatar.startsWith('data:') ? (
+                                    return isAvatarUrl(member.avatar) ? (
                                       <img key={member.id} src={member.avatar} alt={member.hoTen} title={tip}
                                         className="w-5 h-5 rounded-full object-cover border border-slate-200 dark:border-slate-700 shadow-sm shrink-0" />
                                     ) : (
