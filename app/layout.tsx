@@ -14,6 +14,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "Hệ Thống Quản Trị Tiến Độ Phòng Đấu Thầu - ERP BPM",
+  icons: { icon: "/logo-hung-phuoc.png" },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
