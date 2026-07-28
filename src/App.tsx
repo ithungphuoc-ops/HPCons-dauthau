@@ -18,6 +18,7 @@ import SubtaskGantt, { DEFAULT_TASK_DAYS } from './components/SubtaskGantt';
 import { AppLauncher } from './components/AppLauncher';
 import { Badge, TimelineProgress, EmptyState } from './components/ui';
 import { updateTaskInTree, calculateProjectProgress, getTaskProgress } from './utils/taskTree';
+import { reportActivity } from './lib/reportActivity';
 import { fmtDateVN, fmtDateTimeVN } from './utils/dateVN';
 import { useModalA11y } from './utils/useModalA11y';
 import * as xlsx from 'xlsx';
@@ -522,6 +523,7 @@ export default function App() {
       localStorage.setItem('erp_activity_logs', JSON.stringify(updated));
       return updated;
     });
+    reportActivity({ action, entityType: 'dauthau_action', entityId: newLog.id, detail: details });
   };
 
   // All personnel taking part in a project (manager + implementers) — used to scope activity-log visibility
