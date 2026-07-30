@@ -20,6 +20,7 @@ import { AppLauncher } from './components/AppLauncher';
 import TextWithLinks from './components/TextWithLinks';
 import { Badge, TimelineProgress, EmptyState, AutoGrowTextarea } from './components/ui';
 import { updateTaskInTree, calculateProjectProgress, getTaskProgress, progressOfRound, weightIssue, weightSumAllRounds, soVongCoViec, tasksOfRound } from './utils/taskTree';
+import { reportActivity } from './lib/reportActivity';
 import { fmtDateVN, fmtDateTimeVN, tongNgayDoiHan } from './utils/dateVN';
 import { parseAttachments } from './utils/attachments';
 import { useModalA11y } from './utils/useModalA11y';
@@ -739,6 +740,7 @@ export default function App() {
       localStorage.setItem('erp_activity_logs', JSON.stringify(updated));
       return updated;
     });
+    reportActivity({ action, entityType: 'dauthau_action', entityId: newLog.id, detail: details });
   };
 
   // All personnel taking part in a project (manager + implementers) — used to scope activity-log visibility
