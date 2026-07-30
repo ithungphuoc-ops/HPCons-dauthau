@@ -1,0 +1,19 @@
+node_modules/
+build/
+dist/
+.next/
+dist-desktop/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+.vercel
+next-env.d.ts
+*.tsbuildinfo
+
+# Bản backup demo cũ trước khi dọn dữ liệu — có mật khẩu plaintext, không đưa lên Git
+src/data/staff_predemo_backup.json
+
+# Dữ liệu dự án đấu thầu đang làm việc thật — Sếp muốn giữ lại, đẩy lên sau (2026-07-30)
+src/data/db_predemo_backup.json

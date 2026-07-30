@@ -1,0 +1,47 @@
+import type { ReactNode } from 'react';
+import { cn } from '../../lib/utils';
+import { Card } from './Card';
+
+/**
+ * KPI Card — HPCons Design System V1.1 §E1.
+ * BẮT BUỘC đủ 4 thành phần: Icon (nền tint) + Tiêu đề + Giá trị chính (đậm 700) + Thông tin phụ/trạng thái.
+ * Cấm card rỗng hoặc chỉ có biểu tượng.
+ */
+type Tone = 'primary' | 'success' | 'warning' | 'danger' | 'neutral';
+
+const iconTone: Record<Tone, string> = {
+  primary: 'bg-brand-primary/10 text-brand-primary dark:text-brand-primary-300',
+  success: 'bg-brand-success/10 text-brand-success dark:text-brand-success-300',
+  warning: 'bg-brand-warning/10 text-brand-warning',
+  danger: 'bg-brand-danger/10 text-brand-danger',
+  neutral: 'bg-brand-muted/10 text-brand-muted dark:text-slate-300',
+};
+
+export interface KpiCardProps {
+  /** Icon (thường là icon Lucide) — hiển thị trên nền tint theo tone */
+  icon: ReactNode;
+  title: string;
+  value: ReactNode;
+  /** Thông tin phụ: chuỗi mô tả hoặc badge trạng thái */
+  sub?: ReactNode;
+  tone?: Tone;
+  className?: string;
+}
+
+// Bố cục thoáng hơn & kiểu chữ đồng bộ (chị Trâm góp ý 26/07/2026: thẻ cũ trông "o ép", cỡ chữ
+// giữa các thẻ không đều). Nay: tiêu đề in hoa cùng cỡ, số liệu cùng cỡ và canh theo chữ số
+// (tabular-nums) nên các thẻ đứng cạnh nhau không lệch nhau, dòng phụ cùng một cỡ.
+export function KpiCard({ icon, title, value, sub, tone = 'primary', className }: KpiCardProps) {
+  return (
+    <Card className={cn('flex items-center gap-4 p-5', className)}>
+      <span className={cn('flex h-12 w-12 shrink-0 items-center justify-center rounded-xl', iconTone[tone])}>
+        {icon}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[10px] font-black uppercase tracking-wider text-text-secondary">{title}</p>
+        <p className="mt-1 truncate text-2xl font-black leading-none tracking-tight text-foreground tabular-nums">{value}</p>
+        {sub != null && <div className="mt-1.5 truncate text-[11px] font-medium text-text-desc">{sub}</div>}
+      </div>
+    </Card>
+  );
+}

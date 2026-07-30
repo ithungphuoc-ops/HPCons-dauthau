@@ -1,0 +1,63 @@
+{
+  "name": "react-example",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "electron-main.cjs",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "build:standalone": "next build && node scripts/copy-standalone-assets.mjs",
+    "clean": "rm -rf .next dist-desktop",
+    "lint": "tsc --noEmit",
+    "electron:dev": "npm run build:standalone && electron .",
+    "build:exe": "npm run build:standalone && electron-builder --win --portable"
+  },
+  "build": {
+    "appId": "com.hpcons.erp",
+    "productName": "HP-CONS ERP",
+    "directories": {
+      "output": "dist-desktop"
+    },
+    "files": [
+      ".next/standalone/**/*",
+      "electron-main.cjs"
+    ],
+    "win": {
+      "target": "portable"
+    },
+    "asar": false,
+    "extraMetadata": {
+      "type": "commonjs"
+    }
+  },
+  "dependencies": {
+    "@google/genai": "^2.4.0",
+    "@tailwindcss/postcss": "^4.1.14",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "firebase": "^12.15.0",
+    "firebase-admin": "^14.2.0",
+    "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
+    "next": "^15.5.20",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "server-only": "^0.0.1",
+    "tailwind-merge": "^3.6.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "electron": "^42.5.1",
+    "electron-builder": "^26.15.3",
+    "tailwindcss": "^4.1.14",
+    "typescript": "~5.8.2"
+  },
+  "overrides": {
+    "jose": "4.15.9"
+  }
+}
