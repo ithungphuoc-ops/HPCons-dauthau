@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyHpcore, fetchCentralRole, fetchCentralAvatar, SSO_COOKIE_NAME } from "@/src/lib/hpcore";
 import { getAdminAuth, getAdminDb } from "@/src/lib/firebase-admin";
 
-type Role = "BOOD" | "MANAGER" | "STAFF";
+// VIEWER = Level 4 "Khách — chỉ xem" (chị Trâm chốt 26/07/2026). Phải khai ở đây, nếu không
+// App Tổng gán quyền VIEWER thì route này coi là không hợp lệ và chặn đăng nhập (403).
+type Role = "BOOD" | "MANAGER" | "STAFF" | "VIEWER";
 
 const CHUC_VU_BY_ROLE: Record<Role, string> = {
   BOOD: "Ban giám đốc",
   MANAGER: "Quản lý",
   STAFF: "Chuyên viên đấu thầu",
+  VIEWER: "Khách (chỉ xem)",
 };
 
 function parseCookie(req: NextRequest, name: string): string | undefined {

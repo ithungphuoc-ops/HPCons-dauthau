@@ -16,8 +16,16 @@ export async function POST(req: NextRequest) {
 
     // Parse Excel spreadsheet base64
     const buffer = Buffer.from(fileData, "base64");
+    // TỆP VĂN BẢN (CSV / .xls dạng HTML) PHẢI ĐỌC THEO UTF-8 (chị Trâm báo 28/07/2026).
+    // Trước đây đưa thẳng buffer cho SheetJS: file CSV KHÔNG có BOM bị đọc theo bảng mã 1 byte nên
+    // "Tên Dự Án" thành "Tên Dá»± Ãn" → dò cột thất bại → báo "thiếu cột bắt buộc" dù tệp đúng mẫu.
+    // Excel bản tiếng Việt lưu "CSV (Comma delimited)" mặc định KHÔNG kèm BOM, nên lỗi này gặp thường xuyên.
+    // File .xlsx là ZIP nhị phân (bắt đầu bằng "PK") — vẫn phải đưa nguyên buffer.
+    const laZip = buffer.length > 1 && buffer[0] === 0x50 && buffer[1] === 0x4b; // "PK"
     // raw:true stops the CSV parser from converting "2/6/2026" to a US-style date; we parse day-first ourselves
-    const workbook = xlsx.read(buffer, { type: "buffer", raw: true });
+    const workbook = laZip
+      ? xlsx.read(buffer, { type: "buffer", raw: true })
+      : xlsx.read(buffer.toString("utf8").replace(/^﻿/, ""), { type: "string", raw: true });
 
     if (workbook.SheetNames.length === 0) {
       throw new Error("Tệp Excel không chứa bất kỳ trang tính nào.");

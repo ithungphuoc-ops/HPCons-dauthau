@@ -169,6 +169,55 @@ export const calculateProjectProgress = (tasks: ProjectTask[]): number => {
   return Math.round((completedWeight / totalWeight) * 100);
 };
 
+// ===== TỈ TRỌNG THEO VÒNG (chị Trâm chốt 25/07/2026) =====
+// Mỗi lần hồ sơ bị trả về làm lại rồi gửi CĐT lần nữa = 1 vòng mới, có bộ việc con riêng.
+// Tỉ trọng phải đủ 100% TRONG TỪNG VÒNG → 2 lần báo giá thì lũy kế 200%.
+// Việc con không ghi `vong` (dữ liệu cũ) được coi là thuộc vòng 1.
+
+/** Vòng của một việc con (thiếu = 1). */
+export const vongCuaViec = (t: ProjectTask): number => t.vong && t.vong > 0 ? t.vong : 1;
+
+/** Việc con thuộc đúng một vòng. */
+export const tasksOfRound = (tasks: ProjectTask[] | undefined, vong: number): ProjectTask[] =>
+  (tasks || []).filter(t => vongCuaViec(t) === vong);
+
+/** Tổng tỉ trọng của một vòng. */
+export const weightSumOfRound = (tasks: ProjectTask[] | undefined, vong: number): number =>
+  tasksOfRound(tasks, vong).reduce((s, t) => s + (t.weight || 0), 0);
+
+/** Tổng tỉ trọng LŨY KẾ mọi vòng (2 vòng đủ chuẩn = 200%). */
+export const weightSumAllRounds = (tasks: ProjectTask[] | undefined): number =>
+  (tasks || []).reduce((s, t) => s + (t.weight || 0), 0);
+
+/** Số vòng đã có việc con (dùng để hiện "lũy kế X/N00%"). */
+export const soVongCoViec = (tasks: ProjectTask[] | undefined): number =>
+  (tasks || []).reduce((m, t) => Math.max(m, vongCuaViec(t)), 0);
+
+/** Tiến độ tính RIÊNG cho một vòng (0–100%) — vòng mới bắt đầu lại từ 0. */
+export const progressOfRound = (tasks: ProjectTask[] | undefined, vong: number): number =>
+  calculateProjectProgress(tasksOfRound(tasks, vong));
+
+/**
+ * Kiểm tra phân bổ tỉ trọng của một vòng. Trả null khi đã đủ 100%.
+ * MỘT NGUỒN DUY NHẤT cho mọi câu thông báo (lỗi trên form, toast, tin chuông) để không lệch câu chữ.
+ */
+export const weightIssue = (
+  tasks: ProjectTask[] | undefined,
+  vong: number
+): { tong: number; lech: number; thieu: boolean; chuaCoTiTrong: string[]; soViec: number; moTa: string } | null => {
+  const list = tasksOfRound(tasks, vong);
+  const tong = list.reduce((s, t) => s + (t.weight || 0), 0);
+  if (list.length > 0 && tong === 100) return null;
+  const lech = Math.abs(100 - tong);
+  const thieu = tong < 100;
+  const chuaCoTiTrong = list.filter(t => !(t.weight > 0)).map(t => t.name);
+  const moTa = list.length === 0
+    ? `Vòng ${vong} chưa có công việc con nào — cần phân rã và chia tỉ trọng đủ 100%.`
+    : `Tỉ trọng vòng ${vong} đang ${tong}% — ${thieu ? `thiếu ${lech}%` : `vượt ${lech}%`}.`
+      + (chuaCoTiTrong.length ? ` Việc chưa có tỉ trọng: ${chuaCoTiTrong.map(n => `"${n}"`).join(', ')}.` : '');
+  return { tong, lech, thieu, chuaCoTiTrong, soViec: list.length, moTa };
+};
+
 /**
  * Recursively gathers all tasks that are assigned to a specific user ID,
  * or where they are the executor (fallback if unassigned).

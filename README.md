@@ -1,20 +1,30 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# HP-CONS ERP — Báo cáo Tiến độ Phòng Đấu Thầu
 
-# Run and deploy your AI Studio app
+Ứng dụng nội bộ quản lý & báo cáo tiến độ hồ sơ đấu thầu (Kanban 7 bước, KPI, dashboard).
+Đăng nhập qua SSO của App Tổng (account.hpcore.vn), dữ liệu đồng bộ realtime qua Firebase.
 
-This contains everything you need to run your app locally.
+Hướng dẫn triển khai đầy đủ (biến môi trường, build, bàn giao): xem [HUONG-DAN-CHO-IT.md](HUONG-DAN-CHO-IT.md).
+Design system dùng chung của HPCons: xem [docs/design-system/](docs/design-system/).
 
-View your app in AI Studio: https://ai.studio/apps/30a6bcdb-a229-4a4a-8e13-121e8b80cb9f
+## Công nghệ
 
-## Run Locally
+- **Next.js 15** (App Router) + React 19 + TypeScript + Tailwind CSS v4.
+- **Firebase**: Auth (đăng nhập) + Firestore (đồng bộ dữ liệu realtime giữa các máy) — project riêng `hpcons-dauthau`.
+- **API routes** (`app/api/`): cầu nối SSO với App Tổng, lọc/nhập dự án.
+- **Electron** (tùy chọn): đóng gói bản desktop Windows chạy độc lập.
 
-**Prerequisites:**  Node.js
+## Chạy thử (development)
 
+**Yêu cầu:** Node.js LTS.
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```bash
+npm install
+npm run dev        # → http://localhost:3000
+```
+
+Cần cấu hình `.env.local` trước khi chạy — xem mẫu ở [.env.example](.env.example) và
+chi tiết từng biến trong [HUONG-DAN-CHO-IT.md](HUONG-DAN-CHO-IT.md).
+
+Muốn thử app mà chưa cấu hình SSO/Firebase: đặt `NEXT_PUBLIC_DEV_SANDBOX=1` trong `.env.local`
+để vào thẳng "Bản thử" (màn chọn vai trò, dữ liệu chỉ lưu trong trình duyệt). **Không bật biến
+này trên môi trường production.**

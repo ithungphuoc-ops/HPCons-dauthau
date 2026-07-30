@@ -14,13 +14,13 @@ import {
   Calendar
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { chucVuToRole } from '../App';
+import { hoSoChoTPDuyet } from './MyTasksPanel';
 import { KpiCard } from './ui';
 
 interface StatsDashboardProps {
   projects: Project[];
   staff: Staff[];
-  currentUserRole?: 'BOOD' | 'MANAGER' | 'STAFF';
+  currentUserRole?: 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER';
   currentUserId?: string;
 }
 
@@ -36,9 +36,15 @@ export default function StatsDashboard({
   // --- 1. STAFF PERSONAL WORKSPACE STATISTICS ---
   const myProfile = staff.find(s => s.id === currentUserId);
   
+  // Kế hoạch Trưởng phòng CHƯA duyệt thì không tính vào số liệu của nhân viên (chị Trâm chốt
+  // 27/07/2026): việc vẫn hiện ở danh sách để thu xếp trước nhưng mọi thao tác bị khóa, nên không
+  // thể có tiến độ — đưa vào thống kê chỉ làm "Hiệu suất tiến độ" tụt oan cho nhân viên.
+  // (hoSoChoTPDuyet tính cả kế hoạch của VÒNG mới đang chờ duyệt lại, không chỉ lần lập đầu tiên)
+  const projectsTinhSoLieu = isStaff ? projects.filter(p => !hoSoChoTPDuyet(p)) : projects;
+
   // Gather all tasks assigned to this staff member recursively (WBS hierarchy style)
   const myAssignedTasks: ProjectTask[] = [];
-  projects.forEach(p => {
+  projectsTinhSoLieu.forEach(p => {
     const isProjectExecutor = p.thucHienId === currentUserId || p.thucHienIds?.includes(currentUserId || '');
     const traverse = (tList: ProjectTask[]) => {
       tList.forEach(t => {
@@ -71,13 +77,8 @@ export default function StatsDashboard({
   const activeProjects = projects.filter(p => p.trangThai === 'DANG_THUC_HIEN' || p.trangThai === 'TRE_TIEN_DO');
   const delayedProjects = projects.filter(p => p.trangThai === 'TRE_TIEN_DO' || p.trangThai === 'HOAN_THANH_TRE_HAN');
   
-  // Quản lý không được thấy KPI của Trưởng phòng → KPI trung bình của Quản lý loại Level 1 khỏi phép tính
-  const kpiPool = currentUserRole === 'MANAGER'
-    ? staff.filter(s => (s.role || chucVuToRole(s.chucVu)) !== 'BOOD')
-    : staff;
-  const avgKPI = kpiPool.length > 0
-    ? Math.round(kpiPool.reduce((sum, s) => sum + s.kpiDiem, 0) / kpiPool.length)
-    : 85;
+  // KPI trung bình tạm bỏ tính — KPI đang xây dựng trọng số, thẻ "KPI đội ngũ" hiển thị "Đang xây dựng"
+  // thay vì con số (chị Trâm chốt 27/07/2026). Giữ lại chú thích để khi có công thức thì khôi phục.
 
   // USER'S EXACT SPECIFICATION CALCULATIONS:
   // "Số công việc đã thực hiện (tính dựa theo số lượng công việc con trong 1 dự án, nếu dự án nào chỉ có 1 công việc con thì đếm là 1)"
@@ -187,7 +188,7 @@ export default function StatsDashboard({
             tone="warning"
             icon={<Briefcase className="size-5" />}
             title="Gói Thầu Tham Gia"
-            value={`${projects.length} Gói Thầu`}
+            value={projectsTinhSoLieu.length}
             sub="Số lượng gói thầu phụ trách — theo hạn đấu thầu"
           />
         </motion.div>
@@ -201,6 +202,11 @@ export default function StatsDashboard({
   const projectCompletionRate = totalProjectsCount > 0 ? Math.round((completedProjectsCount / totalProjectsCount) * 100) : 0;
 
   const totalCompletedTasksCount = taskCompletedOnTime + taskCompletedLate;
+  // Hiện trạng GÓI THẦU (dự án) — để vẽ biểu đồ tròn thứ hai; dùng cùng 4 nhóm với công việc
+  const projectPending = projects.filter(p => p.trangThai === 'DANG_THUC_HIEN').length;
+  const projectDoneOnTime = projects.filter(p => p.trangThai === 'HOAN_THANH_DUNG_HAN').length;
+  const projectDoneLate = projects.filter(p => p.trangThai === 'HOAN_THANH_TRE_HAN').length;
+  const projectOverdue = projects.filter(p => p.trangThai === 'TRE_TIEN_DO').length;
   const taskCompletionRate = totalCalculatedTasks > 0 ? Math.round((totalCompletedTasksCount / totalCalculatedTasks) * 100) : 0;
 
   return (
@@ -216,9 +222,9 @@ export default function StatsDashboard({
           <KpiCard
             tone="primary"
             icon={<Briefcase className="size-5" />}
-            title="Tổng Quan Gói Thầu"
-            value={`${projects.length} Gói Thầu`}
-            sub={`Đang hoạt động: ${activeProjects.length} gói thầu`}
+            title="Gói thầu"
+            value={projects.length}
+            sub={`${activeProjects.length} đang thực hiện`}
           />
         </motion.div>
 
@@ -226,9 +232,9 @@ export default function StatsDashboard({
           <KpiCard
             tone="success"
             icon={<CheckCircle className="size-5" />}
-            title="Số Dự Án Đã Thực Hiện"
+            title="Gói thầu đã xong"
             value={`${completedProjectsCount} / ${totalProjectsCount}`}
-            sub={`${projectCompletionRate}% tỷ lệ hoàn thành`}
+            sub={`Đạt ${projectCompletionRate}%`}
           />
         </motion.div>
 
@@ -236,219 +242,120 @@ export default function StatsDashboard({
           <KpiCard
             tone="primary"
             icon={<CheckSquare className="size-5" />}
-            title="Số Công Việc Đã Thực Hiện"
-            value={`${totalCalculatedTasks} cv`}
-            sub={`Xong ${totalCompletedTasksCount} cv`}
+            title="Công việc"
+            value={totalCalculatedTasks}
+            sub={`Xong ${totalCompletedTasksCount} · Còn ${totalCalculatedTasks - totalCompletedTasksCount}`}
           />
         </motion.div>
 
         <motion.div variants={itemVariants} id="stat-card-avg-kpi">
+          {/* KPI đội ngũ để TRỐNG điểm — đang xây dựng trọng số (chị Trâm chốt 27/07/2026) */}
           <KpiCard
-            tone="warning"
+            tone="neutral"
             icon={<Award className="size-5" />}
-            title="Chỉ Số Đội Ngũ & KPI"
-            value={`${avgKPI} / 100 đ`}
-            sub={`Tổng số nhân sự: ${staff.length} nhân sự`}
+            title="KPI đội ngũ"
+            value="Đang xây dựng"
+            sub={`${staff.length} nhân sự`}
           />
         </motion.div>
       </motion.div>
 
-      {/* 2. CIRCULAR PIE CHART BREAKDOWN (Biểu đồ hình tròn) */}
-      <motion.div 
+      {/* 2. HAI BIỂU ĐỒ TRÒN: gói thầu (dự án) và công việc — chị Trâm chốt 26/07/2026.
+             Trước đây chỉ có 1 biểu đồ cho công việc nên không nhìn được hiện trạng gói thầu. */}
+      <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
-        className="bg-white dark:bg-dark-card p-6 rounded-xl border border-slate-100 dark:border-slate-800 shadow-xs"
+        // Hai biểu đồ NẰM NGANG cạnh nhau từ md (768px) trở lên — chỉ mobile mới xếp dọc
+        // (chị Trâm chốt 26/07/2026: trước đây đặt ngưỡng xl=1280px nên màn hẹp hơn bị xếp dọc, tốn chỗ).
+        className="grid grid-cols-1 md:grid-cols-2 gap-5"
       >
-        <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-4 mb-5">
-          <div>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-brand-accent dark:text-brand-accent-300" />
-              Biểu Đồ Tròn Phân Tích Hiện Trạng Tác Vụ Đấu Thầu
-            </h3>
-            <p className="text-[11px] text-slate-400 mt-0.5">
-              Tỷ lệ phân phối giữa các công việc đang triển khai, đã nộp đúng hạn, hoàn thành trễ và đang bị trễ hạn
-            </p>
-          </div>
-          <span className="text-[10px] font-black uppercase tracking-wider bg-brand-accent/10 dark:bg-brand-accent/15 text-brand-accent dark:text-brand-accent-300 px-2.5 py-1 rounded-md">
-            Tổng {totalCalculatedTasks} Tác Vụ
-          </span>
-        </div>
-
-        {/* Circular Pie Chart custom SVG rendering */}
-        {(() => {
-          const total = totalCalculatedTasks || 1;
-          const pctPending = (taskPending / total) * 100;
-          const pctOnTime = (taskCompletedOnTime / total) * 100;
-          const pctLate = (taskCompletedLate / total) * 100;
-          const pctOverdue = (taskOverdue / total) * 100;
-
+        {[
+          {
+            key: 'goiThau',
+            tieuDe: 'Hiện trạng gói thầu',
+            tongNhan: 'gói thầu',
+            tong: totalProjectsCount,
+            phan: [
+              { nhan: 'Đang thực hiện', so: projectPending, mau: 'stroke-brand-accent', dot: 'bg-brand-accent', chu: 'text-brand-accent dark:text-brand-accent-300' },
+              { nhan: 'Hoàn thành đúng hạn', so: projectDoneOnTime, mau: 'stroke-brand-success', dot: 'bg-brand-success', chu: 'text-brand-success dark:text-brand-success-300' },
+              { nhan: 'Hoàn thành trễ hạn', so: projectDoneLate, mau: 'stroke-brand-warning', dot: 'bg-brand-warning', chu: 'text-brand-warning' },
+              { nhan: 'Đang trễ hạn', so: projectOverdue, mau: 'stroke-brand-danger', dot: 'bg-brand-danger', chu: 'text-brand-danger' },
+            ],
+          },
+          {
+            key: 'congViec',
+            tieuDe: 'Hiện trạng công việc',
+            tongNhan: 'công việc',
+            tong: totalCalculatedTasks,
+            phan: [
+              { nhan: 'Đang thực hiện', so: taskPending, mau: 'stroke-brand-accent', dot: 'bg-brand-accent', chu: 'text-brand-accent dark:text-brand-accent-300' },
+              { nhan: 'Hoàn thành đúng hạn', so: taskCompletedOnTime, mau: 'stroke-brand-success', dot: 'bg-brand-success', chu: 'text-brand-success dark:text-brand-success-300' },
+              { nhan: 'Hoàn thành trễ hạn', so: taskCompletedLate, mau: 'stroke-brand-warning', dot: 'bg-brand-warning', chu: 'text-brand-warning' },
+              { nhan: 'Đang trễ hạn', so: taskOverdue, mau: 'stroke-brand-danger', dot: 'bg-brand-danger', chu: 'text-brand-danger' },
+            ],
+          },
+        ].map(bd => {
+          const tong = bd.tong || 1;
           const r = 50;
-          const C = 2 * Math.PI * r; // ~ 314.159
-
-          const strokePending = (taskPending / total) * C;
-          const strokeOnTime = (taskCompletedOnTime / total) * C;
-          const strokeLate = (taskCompletedLate / total) * C;
-          const strokeOverdue = (taskOverdue / total) * C;
-
-          const offset1 = 0;
-          const offset2 = -strokePending;
-          const offset3 = -(strokePending + strokeOnTime);
-          const offset4 = -(strokePending + strokeOnTime + strokeLate);
-
+          const C = 2 * Math.PI * r;
+          let luyKe = 0;                                  // độ dài cung đã vẽ, dùng làm offset cho mảnh kế tiếp
+          const cung = bd.phan.map(ph => {
+            const dai = (ph.so / tong) * C;
+            const offset = -luyKe;
+            luyKe += dai;
+            return { ...ph, dai, offset, pct: Math.round((ph.so / tong) * 100) };
+          });
           return (
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 items-center">
-              {/* Left Column: Visual Donut */}
-              <div className="xl:col-span-5 flex flex-col items-center justify-center p-4">
-                <div className="relative w-48 h-48 flex items-center justify-center shrink-0">
-                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
-                    <circle
-                      cx="60"
-                      cy="60"
-                      r={r}
-                      className="stroke-slate-100 dark:stroke-slate-800/80"
-                      strokeWidth="14"
-                      fill="transparent"
-                    />
-                    {taskPending > 0 && (
-                      <circle
-                        cx="60"
-                        cy="60"
-                        r={r}
-                        className="stroke-brand-accent transition-all duration-300 hover:stroke-brand-accent-400"
-                        strokeWidth="14"
-                        fill="transparent"
-                        strokeDasharray={`${strokePending} ${C}`}
-                        strokeDashoffset={offset1}
-                      />
-                    )}
-                    {taskCompletedOnTime > 0 && (
-                      <circle
-                        cx="60"
-                        cy="60"
-                        r={r}
-                        className="stroke-brand-success transition-all duration-300 hover:stroke-brand-success-400"
-                        strokeWidth="14"
-                        fill="transparent"
-                        strokeDasharray={`${strokeOnTime} ${C}`}
-                        strokeDashoffset={offset2}
-                      />
-                    )}
-                    {taskCompletedLate > 0 && (
-                      <circle
-                        cx="60"
-                        cy="60"
-                        r={r}
-                        className="stroke-brand-warning transition-all duration-300 hover:stroke-brand-warning/80"
-                        strokeWidth="14"
-                        fill="transparent"
-                        strokeDasharray={`${strokeLate} ${C}`}
-                        strokeDashoffset={offset3}
-                      />
-                    )}
-                    {taskOverdue > 0 && (
-                      <circle
-                        cx="60"
-                        cy="60"
-                        r={r}
-                        className="stroke-brand-danger transition-all duration-300 hover:stroke-brand-danger/80"
-                        strokeWidth="14"
-                        fill="transparent"
-                        strokeDasharray={`${strokeOverdue} ${C}`}
-                        strokeDashoffset={offset4}
-                      />
-                    )}
-                  </svg>
-                  
-                  {/* Inside Text Center overlay */}
-                  <div className="absolute text-center bg-white dark:bg-dark-card p-4 rounded-full shadow-xs w-32 h-32 flex flex-col items-center justify-center border border-slate-100 dark:border-slate-800">
-                    <span className="text-3xl font-black text-slate-800 dark:text-white leading-none">
-                      {totalCalculatedTasks}
-                    </span>
-                    <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">
-                      Tổng Công Việc
-                    </span>
-                  </div>
-                </div>
+            <div key={bd.key} className="bg-white dark:bg-dark-card p-5 rounded-xl border border-slate-100 dark:border-slate-800 shadow-xs">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-3 mb-4">
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-brand-accent dark:text-brand-accent-300" />
+                  {bd.tieuDe}
+                </h3>
+                <span className="text-[10px] font-black uppercase tracking-wider bg-brand-accent/10 dark:bg-brand-accent/15 text-brand-accent dark:text-brand-accent-300 px-2.5 py-1 rounded-md whitespace-nowrap">
+                  Tổng {bd.tong} {bd.tongNhan}
+                </span>
               </div>
 
-              {/* Right Column: Dynamic interactive stats breakdown */}
-              <div className="xl:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* 1. Pending */}
-                <div className="bg-slate-50/50 dark:bg-dark-card/30 p-4 rounded-xl border border-slate-100/75 dark:border-slate-800/60 flex items-center gap-3">
-                  <div className="w-3.5 h-3.5 rounded-full bg-brand-accent shrink-0 shadow-xs" />
-                  <div className="flex-1 min-w-0">
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold block uppercase tracking-wider">
-                      Đang thực hiện
-                    </span>
-                    <div className="flex items-baseline gap-2 mt-0.5">
-                      <span className="text-base font-bold text-slate-800 dark:text-slate-100">
-                        {taskPending} công việc
-                      </span>
-                      <span className="text-xs text-brand-accent dark:text-brand-accent-300 font-black">
-                        {Math.round(pctPending)}%
-                      </span>
-                    </div>
+              <div className="flex flex-col sm:flex-row items-center gap-4">
+                {/* Vòng tròn */}
+                <div className="relative w-32 h-32 lg:w-36 lg:h-36 shrink-0 flex items-center justify-center">
+                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 120 120">
+                    <circle cx="60" cy="60" r={r} className="stroke-slate-100 dark:stroke-slate-800/80" strokeWidth="14" fill="transparent" />
+                    {cung.map(c => c.so > 0 && (
+                      <circle
+                        key={c.nhan}
+                        cx="60" cy="60" r={r}
+                        className={`${c.mau} transition-all duration-300`}
+                        strokeWidth="14"
+                        fill="transparent"
+                        strokeDasharray={`${c.dai} ${C}`}
+                        strokeDashoffset={c.offset}
+                      />
+                    ))}
+                  </svg>
+                  <div className="absolute text-center w-22 h-22 lg:w-26 lg:h-26 rounded-full bg-white dark:bg-dark-card border border-slate-100 dark:border-slate-800 flex flex-col items-center justify-center">
+                    <span className="text-2xl font-black text-slate-800 dark:text-white leading-none">{bd.tong}</span>
+                    <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-1">{bd.tongNhan}</span>
                   </div>
                 </div>
 
-                {/* 2. On Time Completed */}
-                <div className="bg-slate-50/50 dark:bg-dark-card/30 p-4 rounded-xl border border-slate-100/75 dark:border-slate-800/60 flex items-center gap-3">
-                  <div className="w-3.5 h-3.5 rounded-full bg-brand-success shrink-0 shadow-xs" />
-                  <div className="flex-1 min-w-0">
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold block uppercase tracking-wider">
-                      Đã hoàn thành đúng hạn
-                    </span>
-                    <div className="flex items-baseline gap-2 mt-0.5">
-                      <span className="text-base font-bold text-slate-800 dark:text-slate-100">
-                        {taskCompletedOnTime} công việc
-                      </span>
-                      <span className="text-xs text-brand-success dark:text-brand-success-300 font-black">
-                        {Math.round(pctOnTime)}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3. Completed Late */}
-                <div className="bg-slate-50/50 dark:bg-dark-card/30 p-4 rounded-xl border border-slate-100/75 dark:border-slate-800/60 flex items-center gap-3">
-                  <div className="w-3.5 h-3.5 rounded-full bg-brand-warning shrink-0 shadow-xs" />
-                  <div className="flex-1 min-w-0">
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold block uppercase tracking-wider">
-                      Đã hoàn thành trễ hạn
-                    </span>
-                    <div className="flex items-baseline gap-2 mt-0.5">
-                      <span className="text-base font-bold text-slate-800 dark:text-slate-100">
-                        {taskCompletedLate} công việc
-                      </span>
-                      <span className="text-xs text-brand-warning dark:text-brand-warning font-black">
-                        {Math.round(pctLate)}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 4. Overdue */}
-                <div className="bg-slate-50/50 dark:bg-dark-card/30 p-4 rounded-xl border border-slate-100/75 dark:border-slate-800/60 flex items-center gap-3">
-                  <div className="w-3.5 h-3.5 rounded-full bg-brand-danger shrink-0 shadow-xs" />
-                  <div className="flex-1 min-w-0">
-                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-extrabold block uppercase tracking-wider">
-                      Công việc trễ hạn
-                    </span>
-                    <div className="flex items-baseline gap-2 mt-0.5">
-                      <span className="text-base font-bold text-slate-800 dark:text-slate-100">
-                        {taskOverdue} công việc
-                      </span>
-                      <span className="text-xs text-brand-danger dark:text-brand-danger font-black">
-                        {Math.round(pctOverdue)}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                {/* Chú giải: cùng một cỡ chữ & cách trình bày cho cả 2 biểu đồ */}
+                <ul className="flex-1 w-full min-w-0 space-y-1.5">
+                  {cung.map(c => (
+                    <li key={c.nhan} className="flex items-center gap-2.5 bg-slate-50/60 dark:bg-dark-card/30 border border-slate-100/70 dark:border-slate-800/60 rounded-lg px-2.5 py-1.5">
+                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${c.dot}`} />
+                      <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 flex-1 truncate">{c.nhan}</span>
+                      <span className="text-[13px] font-black text-slate-800 dark:text-slate-100 tabular-nums">{c.so}</span>
+                      <span className={`text-[11px] font-black tabular-nums w-10 text-right ${c.chu}`}>{c.pct}%</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           );
-        })()}
+        })}
       </motion.div>
     </div>
   );

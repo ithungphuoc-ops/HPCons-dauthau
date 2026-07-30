@@ -1,16 +1,22 @@
 import { useState } from 'react';
 import { ProjectTask } from '../types';
 import FileDropZone from './FileDropZone';
+import { AutoGrowTextarea } from './ui';
 import { parseAttachments, joinAttachments } from '../utils/attachments';
 
 interface StaffTaskResultPanelProps {
   task: ProjectTask;
+  // Việc đã QUÁ HẠN mà chưa hoàn thành → BẮT BUỘC ghi lý do trễ hạn mới lưu được
+  // (chị chốt 25/07/2026: trễ hạn thì ngoài kết quả công việc phải giải trình luôn lý do).
+  isOverdue?: boolean;
+  // Hạn của việc — hiển thị trong lời nhắc bắt buộc giải trình cho nhân sự biết trễ mốc nào
+  deadlineText?: string;
   onSave: (patch: Partial<ProjectTask>) => void;
   onClose: () => void;
 }
 
 // Inline editor: work result, % progress, attachment, delay note
-export default function StaffTaskResultPanel({ task, onSave, onClose }: StaffTaskResultPanelProps) {
+export default function StaffTaskResultPanel({ task, isOverdue, deadlineText, onSave, onClose }: StaffTaskResultPanelProps) {
   const [ketQua, setKetQua] = useState(task.ketQuaCongViec || '');
   const [progress, setProgress] = useState<number>(task.staffProgress ?? (task.isCompleted ? 100 : 0));
   const [delayNote, setDelayNote] = useState(task.overdueReason || '');
@@ -21,6 +27,11 @@ export default function StaffTaskResultPanel({ task, onSave, onClose }: StaffTas
     // Quy tắc hoàn thành: phải có kết quả công việc mới được chốt 100% / done
     if (progress >= 100 && !ketQua.trim()) {
       setSaveError('Cần nhập kết quả công việc trước khi chốt tiến độ 100% hoàn thành!');
+      return;
+    }
+    // Việc con ĐÃ QUÁ HẠN: ngoài kết quả công việc còn phải giải trình lý do trễ mới lưu được.
+    if (isOverdue && !delayNote.trim()) {
+      setSaveError(`Công việc con này đã QUÁ HẠN${deadlineText ? ` (hạn ${deadlineText})` : ''} — bắt buộc ghi rõ LÝ DO TRỄ HẠN ở ô bên dưới mới lưu được!`);
       return;
     }
     // NOTE: never send isCompleted:false here — updateTaskInTree treats any isCompleted
@@ -88,11 +99,11 @@ export default function StaffTaskResultPanel({ task, onSave, onClose }: StaffTas
         <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block">
           Cập nhật kết quả công việc (tóm tắt sản phẩm, link tài liệu...):
         </span>
-        <textarea
+        <AutoGrowTextarea
           value={ketQua}
           onChange={(e) => { setKetQua(e.target.value); if (saveError) setSaveError(''); }}
           placeholder="Ví dụ: Đã bóc xong khối lượng phần ngầm, file BOQ đính kèm bên dưới..."
-          className="w-full h-16 p-2 text-xs bg-white dark:bg-dark-bg border border-slate-200 dark:border-slate-800 rounded-lg font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-primary"
+          className="w-full p-2 text-xs bg-white dark:bg-dark-bg border border-slate-200 dark:border-slate-800 rounded-lg font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-primary"
         />
       </div>
 
@@ -123,15 +134,23 @@ export default function StaffTaskResultPanel({ task, onSave, onClose }: StaffTas
           />
         </div>
 
-        {/* Delay note */}
+        {/* Delay note — QUÁ HẠN thì là ô BẮT BUỘC (viền đỏ + dấu *) */}
         <div className="space-y-1">
-          <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block">Nếu cần dời tiến độ — ghi rõ nguyên nhân:</span>
+          <span className={`text-[10px] font-bold block ${isOverdue ? 'text-brand-danger dark:text-brand-danger' : 'text-slate-500 dark:text-slate-400'}`}>
+            {isOverdue
+              ? `Lý do trễ hạn * (bắt buộc — việc đã quá hạn${deadlineText ? ` ${deadlineText}` : ''}):`
+              : 'Nếu cần dời tiến độ — ghi rõ nguyên nhân:'}
+          </span>
           <input
             type="text"
             value={delayNote}
-            onChange={(e) => setDelayNote(e.target.value)}
-            placeholder="VD: CĐT bổ sung bản vẽ, chờ báo giá vật tư..."
-            className="w-full px-2 py-1.5 text-xs bg-white dark:bg-dark-bg border border-brand-warning/25 dark:border-brand-warning/50 rounded-lg font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-warning"
+            onChange={(e) => { setDelayNote(e.target.value); if (saveError) setSaveError(''); }}
+            placeholder={isOverdue ? 'Bắt buộc: nêu rõ vì sao trễ hạn (VD: CĐT bổ sung bản vẽ, chờ báo giá vật tư...)' : 'VD: CĐT bổ sung bản vẽ, chờ báo giá vật tư...'}
+            className={`w-full px-2 py-1.5 text-xs bg-white dark:bg-dark-bg border rounded-lg font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 ${
+              isOverdue && !delayNote.trim()
+                ? 'border-brand-danger dark:border-brand-danger focus:ring-brand-danger'
+                : 'border-brand-warning/25 dark:border-brand-warning/50 focus:ring-brand-warning'
+            }`}
           />
         </div>
       </div>

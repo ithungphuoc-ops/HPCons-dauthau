@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Project, Staff } from '../types';
 import { getInitials, getInitialsColor } from '../App';
-import { ChevronLeft, ChevronRight, Lock, LayoutGrid, Calendar } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Lock, LayoutGrid, Calendar, ClipboardCheck } from 'lucide-react';
 import DateInput from './DateInput';
 
 // 7 bước quy trình thầu trên bảng Kanban.
@@ -45,7 +45,7 @@ interface KanbanBoardProps {
   projects: Project[];
   staff: Staff[];
   parentNameById?: Record<string, string>;
-  currentUserRole?: 'BOOD' | 'MANAGER' | 'STAFF';
+  currentUserRole?: 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER';
   onMove: (projectId: string, fromStep: number, toStep: number) => void;
   onDenied: (message: string) => void;
   onOpenProject: (projectId: string) => void;
@@ -217,7 +217,18 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
                   // Bước lùi: 6/7 → 5, còn lại → step-1
                   const backStep = (step === 6 || step === 7) ? 5 : step - 1;
                   const backAllowed = isValidKanbanTransition(step, backStep) && canMove(step, backStep);
-                  const nextAllowed = step <= 4 && canMove(step, step + 1);
+                  // Hồ sơ Quản lý vừa lập (hoặc vừa dời hạn) đứng sẵn ở Bước 1 chờ Trưởng phòng
+                  // duyệt kế hoạch — KHÔNG cho đẩy thẻ tiến lên bằng tay, duyệt xong hồ sơ tự sang
+                  // Bước 2 (chị Trâm chốt 29/07/2026: cứ để nó ở Bước 1 chứ đừng giấu khỏi bảng).
+                  // NHÃN CHỜ DUYỆT CHỈ HIỆN Ở BƯỚC 1 (chị Trâm chốt 30/07/2026) — cả "chờ duyệt lần
+                  // đầu" lẫn "chờ duyệt lại". Qua được Bước 2 tức là đã có người duyệt, treo nhãn
+                  // chờ duyệt ở đó gây hiểu sai.
+                  const hienNhanChoDuyet = step === 1 && (p.tpDaDuyet === false || p.choDuyetLai === true);
+                  // KHOÁ ĐẨY THẺ thì vẫn xét ở MỌI bước, không theo nhãn: hồ sơ mang cờ chờ duyệt mà
+                  // để đẩy tiếp là lách quy trình, và handleKanbanMove bên App cũng chặn — nút hiện
+                  // bấm được rồi báo lỗi thì còn khó hiểu hơn. Lý do nằm ở tooltip của nút.
+                  const choTPDuyet = p.tpDaDuyet === false || p.choDuyetLai === true;
+                  const nextAllowed = step <= 4 && canMove(step, step + 1) && !choTPDuyet;
                   const isBranchStep = step === 5; // rẽ nhánh Trúng / Rớt
                   return (
                     <div
@@ -257,6 +268,42 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
                         <span className="inline-block mt-1 text-[0.58rem] font-black uppercase tracking-wide bg-slate-100 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded leading-none">
                           {p.hangMuc}
                         </span>
+                        {/* Nói rõ ngay trên thẻ vì sao nút ► bị khoá — nếu không, người dùng bấm mãi
+                            không đi mà chẳng hiểu tại sao (chị Trâm 29/07/2026). */}
+                        {hienNhanChoDuyet && (
+                          <span
+                            className="inline-flex items-center gap-0.5 mt-1 ml-1 text-[0.58rem] font-black uppercase tracking-wide bg-brand-warning/15 text-brand-warning px-1 py-0.5 rounded leading-none"
+                            title={!p.choDuyetLai
+                              ? 'Quản lý vừa lập kế hoạch — chờ Trưởng phòng mở hồ sơ bấm "Lưu Hồ Sơ". Duyệt xong thẻ TỰ sang Bước 2.'
+                              : p.lyDoChoDuyetLai === 'PHAN_BO'
+                                ? 'Quản lý chia lại tỉ trọng / thêm việc con — HẠN NỘP KHÔNG ĐỔI. Chờ Trưởng phòng duyệt lại phân bổ.'
+                                : 'Kế hoạch vừa bị dời hạn — chờ Trưởng phòng duyệt lại. Duyệt xong hồ sơ mới đẩy thẻ tiếp được.'}
+                          >
+                            <ClipboardCheck className="w-2.5 h-2.5" />
+                            {!p.choDuyetLai
+                              ? 'Chờ TP duyệt'
+                              : p.lyDoChoDuyetLai === 'PHAN_BO' ? 'Đổi phân bổ' : 'Chờ duyệt lại'}
+                          </span>
+                        )}
+                        {/* Số lần đã gửi CĐT — hiện ngay trên thẻ để TP nhìn bảng là biết hồ sơ
+                            đã qua mấy vòng gửi Chủ đầu tư (chi tiết từng lần xem trong hồ sơ). */}
+                        {(p.guiCDTLogs || []).length > 0 && (
+                          <span
+                            className="inline-block mt-1 ml-1 text-[0.58rem] font-black uppercase tracking-wide bg-brand-accent/10 text-brand-accent dark:text-brand-accent-300 px-1 py-0.5 rounded leading-none"
+                            title={(p.guiCDTLogs || []).map(l => `Lần ${l.lan}: ${l.ngay.split('-').reverse().join('-')} · Phòng ${l.tienDoPhong}%`).join('\n')}
+                          >
+                            📤 Gửi CĐT {(p.guiCDTLogs || []).length} lần
+                          </span>
+                        )}
+                        {/* Hồ sơ đang làm lại vòng thứ mấy — tỉ trọng việc con tính riêng theo vòng */}
+                        {(p.vongHienTai || 1) > 1 && (
+                          <span
+                            className="inline-block mt-1 ml-1 text-[0.58rem] font-black uppercase tracking-wide bg-brand-warning/15 text-brand-warning px-1 py-0.5 rounded leading-none"
+                            title={`Hồ sơ đang làm lại — vòng ${p.vongHienTai}. Mỗi vòng phân bổ tỉ trọng việc con đủ 100%.`}
+                          >
+                            🔁 Vòng {p.vongHienTai}
+                          </span>
+                        )}
                       </button>
                       <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-100 dark:border-slate-800">
                         <div
@@ -308,7 +355,13 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
                                   ? 'text-slate-400 hover:text-brand-accent hover:bg-brand-accent/10 cursor-pointer'
                                   : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
                               }`}
-                              title={step > 4 ? '' : nextAllowed ? `Chuyển sang bước ${step + 1}` : 'Chỉ Trưởng phòng được thao tác vùng này'}
+                              title={step > 4 ? '' : nextAllowed ? `Chuyển sang bước ${step + 1}` : choTPDuyet
+                                // Câu này phải đúng ở MỌI bước: thẻ ở Bước 3 mà ghi "tự sang Bước 2" là sai.
+                                // Hồ sơ ở Bước 1 thì đúng là duyệt xong tự sang Bước 2, nói riêng ở đó.
+                                ? (step === 1
+                                  ? 'Hồ sơ đang chờ Trưởng phòng duyệt kế hoạch — duyệt xong thẻ tự sang Bước 2'
+                                  : 'Hồ sơ đang chờ Trưởng phòng duyệt lại kế hoạch — duyệt xong mới đẩy thẻ tiếp được')
+                                : 'Chỉ Trưởng phòng được thao tác vùng này'}
                             >
                               <ChevronRight className="w-3.5 h-3.5" />
                             </button>

@@ -5,12 +5,12 @@ import { downscaleImage } from '../lib/firebase';
 import { X, Save, User, Key, Mail, ShieldAlert, Upload } from 'lucide-react';
 import { useModalA11y } from '../utils/useModalA11y';
 
-type ChucVu = 'Ban giám đốc' | 'Trưởng phòng' | 'Phó phòng' | 'Quản lý' | 'Chuyên viên đấu thầu' | 'Quản trị hệ thống';
+type ChucVu = 'Ban giám đốc' | 'Trưởng phòng' | 'Phó phòng' | 'Quản lý' | 'Chuyên viên đấu thầu' | 'Quản trị hệ thống' | 'Khách (chỉ xem)';
 
 interface StaffEditModalProps {
   member?: Staff | null; // If null/undefined, we are adding a new account
   existingStaff: Staff[];
-  currentUserRole?: 'BOOD' | 'MANAGER' | 'STAFF'; // vai trò người đang thao tác (để giới hạn quyền L2)
+  currentUserRole?: 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER'; // vai trò người đang thao tác (để giới hạn quyền L2)
   onSave: (updated: Staff) => void;
   onClose: () => void;
 }
@@ -40,16 +40,25 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
   const [username, setUsername] = useState(member?.username || '');
   const [email, setEmail] = useState(member?.email || '');
   const [mustChangePassword, setMustChangePassword] = useState<boolean>(member?.mustChangePassword ?? isNew);
-  const [role, setRole] = useState<'BOOD' | 'MANAGER' | 'STAFF'>(
+  const [role, setRole] = useState<'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER'>(
     member?.role || chucVuToRole(member?.chucVu)
   );
   // Quản lý phụ trách (đội ngũ) — chỉ Trưởng phòng (L1) được gán, chỉ áp cho nhân viên Level 3.
   const [quanLyPhuTrachId, setQuanLyPhuTrachId] = useState<string>(member?.quanLyPhuTrachId || '');
-  // Danh sách Quản lý (L2) còn làm việc để chọn
-  const managerOptions = React.useMemo(
-    () => existingStaff.filter(s => !s.daNghi && (s.role || chucVuToRole(s.chucVu)) === 'MANAGER'),
-    [existingStaff]
-  );
+  // Danh sách Quản lý (L2) còn làm việc để chọn.
+  // Người ĐANG được gán nhưng không còn là Quản lý (vừa lên Trưởng phòng, đổi quyền khác, hoặc
+  // nghỉ việc) vẫn được giữ trong danh sách để select hiện ĐÚNG người đang gán, không tụt về
+  // "Chưa gán" khiến Trưởng phòng tưởng dữ liệu mất (chị Trâm báo 28/07/2026 — dữ liệu vẫn còn
+  // nguyên, chỉ là dropdown lọc theo role hiện tại nên không tìm thấy option khớp).
+  const managerOptions = React.useMemo(() => {
+    const list = existingStaff.filter(s => !s.daNghi && (s.role || chucVuToRole(s.chucVu)) === 'MANAGER');
+    const dangGanId = member?.quanLyPhuTrachId;
+    if (dangGanId && !list.some(s => s.id === dangGanId)) {
+      const nguoiDangGan = existingStaff.find(s => s.id === dangGanId);
+      if (nguoiDangGan) list.push(nguoiDangGan);
+    }
+    return list;
+  }, [existingStaff, member?.quanLyPhuTrachId]);
 
   // Ảnh đại diện: mặc định trống (dùng chữ cái tên). Người dùng tự tải ảnh khi đăng nhập lần đầu.
   const [avatar, setAvatar] = useState(member?.avatar || '');
@@ -103,29 +112,6 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
       newErrors.hoTen = 'Họ tên không được để trống';
     }
 
-    // Tên đăng nhập: bắt buộc, không trùng (không phân biệt hoa/thường)
-    const cleanUsername = username.trim();
-    if (!cleanUsername) {
-      newErrors.username = 'Tên đăng nhập không được để trống';
-    } else if (/\s/.test(cleanUsername)) {
-      newErrors.username = 'Tên đăng nhập không được chứa khoảng trắng';
-    } else {
-      const isDupUser = existingStaff.some(s => s.id !== member?.id && s.username?.toLowerCase() === cleanUsername.toLowerCase());
-      if (isDupUser) newErrors.username = 'Tên đăng nhập này đã được sử dụng';
-    }
-
-    // Email: tùy chọn — chỉ kiểm tra khi có nhập
-    if (email.trim()) {
-      if (!/\S+@\S+\.\S+/.test(email)) {
-        newErrors.email = 'Email không hợp lệ (Ví dụ: ten@hpcons.vn)';
-      } else {
-        const isDuplicate = existingStaff.some(s => s.id !== member?.id && s.email && s.email.toLowerCase() === email.trim().toLowerCase());
-        if (isDuplicate) {
-          newErrors.email = 'Email này đã được sử dụng bởi một tài khoản khác';
-        }
-      }
-    }
-
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
@@ -139,13 +125,15 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
       id: cleanId,
       hoTen: hoTen.trim(),
       chucVu: finalChucVu,
-      avatar: avatar.trim(),
+      avatar: member?.avatar || '',
       kpiDiem: member?.kpiDiem ?? 100,
       soDuAnDangLam: member?.soDuAnDangLam ?? 0,
       tiLeDungHan: member?.tiLeDungHan ?? 100,
-      username: cleanUsername,
-      email: email.trim().toLowerCase(),
-      mustChangePassword: mustChangePassword,
+      // Tên đăng nhập / email / mật khẩu / ảnh: do App Tổng quản — GIỮ NGUYÊN giá trị hiện có,
+      // app này không có ô nhập nữa (chị Trâm chốt 26/07/2026: sửa ở đây đá với App Tổng).
+      username: member?.username,
+      email: member?.email,
+      mustChangePassword: member?.mustChangePassword ?? false,
       role: finalRole,
       // Chỉ nhân viên (L3) mới thuộc đội ngũ của một Quản lý. Quản lý (L2) tự gán thì giữ nguyên giá trị cũ.
       quanLyPhuTrachId: finalRole === 'STAFF'
@@ -248,6 +236,7 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
                 <option value="Quản lý">Quản lý</option>
                 <option value="Chuyên viên đấu thầu">Chuyên viên đấu thầu</option>
                 <option value="Quản trị hệ thống">Quản trị hệ thống</option>
+                <option value="Khách (chỉ xem)">Khách (chỉ xem)</option>
               </select>
             </div>
 
@@ -264,6 +253,7 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
                 <option value="BOOD">Level 1 - Ban Giám đốc / Trưởng phòng / Phó phòng / Quản trị</option>
                 <option value="MANAGER">Level 2 - Quản lý</option>
                 <option value="STAFF">Level 3 - Nhân sự (Chuyên viên)</option>
+                <option value="VIEWER">Level 4 - Khách (chỉ xem)</option>
               </select>
               {isManager && (
                 <p className="text-[9px] text-slate-400 mt-1 leading-tight">Quản lý chỉ tạo được tài khoản Chuyên viên (Level 3).</p>
@@ -284,9 +274,14 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
                 className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated focus:outline-none focus:ring-2 focus:ring-brand-accent"
               >
                 <option value="">— Chưa gán (chỉ Trưởng phòng thấy) —</option>
-                {managerOptions.map(m => (
-                  <option key={m.id} value={m.id}>{m.hoTen}</option>
-                ))}
+                {managerOptions.map(m => {
+                  const conLaQuanLy = (m.role || chucVuToRole(m.chucVu)) === 'MANAGER';
+                  return (
+                    <option key={m.id} value={m.id}>
+                      {m.hoTen}{!conLaQuanLy ? ' — không còn là Quản lý, nên gán lại người khác' : ''}
+                    </option>
+                  );
+                })}
               </select>
               <p className="text-[9px] text-slate-400 mt-1 leading-tight">
                 Quản lý được gán sẽ thấy nhân viên này trong <b>Đội Ngũ &amp; KPI</b> và KPI Dashboard. Mỗi nhân viên chỉ thuộc 1 quản lý.
@@ -294,149 +289,16 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
             </div>
           )}
 
-          {/* Username (login) */}
-          <div>
-            <label className="block text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1 flex items-center gap-1">
-              <User className="w-3 h-3 text-slate-400" />
-              Tên đăng nhập <span className="text-brand-danger">*</span>
-            </label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => {
-                setUsername(e.target.value);
-                if (errors.username) setErrors(prev => ({ ...prev, username: undefined }));
-              }}
-              placeholder="vd: nam.pham"
-              autoComplete="off"
-              className={`w-full px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated ${
-                errors.username ? 'border-brand-danger/50 focus:ring-brand-danger' : 'border-slate-200 dark:border-slate-700 focus:ring-brand-accent'
-              } focus:outline-none focus:ring-2`}
-            />
-            {errors.username && (
-              <span className="text-[9px] text-brand-danger mt-0.5 block font-medium">
-                {errors.username}
-              </span>
-            )}
-          </div>
-
-          {/* Email Account (optional) */}
-          <div>
-            <label className="block text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1 flex items-center gap-1">
-              <Mail className="w-3 h-3 text-slate-400" />
-              Email <span className="text-slate-400 normal-case font-medium">(tùy chọn — cũng dùng để đăng nhập)</span>
-            </label>
-            <input
-              type="text"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                if (errors.email) setErrors(prev => ({ ...prev, email: undefined }));
-              }}
-              placeholder="nhanvien@hpcons.vn"
-              className={`w-full px-2.5 py-1.5 border rounded-lg text-xs font-mono font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated ${
-                errors.email ? 'border-brand-danger/50 focus:ring-brand-danger' : 'border-slate-200 dark:border-slate-700 focus:ring-brand-accent'
-              } focus:outline-none focus:ring-2`}
-            />
-            {errors.email && (
-              <span className="text-[9px] text-brand-danger mt-0.5 block font-medium">
-                {errors.email}
-              </span>
-            )}
-          </div>
-
-          {/* Mật khẩu: Firebase quản lý (đã mã hóa) — hệ thống không lưu, không hiển thị */}
-          <div>
-            <label className="text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1 mb-1">
-              <Key className="w-3 h-3 text-slate-400" />
-              Mật khẩu truy cập
-            </label>
-            <div className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-dark-bg leading-relaxed">
-              🔐 Mật khẩu do hệ thống Firebase quản lý (đã mã hóa) — không ai xem được, kể cả quản trị viên.
-              {isNew && <><br />Tài khoản mới <b className="text-slate-700 dark:text-slate-200">tự kích hoạt</b> khi đăng nhập lần đầu bằng mật khẩu mặc định <b className="text-brand-accent dark:text-brand-accent-300">123456</b>.</>}
-            </div>
-            <label className="flex items-center gap-2 mt-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={mustChangePassword}
-                onChange={(e) => setMustChangePassword(e.target.checked)}
-                className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-brand-accent focus:ring-brand-accent"
-              />
-              <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300">
-                Bắt buộc thêm ảnh &amp; đổi mật khẩu ở lần đăng nhập tới
-              </span>
-            </label>
-          </div>
-
-          {/* Avatar Selector */}
-          <div className="border-t border-slate-100 dark:border-slate-850 pt-3">
-            <label className="block text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 flex items-center gap-1">
-              📷 Chọn ảnh đại diện (Tải từ máy tính hoặc dùng link URL)
-            </label>
-            <div className="flex gap-2.5 items-center mb-2.5">
-              <div
-                className="relative group w-11 h-11 rounded-full border-2 border-slate-200 dark:border-slate-700 overflow-hidden cursor-pointer shrink-0 bg-slate-100 dark:bg-dark-elevated flex items-center justify-center"
-                onClick={() => fileInputRef.current?.click()}
-                title="Nhấp để tải ảnh từ máy tính của bạn"
-              >
-                {avatar ? (
-                  <img
-                    src={avatar}
-                    alt="Ảnh đại diện"
-                    className="w-full h-full object-cover transition-all group-hover:scale-105"
-                  />
-                ) : (
-                  <span className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase">
-                    {(hoTen.trim().split(/\s+/).pop()?.[0] || '') + (hoTen.trim().split(/\s+/)[0]?.[0] || '') || '?'}
-                  </span>
-                )}
-                <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Upload className="w-3 h-3 text-white" />
-                </div>
-              </div>
-              <div className="flex-1 space-y-1.5">
-                <div className="flex gap-1.5">
-                  <input 
-                    type="text" 
-                    value={avatar} 
-                    onChange={(e) => setAvatar(e.target.value)}
-                    placeholder="Nhập link URL ảnh đại diện hoặc upload..."
-                    className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated focus:outline-none focus:ring-2 focus:ring-brand-accent font-mono"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    className="px-2.5 py-1.5 bg-brand-accent/10 hover:bg-brand-accent/15 dark:bg-brand-accent/15 dark:hover:bg-brand-accent/15 text-brand-accent dark:text-brand-accent-300 rounded-lg text-xs font-bold shrink-0 transition-all flex items-center gap-1 border border-brand-accent/50 dark:border-brand-accent/30 cursor-pointer"
-                  >
-                    <Upload className="w-3 h-3" />
-                    Tải từ máy
-                  </button>
-                </div>
-                <input 
-                  type="file" 
-                  ref={fileInputRef} 
-                  onChange={handleLocalImageUpload}
-                  accept="image/*"
-                  className="hidden" 
-                />
-              </div>
-            </div>
-
-            {uploadError && (
-              <p className="text-[10px] text-brand-danger font-bold mb-2 animate-pulse">
-                ⚠️ {uploadError}
-              </p>
-            )}
-          </div>
-
           <div className="bg-slate-50 dark:bg-dark-card/40 p-3 rounded-lg border border-slate-100 dark:border-slate-800 text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed font-medium flex gap-2 items-start">
             <ShieldAlert className="w-4 h-4 text-brand-accent shrink-0 mt-0.5" />
             <div>
-              <strong>Thông tin kiểm tra bảo mật (IT Specialist Check):</strong> 
+              <strong>Phân quyền trong app Đấu Thầu.</strong> Tên đăng nhập, email, mật khẩu và ảnh đại diện do
+              <b> App Tổng (account.hpcore.vn)</b> quản lý — sửa tại đó; app này chỉ đặt chức danh &amp; cấp quyền.
               <ul className="list-disc pl-4 mt-1 space-y-0.5">
                 <li><strong>Level 1 (BOOD):</strong> Toàn quyền phê duyệt dời hạn và xem tất cả dự án.</li>
                 <li><strong>Level 2 (MANAGER):</strong> Chỉ quản lý, chỉnh sửa, gán việc cho nhóm.</li>
                 <li><strong>Level 3 (STAFF):</strong> Chỉ cập nhật tiến độ bóc BOQ được phân bổ.</li>
+                <li><strong>Level 4 (Khách):</strong> CHỈ XEM — không thêm/sửa/xóa. Thấy 4 mục: Liên kết phòng ban · Dashboard · Báo cáo tiến độ · Bảng Kanban.</li>
               </ul>
             </div>
           </div>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ProjectTask, Staff } from '../types';
+import { AutoGrowTextarea } from './ui';
 import { 
   Plus, 
   Trash2, 
@@ -23,19 +24,21 @@ import {
 } from '../utils/taskTree';
 import FileDropZone from './FileDropZone';
 import { parseAttachments, joinAttachments } from '../utils/attachments';
+import { chucVuToRole } from '../App';
 
 interface SubtaskHierarchyProps {
   tasks: ProjectTask[];
   onChange: (updatedTasks: ProjectTask[]) => void;
   staff: Staff[];
-  currentUserRole?: 'BOOD' | 'MANAGER' | 'STAFF';
+  currentUserRole?: 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER';
   currentUserId?: string;
 }
 
 export default function SubtaskHierarchy({ tasks, onChange, staff, currentUserRole, currentUserId }: SubtaskHierarchyProps) {
   const canEdit = currentUserRole === 'BOOD' || currentUserRole === 'MANAGER';
-  // Nhân sự còn làm việc — dùng cho các ô chọn giao việc (người đã nghỉ vẫn nằm trong `staff` để tra cứu tên)
-  const activeStaff = staff.filter(s => !s.daNghi);
+  // Nhân sự còn làm việc — dùng cho các ô chọn giao việc (người đã nghỉ vẫn nằm trong `staff` để tra cứu tên).
+  // Bỏ luôn tài khoản Khách - chỉ xem (Level 4): khách mời không phải nhân sự phòng, không nhận việc được.
+  const activeStaff = staff.filter(s => !s.daNghi && (s.role || chucVuToRole(s.chucVu)) !== 'VIEWER');
 
   // Store expanded state of nodes that have subtasks
   const [expandedNodes, setExpandedNodes] = useState<Record<string, boolean>>({});
@@ -519,11 +522,12 @@ export default function SubtaskHierarchy({ tasks, onChange, staff, currentUserRo
                     <BookOpen className="w-3.5 h-3.5 text-brand-primary" /> Kế hoạch chi tiết &amp; Tài liệu (QL cập nhật)
                   </label>
                   {canEdit ? (
-                    <textarea
+                    <AutoGrowTextarea
+                      minRows={4}
                       value={task.detailedPlan || ''}
                       onChange={(e) => handleUpdateDetailedPlan(task.id, e.target.value)}
                       placeholder="Quản lý nhập bảng biểu, liên kết dữ liệu hoặc hướng dẫn chi tiết tại đây..."
-                      className="w-full h-24 p-2 bg-white dark:bg-dark-bg border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-brand-accent text-slate-700 dark:text-slate-100"
+                      className="w-full p-2 bg-white dark:bg-dark-bg border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-semibold focus:outline-none focus:ring-1 focus:ring-brand-accent text-slate-700 dark:text-slate-100"
                     />
                   ) : (
                     <div className="p-3 bg-white dark:bg-dark-bg border border-slate-200/80 dark:border-slate-800 rounded-lg text-xs text-slate-600 dark:text-slate-300 min-h-24 font-medium whitespace-pre-wrap leading-relaxed shadow-inner">
@@ -625,7 +629,7 @@ export default function SubtaskHierarchy({ tasks, onChange, staff, currentUserRo
                       <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block animate-pulse">
                         Tóm tắt kết quả đạt được, link tài liệu hoặc thuyết minh sản phẩm:
                       </span>
-                      <textarea
+                      <AutoGrowTextarea
                         value={task.ketQuaCongViec || ''}
                         onChange={(e) => {
                           const val = e.target.value;
@@ -633,7 +637,7 @@ export default function SubtaskHierarchy({ tasks, onChange, staff, currentUserRo
                           onChange(updated);
                         }}
                         placeholder="Ví dụ: Đã hoàn tất bóc tách chi tiết khối lượng phần ngầm, áp đơn giá thầu sơ bộ đạt tỷ lệ chính xác >95%. Toàn bộ biểu mẫu đã trình ký và đính kèm bên dưới..."
-                        className="w-full h-20 p-2 text-xs bg-white dark:bg-dark-bg border border-slate-200 dark:border-slate-800 rounded-lg font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                        className="w-full p-2 text-xs bg-white dark:bg-dark-bg border border-slate-200 dark:border-slate-800 rounded-lg font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-primary"
                       />
                     </div>
 

@@ -18,7 +18,7 @@ export const ADMIN_SEED: Staff = {
 };
 
 // Nhân sự Phòng Đấu Thầu (mật khẩu Firebase quản lý; lần đầu đăng nhập bằng 123456 → bắt thêm ảnh + đổi mật khẩu).
-const staffMember = (id: string, hoTen: string, username: string, chucVu: Staff['chucVu'], role: 'BOOD' | 'MANAGER' | 'STAFF'): Staff => ({
+const staffMember = (id: string, hoTen: string, username: string, chucVu: Staff['chucVu'], role: 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER'): Staff => ({
   id, hoTen, chucVu, avatar: '', kpiDiem: 0, soDuAnDangLam: 0, tiLeDungHan: 100,
   username, email: '', role, mustChangePassword: true,
 });
@@ -57,7 +57,6 @@ export const databaseSchema: DatabaseTable[] = [
       { name: 'id', type: 'VARCHAR(10)', constraints: 'PRIMARY KEY', description: 'Mã dự án (Hệ thống)' },
       { name: 'project_id', type: 'VARCHAR(15)', constraints: 'UNIQUE NOT NULL', description: 'Mã số hồ sơ thầu định dạng YYYY.NN (Ví dụ: 2026.01)' },
       { name: 'ten_du_an', type: 'VARCHAR(255)', constraints: 'NOT NULL', description: 'Tên gói thầu / công trình' },
-      { name: 'one_drive_link', type: 'VARCHAR(255)', constraints: '', description: 'Đường dẫn thư mục hồ sơ đấu thầu OneDrive' },
       { name: 'quality_score', type: 'INT', constraints: 'CHECK (quality_score BETWEEN 0 AND 100)', description: 'Điểm chất lượng hồ sơ thầu (1 - 100) do Trưởng phòng chấm' },
       { name: 'kpi_score', type: 'DECIMAL(5,2)', constraints: '', description: 'Điểm KPI công việc tự động thẩm định' },
       { name: 'quan_ly_id', type: 'VARCHAR(10)', constraints: 'FOREIGN KEY REFERENCES nhan_su(id)', description: 'Mã người quản lý phụ trách chung' },

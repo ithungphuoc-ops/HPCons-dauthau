@@ -28,16 +28,19 @@ export interface KpiCardProps {
   className?: string;
 }
 
+// Bố cục thoáng hơn & kiểu chữ đồng bộ (chị Trâm góp ý 26/07/2026: thẻ cũ trông "o ép", cỡ chữ
+// giữa các thẻ không đều). Nay: tiêu đề in hoa cùng cỡ, số liệu cùng cỡ và canh theo chữ số
+// (tabular-nums) nên các thẻ đứng cạnh nhau không lệch nhau, dòng phụ cùng một cỡ.
 export function KpiCard({ icon, title, value, sub, tone = 'primary', className }: KpiCardProps) {
   return (
-    <Card className={cn('flex items-start gap-4 p-4', className)}>
-      <span className={cn('flex h-11 w-11 shrink-0 items-center justify-center rounded-lg', iconTone[tone])}>
+    <Card className={cn('flex items-center gap-4 p-5', className)}>
+      <span className={cn('flex h-12 w-12 shrink-0 items-center justify-center rounded-xl', iconTone[tone])}>
         {icon}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-medium text-text-secondary">{title}</p>
-        <p className="mt-0.5 truncate text-2xl font-bold leading-tight text-foreground">{value}</p>
-        {sub != null && <div className="mt-1 text-xs text-text-desc">{sub}</div>}
+        <p className="truncate text-[10px] font-black uppercase tracking-wider text-text-secondary">{title}</p>
+        <p className="mt-1 truncate text-2xl font-black leading-none tracking-tight text-foreground tabular-nums">{value}</p>
+        {sub != null && <div className="mt-1.5 truncate text-[11px] font-medium text-text-desc">{sub}</div>}
       </div>
     </Card>
   );

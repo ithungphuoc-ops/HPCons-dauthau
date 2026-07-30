@@ -2,13 +2,13 @@ import { useState, useMemo } from 'react';
 import { Project, Staff } from '../types';
 import { ChevronLeft, ChevronRight, Calendar, AlertCircle, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { fmtDateVN } from '../utils/dateVN';
+import { fmtDateVN, tongNgayDoiHan } from '../utils/dateVN';
 import DateInput from './DateInput';
 
 interface GanttChartProps {
   projects: Project[];
   staff: Staff[];
-  currentUserRole?: 'BOOD' | 'MANAGER' | 'STAFF';
+  currentUserRole?: 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER';
 }
 
 export default function GanttChart({ projects: allProjects, staff, currentUserRole }: GanttChartProps) {
@@ -146,9 +146,6 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
             <Calendar className="w-5 h-5 text-brand-accent dark:text-brand-accent-300" />
             Biểu Đồ Gantt Tiến Độ Đường Găng (Critical Path)
           </h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Màu đỏ nhấp nháy viền <span className="inline-block w-2 h-2 rounded-full bg-brand-danger animate-pulse"></span> biểu thị <strong className="text-brand-danger uppercase">Đường Găng (Gói thầu đang bị trễ hạn nộp hồ sơ thầu)</strong>
-          </p>
         </div>
         
         {/* Scale buttons + bộ lọc ngày */}
@@ -193,13 +190,6 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
             </button>
           </div>
         </div>
-      </div>
-
-      {/* Trạng thái bộ lọc */}
-      <div className="px-5 py-1.5 bg-brand-accent/10 border-b border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-500 dark:text-slate-400">
-        {(fromDate || toDate)
-          ? <>Đang lọc theo khoảng ngày{fromDate ? ` từ ${fmtDateVN(fromDate)}` : ''}{toDate ? ` đến ${fmtDateVN(toDate)}` : ''} — hiện mọi hồ sơ (kể cả đã hoàn thành).</>
-          : <>Mặc định chỉ hiện hồ sơ <span className="text-brand-accent dark:text-brand-accent-300">đang chạy &amp; đang trễ</span>. Chọn khoảng ngày để xem cả hồ sơ đã hoàn thành trong quá khứ.</>}
       </div>
 
       {/* Legends info */}
@@ -363,9 +353,9 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
                         <div 
                           style={{ left: `${shiftLeft}%`, width: `${shiftWidth}%` }}
                           className="absolute top-0 h-4 bg-brand-warning/15 border border-brand-warning/40 border-dashed rounded text-[9px] text-brand-warning flex items-center justify-center font-semibold overflow-hidden whitespace-nowrap"
-                          title={`Dời hạn thêm ${p.delayLogs.reduce((acc, curr) => acc + curr.soNgayLech, 0)} ngày`}
+                          title={`Dời hạn thêm ${tongNgayDoiHan(p.delayLogs)} ngày`}
                         >
-                          +{p.delayLogs.reduce((acc, curr) => acc + curr.soNgayLech, 0)} ngày dời
+                          +{tongNgayDoiHan(p.delayLogs)} ngày dời
                         </div>
                       )}
 

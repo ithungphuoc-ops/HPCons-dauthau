@@ -7,6 +7,9 @@ const ROLES = {
   BOOD: "Ban Giám đốc / Trưởng phòng (Level 1)",
   MANAGER: "Quản lý (Level 2)",
   STAFF: "Chuyên viên (Level 3)",
+  // Level 4 — Khách (chị Trâm chốt 26/07/2026): CHỈ XEM, không thêm/sửa/xóa gì.
+  // Chỉ thấy 4 mục: Liên kết phòng ban · Dashboard · Báo cáo tiến độ · Bảng Kanban.
+  VIEWER: "Khách — chỉ xem (Level 4)",
 };
 
 const CORS = {

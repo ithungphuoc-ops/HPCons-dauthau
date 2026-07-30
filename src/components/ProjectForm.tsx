@@ -1,11 +1,15 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Project, Staff, DelayLog, ProjectTask } from '../types';
-import { Plus, Trash2, Calendar, Clock, AlertTriangle, CheckCircle2, Save, X, CheckSquare, Square, Link } from 'lucide-react';
+import { Plus, Trash2, Calendar, Clock, AlertTriangle, CheckCircle2, Save, X, CheckSquare, Square, Search, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
 import SubtaskGantt, { DEFAULT_TASK_DAYS } from './SubtaskGantt';
-import { calculateProjectProgress } from '../utils/taskTree';
+import { calculateProjectProgress, progressOfRound, weightIssue, weightSumOfRound, weightSumAllRounds, soVongCoViec, tasksOfRound } from '../utils/taskTree';
 import { fmtDateVN } from '../utils/dateVN';
 import DateInput from './DateInput';
+import TextWithLinks from './TextWithLinks';
+import FileDropZone from './FileDropZone';
+import { AutoGrowTextarea } from './ui';
+import { parseAttachments, joinAttachments } from '../utils/attachments';
 import { useModalA11y } from '../utils/useModalA11y';
 
 interface ProjectFormProps {
@@ -14,9 +18,15 @@ interface ProjectFormProps {
   onSave: (project: Project) => void;
   onCancel: () => void;
   nextProjectId: string;
-  currentUserRole?: 'BOOD' | 'MANAGER' | 'STAFF';
+  currentUserRole?: 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER';
   formMode?: 'CREATE_TENDER' | 'ADD_WORK' | 'EDIT_ALL';
   projectsListForSelect?: Project[];
+  // Thông tin mô tả của các DỰ ÁN CHA (tra theo id) — để hiện "Mô tả dự án" chỉ-xem trên hồ sơ
+  // công việc. Gom từ toàn bộ dự án nên không bị bộ lọc quyền cắt mất như projectsListForSelect.
+  duAnChaInfo?: Record<string, { tenDuAn: string; chuDauTu?: string; diaChi?: string; moTa?: string }>;
+  /** Mã của các DỰ ÁN đã tồn tại (đã in hoa, bỏ khoảng trắng) — trừ chính hồ sơ đang sửa.
+   *  Mỗi dự án chỉ có một mã duy nhất trong môi trường Phòng Đấu Thầu; trùng mã thì không cho lưu. */
+  maDuAnDaDung?: string[];
 }
 
 // Simple date helpers
@@ -43,7 +53,9 @@ export default function ProjectForm({
   nextProjectId, 
   currentUserRole,
   formMode = 'EDIT_ALL',
-  projectsListForSelect = []
+  projectsListForSelect = [],
+  maDuAnDaDung = [],
+  duAnChaInfo
 }: ProjectFormProps) {
   const isEditing = !!project;
   // Đang sửa DỰ ÁN CHA (DU_AN): chỉ hiện thông tin chung + thông tin kinh doanh,
@@ -61,7 +73,6 @@ export default function ProjectForm({
   const [thucHienIds, setThucHienIds] = useState<string[]>(project?.thucHienIds || (project?.thucHienId ? [project.thucHienId] : []));
   const [hangMuc, setHangMuc] = useState<Project['hangMuc']>(project?.hangMuc || 'Báo giá chi tiết');
   const [moTa, setMoTa] = useState<string>(project?.moTa || '');
-  const [oneDriveLink, setOneDriveLink] = useState<string>(project?.oneDriveLink || '');
 
   // New specific bidding statistics fields
   const [chuDauTu, setChuDauTu] = useState<string>(project?.chuDauTu || '');
@@ -112,12 +123,17 @@ export default function ProjectForm({
   const planRange = useMemo(() => {
     const DAY = 24 * 60 * 60 * 1000;
     const parse = (s?: string) => { if (!s) return NaN; const t = new Date(s).getTime(); return isNaN(t) ? NaN : t; };
+    // CHỈ tính việc con của VÒNG hiện tại (chị Trâm chốt 27/07/2026): hồ sơ sang vòng 2 thì chặng
+    // "Bộ phận thực hiện" & ngày bắt đầu phải đo LẠI từ vòng 2, không kẹt ở việc vòng 1. Việc con
+    // dữ liệu cũ không ghi `vong` được coi là vòng 1 nên hồ sơ 1 vòng chạy y như trước.
+    const vong = Math.max(1, project?.vongHienTai || 1);
+    const tasksVong = tasksOfRound(tasks, vong);
     // DÙNG CHUNG logic với SubtaskGantt: việc CHƯA đặt ngày được xếp nối tiếp (cursor) và số ngày
     // mặc định = DEFAULT_TASK_DAYS (3), KHÔNG phải 1 — nếu không "Bộ phận thực hiện" sẽ lệch với Gantt.
     const base = parse(ngayBatDau);
     let cursor = !isNaN(base) ? base : Date.now();
     let min: number | null = null, max: number | null = null, hasDates = false;
-    tasks.forEach(t => {
+    tasksVong.forEach(t => {
       const ex = parse(t.ngayBatDau);
       const start = !isNaN(ex) ? ex : cursor;
       if (!isNaN(ex)) hasDates = true;
@@ -131,7 +147,7 @@ export default function ProjectForm({
     const f = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
     // maxDate = NGÀY CUỐI LÀM VIỆC (max exclusive - 1); days = số ngày (đếm cả 2 đầu min→ngày cuối)
     return { minDate: f(min), maxDate: f(max - DAY), days: Math.max(1, Math.round((max - min) / DAY)) };
-  }, [tasks, ngayBatDau]);
+  }, [tasks, ngayBatDau, project?.vongHienTai]);
 
   // Đồng bộ: có kế hoạch con đặt ngày → ngày bắt đầu & số ngày Bộ phận bám theo kế hoạch
   useEffect(() => {
@@ -158,6 +174,8 @@ export default function ProjectForm({
   const [tienDoPhong, setTienDoPhong] = useState<number>(project?.tienDoPhong || 0);
   // Kết quả kiểm tra cấp Phòng — chuyển từ khối xổ xuống (drawer chỉ xem) vào form (chị chốt 15/07)
   const [ketQuaPhong, setKetQuaPhong] = useState<string>(project?.ketQuaPhong || '');
+  // Tệp kết quả công việc cấp Phòng (kéo-thả). Chỉ lưu TÊN tệp — cùng quy ước với việc con.
+  const [taiLieuKetQuaPhong, setTaiLieuKetQuaPhong] = useState<string[]>(parseAttachments(project?.taiLieuKetQuaPhong));
   
   const [ngayHoanThanhThucTe, setNgayHoanThanhThucTe] = useState<string>(project?.ngayHoanThanhThucTe || '');
   const [nguyenNhanTreHan, setNguyenNhanTreHan] = useState<string>(project?.nguyenNhanTreHan || '');
@@ -167,19 +185,80 @@ export default function ProjectForm({
 
   // Selection state for ADD_WORK mode
   const [selectedProjectId, setSelectedProjectId] = useState<string>(project?.id || '');
+  // Ô tìm dự án cha theo tên/mã (danh sách dài thì gõ vài chữ là ra — chị Trâm chốt 25/07/2026)
+  const [parentQuery, setParentQuery] = useState<string>('');
+  // Danh sách dự án cha dạng SỔ XUỐNG: bấm mới mở, chọn xong tự đóng — form gọn hơn là
+  // bày cả danh sách dài (chị chốt 25/07/2026).
+  const [parentOpen, setParentOpen] = useState<boolean>(false);
+  const parentBoxRef = useRef<HTMLDivElement>(null);
+  // Bấm ra ngoài hoặc bấm Esc thì đóng danh sách sổ xuống
+  useEffect(() => {
+    if (!parentOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (parentBoxRef.current && !parentBoxRef.current.contains(e.target as Node)) setParentOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setParentOpen(false); } };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey, true);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }, [parentOpen]);
 
-  // ADD_WORK: khi chọn Dự án cha, KẾ THỪA thông tin cấp dự án (tên, CĐT, địa chỉ...) sang công việc con.
-  // Giữ hạng mục / ngày / cây công việc / tiến độ ở giá trị MỚI để nhập cho công việc con này.
+  // Dự án ĐANG LÀM lên trên, ĐÃ XONG xuống dưới; trong mỗi nhóm thì dự án khởi tạo MUỘN NHẤT ở trên.
+  // "Đã xong" = tình trạng không còn là "Đang triển khai" (đã trúng / rớt / ngưng) hoặc hồ sơ đã chốt hoàn thành.
+  // Mốc "mới nhất": id do app sinh có dạng P<mốc thời gian> → dùng luôn làm thời điểm tạo; hồ sơ nhập từ
+  // Excel / mã tự đặt thì không có mốc đó nên lùi về ngày bắt đầu, cuối cùng so mã hồ sơ.
+  const parentOptions = useMemo(() => {
+    const daXong = (p: Project) =>
+      (p.tinhTrangDuAn && p.tinhTrangDuAn !== 'Đang triển khai') ||
+      p.trangThai === 'HOAN_THANH_DUNG_HAN' || p.trangThai === 'HOAN_THANH_TRE_HAN';
+    const mocTao = (p: Project) => {
+      const m = /^P(\d{10,})$/.exec(p.id);
+      if (m) return Number(m[1]);
+      const t = new Date(p.ngayBatDau || '').getTime();
+      return isNaN(t) ? 0 : t;
+    };
+    const q = parentQuery.trim().toLowerCase();
+    return [...projectsListForSelect]
+      .filter(p => !q || `${p.projectId} ${p.tenDuAn} ${p.chuDauTu || ''}`.toLowerCase().includes(q))
+      .sort((a, b) => {
+        const xa = daXong(a) ? 1 : 0;
+        const xb = daXong(b) ? 1 : 0;
+        if (xa !== xb) return xa - xb;                       // đang làm trước, đã xong sau
+        const ta = mocTao(a), tb = mocTao(b);
+        if (ta !== tb) return tb - ta;                       // tạo muộn hơn lên trên
+        return (b.projectId || '').localeCompare(a.projectId || '');
+      })
+      .map(p => ({ p, daXong: daXong(p) }));
+  }, [projectsListForSelect, parentQuery]);
+
+  // Dự án cha đang chọn — hiện trên nút sổ xuống khi danh sách đã gập
+  const selectedProject = useMemo(
+    () => projectsListForSelect.find(p => p.id === selectedProjectId),
+    [projectsListForSelect, selectedProjectId]
+  );
+
+  // ADD_WORK: khi chọn Dự án cha, KẾ THỪA thông tin cấp dự án (MÃ dự án, tên, CĐT, địa chỉ...) sang
+  // công việc con. Công việc con dùng ĐÚNG mã của dự án cha, phân biệt nhau bằng hạng mục
+  // (chị Trâm chốt 26/07/2026) — trước đây cấp mã riêng tuần tự nên mã công việc chẳng liên quan
+  // gì mã dự án. Giữ hạng mục / GHI CHÚ công việc / ngày / cây công việc / tiến độ ở giá trị MỚI
+  // để nhập riêng cho công việc con này.
   useEffect(() => {
     if (formMode === 'ADD_WORK' && selectedProjectId) {
       const parent = projectsListForSelect.find(p => p.id === selectedProjectId);
       if (parent) {
+        setProjectId(parent.projectId);
         setTenDuAn(parent.tenDuAn);
         setChuDauTu(parent.chuDauTu || '');
         setDiaChi(parent.diaChi || '');
-        setOneDriveLink(parent.oneDriveLink || '');
         setHinhThucDauThau(parent.hinhThucDauThau || 'Đấu thầu cạnh tranh');
-        setTinhTrangDuAn(parent.tinhTrangDuAn || 'Đang triển khai');
+        // KHÔNG kế thừa tình trạng của dự án cha (chị Trâm báo 27/07/2026): cha "Đã trúng thầu" thì
+        // gói thầu MỚI cũng bị gắn nhãn trúng thầu ngay lúc tạo → bị xếp vào "Đã xong", biến mất
+        // khỏi chuông chờ Trưởng phòng duyệt, và không lên được Kanban/Gantt → kẹt cứng không ai gỡ.
+        // Trúng/rớt là kết quả của TỪNG gói thầu, gói mới lập thì luôn đang triển khai.
+        setTinhTrangDuAn('Đang triển khai');
         setQuocTich(parent.quocTich || '');
         setKhuCongNghiep(parent.khuCongNghiep || '');
         setTinhThanh(parent.tinhThanh || '');
@@ -212,20 +291,32 @@ export default function ProjectForm({
   // Recalculate original end date whenever start date or expected days change
   useEffect(() => {
     if (ngayBatDau && soNgayDuKien > 0) {
-      const originalEnd = addDaysToDate(ngayBatDau, soNgayDuKien);
+      // TÍNH CẢ NGÀY ĐẦU: bắt đầu 20/07 + 9 ngày (8 thực hiện + 1 TP duyệt) → hạn hoàn thành Phòng
+      // là 28/07, không phải 29/07 (chị Trâm báo lỗi 25/07/2026).
+      const originalEnd = addDaysToDate(ngayBatDau, soNgayDuKien - 1);
       setNgayHoanThanhDuKienGoc(originalEnd);
 
-      // Current expected end date = original + total offsets from Delay Logs
+      // Hạn hiện tại = hạn gốc + phần dời CHƯA nằm trong kế hoạch việc con.
+      // `soNgayLech` cố ý để 0 ở những lần dời phát sinh TỪ việc con: hạn gốc phía trên đã tính
+      // theo kế hoạch con rồi, cộng thêm lần nữa là hạn nhảy gấp đôi (chị Trâm báo 29/07/2026).
+      // Số ngày ĐÃ DỜI để hiển thị/báo cáo thì đọc từ cặp hạn cũ → hạn mới (tongNgayDoiHan).
       const totalOffsetDays = delayLogs.reduce((sum, log) => sum + log.soNgayLech, 0);
       const currentEnd = addDaysToDate(originalEnd, totalOffsetDays);
       setNgayHoanThanhDuKienHienTai(currentEnd);
     }
   }, [ngayBatDau, soNgayDuKien, delayLogs]);
 
-  // Recalculate team progress automatically when tasks change
+  // Vòng làm việc đang chạy của hồ sơ (mỗi lần trả về làm lại & gửi CĐT lần nữa là 1 vòng).
+  const vongHienTai = Math.max(1, project?.vongHienTai || 1);
+  // Tỉ trọng của vòng hiện tại — dùng cho ràng buộc 100% và dòng chân bảng phân rã.
+  const viTrongVong = useMemo(() => weightSumOfRound(tasks, vongHienTai), [tasks, vongHienTai]);
+  const viTrongLuyKe = useMemo(() => weightSumAllRounds(tasks), [tasks]);
+  const soVong = useMemo(() => Math.max(vongHienTai, soVongCoViec(tasks)), [tasks, vongHienTai]);
+
+  // Tiến độ Bộ phận tính RIÊNG cho vòng hiện tại (vòng mới bắt đầu lại từ 0%).
   const autoBoPhanProgress = useMemo(() => {
-    return calculateProjectProgress(tasks);
-  }, [tasks]);
+    return soVong > 1 ? progressOfRound(tasks, vongHienTai) : calculateProjectProgress(tasks);
+  }, [tasks, vongHienTai, soVong]);
 
   useEffect(() => {
     setTienDoBoPhan(autoBoPhanProgress);
@@ -255,18 +346,44 @@ export default function ProjectForm({
 
   const delayReasonRequired = isOverdue();
 
-  // ===== Chốt chặn dời tiến độ khi Quản lý cập nhật =====
-  // Sửa công việc làm HẠN HIỆN TẠI lùi xa hơn hạn trước khi sửa → bắt buộc nhập lý do dời
-  // thì mới cho Lưu; lý do được ghi tự động vào Lịch Sử Dời Tiến Độ (Delay Logs).
-  const [autoDelayReason, setAutoDelayReason] = useState<string>('');
-  const scheduleExtendDays = useMemo(() => {
-    if (formMode !== 'EDIT_ALL' || isParentEdit || !project?.ngayHoanThanhDuKienHienTai || !ngayHoanThanhDuKienHienTai) return 0;
-    return Math.max(0, getDaysDifference(project.ngayHoanThanhDuKienHienTai, ngayHoanThanhDuKienHienTai));
-  }, [formMode, isParentEdit, project?.ngayHoanThanhDuKienHienTai, ngayHoanThanhDuKienHienTai]);
-  const scheduleExtended = currentUserRole === 'MANAGER' && scheduleExtendDays > 0;
   // Quản lý (Level 2) CHỈ XEM thông tin chung & thông tin gốc phòng kinh doanh —
   // chỉ Trưởng phòng (Level 1) khởi tạo & chỉnh sửa các mục này.
   const infoLocked = currentUserRole === 'MANAGER';
+  // Các trường THUỘC DỰ ÁN (tên dự án, CĐT, địa chỉ, hình thức đấu thầu, tình trạng dự án và toàn bộ
+  // "Thông tin gốc Phòng Kinh doanh") CHỈ được sửa ở bước khởi tạo dự án hoặc chỉnh sửa chính hồ sơ
+  // Dự án. Khi tạo/sửa CÔNG VIỆC thì chỉ xem — sửa ở hồ sơ Dự án để mọi công việc con cùng cập nhật
+  // (chị Trâm chốt 25/07/2026). Trước đây sửa được ở công việc nên dữ liệu dự án bị lệch giữa các công việc.
+  const duAnInfoLocked = !(formMode === 'CREATE_TENDER' || isParentEdit);
+  const duAnLockNote = (
+    <span className="ml-1 normal-case text-[9px] font-bold text-brand-accent dark:text-brand-accent-300">
+      🔒 Thông tin dự án — sửa tại hồ sơ Dự án
+    </span>
+  );
+
+  // HAI thứ KHÁC NHAU, đừng gộp (chị Trâm chốt 26/07/2026):
+  //   • MÔ TẢ DỰ ÁN  = moTa của bản ghi DU_AN — Trưởng phòng khai ở hồ sơ Dự án, nơi khác chỉ xem.
+  //   • GHI CHÚ CÔNG VIỆC = moTa của bản ghi CONG_VIEC — Quản lý ghi tự do (lưu ý riêng, link thư
+  //     mục triển khai chung của team). KHÔNG kế thừa từ dự án cha, KHÔNG bị đồng bộ đè.
+  // Cùng dùng chung ô nhập bên dưới; khác nhau ở nhãn và ở chỗ nó được render.
+  // Ô nhập TỰ GIÃN theo nội dung — mô tả dài bao nhiêu hiện hết bấy nhiêu, không có thanh cuộn
+  // trong ô, không cắt chữ (chị Trâm chốt 26/07/2026).
+  const moTaField = (nhan: string, goiY: string, rows: number) => (
+    <>
+      <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">{nhan}</label>
+      <AutoGrowTextarea
+        minRows={rows}
+        value={moTa}
+        onChange={(e) => setMoTa(e.target.value)}
+        placeholder={goiY}
+        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium focus:ring-brand-accent bg-white dark:bg-dark-elevated text-slate-800 dark:text-slate-100"
+      />
+    </>
+  );
+
+  // Mô tả của DỰ ÁN CHA để hiện (chỉ xem) trên hồ sơ công việc. Lấy từ duAnChaInfo do App truyền —
+  // gom từ TOÀN BỘ projects nên Quản lý không bị bộ lọc quyền cắt mất dự án cha.
+  const idChaDangXet = formMode === 'ADD_WORK' ? selectedProjectId : project?.duAnChaId;
+  const moTaDuAnCha = idChaDangXet ? duAnChaInfo?.[idChaDangXet]?.moTa : undefined;
 
   // Handle adding Delay Log
   const handleAddDelayLog = (e: React.MouseEvent) => {
@@ -340,6 +457,14 @@ export default function ProjectForm({
       errs.projectId = 'Mã số dự án không được để trống';
     } else if (!projectIdRegex.test(projectId) || projectId.trim().length < 3) {
       errs.projectId = 'Mã số dự án không đúng định dạng (Ví dụ: 2026.01 hoặc DA2026.006)';
+    } else if (
+      // MÃ DỰ ÁN DUY NHẤT trong môi trường Phòng Đấu Thầu (chị Trâm chốt 26/07/2026).
+      // Chỉ kiểm khi đang đăng ký/sửa hồ sơ DỰ ÁN — công việc con dùng chung mã của dự án cha
+      // nên trùng mã ở cấp công việc là đúng, không được báo lỗi.
+      (formMode === 'CREATE_TENDER' || isParentEdit) &&
+      maDuAnDaDung.includes(projectId.trim().toUpperCase())
+    ) {
+      errs.projectId = `Mã dự án "${projectId.trim()}" đã có dự án khác dùng — mỗi dự án phải có mã riêng. Vui lòng đổi mã khác.`;
     }
 
     if (!tenDuAn.trim()) errs.tenDuAn = 'Tên dự án thầu không được để trống';
@@ -352,9 +477,14 @@ export default function ProjectForm({
       errs.nguyenNhanTreHan = 'Bắt buộc: Dự án đang trễ hạn thầu! Vui lòng điền nguyên nhân để thẩm định KPI.';
     }
 
-    // Quản lý cập nhật làm hạn hoàn thành lùi xa hơn → bắt buộc nhập lý do dời tiến độ
-    if (scheduleExtended && !autoDelayReason.trim()) {
-      errs.autoDelayReason = `Tiến độ tổng tăng thêm ${scheduleExtendDays} ngày — bắt buộc nhập lý do dời tiến độ trước khi cập nhật.`;
+    // RÀNG BUỘC PHÂN BỔ TỈ TRỌNG (chị Trâm chốt 25/07/2026): phải chia đủ 100% cho VÒNG HIỆN TẠI
+    // mới được lưu. Tạo công việc mới thì bắt buộc phải có việc con; sửa hồ sơ thì chỉ ràng buộc
+    // khi vòng hiện tại đã có việc con (Trưởng phòng vẫn dựng được khung hồ sơ trước khi phân rã).
+    if (!(formMode === 'CREATE_TENDER' || isParentEdit)) {
+      const issue = weightIssue(tasks, vongHienTai);
+      if (issue && (formMode === 'ADD_WORK' || issue.soViec > 0)) {
+        errs.tasksWeight = issue.moTa + ' Chia đủ 100% rồi mới lưu được hồ sơ.';
+      }
     }
 
     if (Object.keys(errs).length > 0) {
@@ -376,7 +506,13 @@ export default function ProjectForm({
 
     // Calculate actual status
     let trangThai: Project['trangThai'] = 'DANG_THUC_HIEN';
-    const isCompleted = tienDoPhong === 100 || ngayHoanThanhThucTe !== '';
+    // "Hoàn thành" CHỈ khi hồ sơ đã THỰC SỰ gửi CĐT (kanbanStep >= 5, qua Kanban) hoặc Trưởng
+    // phòng tự tay nhập ngày hoàn thành thực tế — không phải cứ kéo thanh Tiến độ Phòng lên 100%
+    // trong form là tự động coi là xong. Trước đây tienDoPhong === 100 một mình là đủ, nên sửa
+    // hồ sơ đang ở Bước 1-3 (chưa hề trình BLĐ/gửi CĐT) mà thanh trượt sẵn ở 100% là hồ sơ bị đánh
+    // dấu "đã hoàn thành" ngay dù thẻ Kanban vẫn còn nằm ở bước sớm — mâu thuẫn (chị Trâm báo 28/07/2026).
+    const daGuiCDT = (project?.kanbanStep || 1) >= 5;
+    const isCompleted = (tienDoPhong === 100 && daGuiCDT) || ngayHoanThanhThucTe !== '';
     
     if (isCompleted) {
       const completionDate = ngayHoanThanhThucTe || new Date().toISOString().split('T')[0];
@@ -413,20 +549,12 @@ export default function ProjectForm({
       : (project?.loaiBanGhi || 'CONG_VIEC');
     const duAnChaId = formMode === 'ADD_WORK' ? selectedProjectId : (formMode === 'EDIT_ALL' ? project?.duAnChaId : undefined);
 
-    // Quản lý dời tiến độ → tự ghi vào Lịch Sử Dời Tiến Độ.
-    // soNgayLech = 0 vì hạn mới đã được tính sẵn từ kế hoạch (khác log thủ công cộng offset) —
-    // nếu ghi số ngày thật sẽ bị cộng trùng vào hạn hiện tại. Cột hiển thị tính lệch từ ngayCu/ngayMoi.
-    const finalDelayLogs = scheduleExtended && project?.ngayHoanThanhDuKienHienTai
-      ? [...delayLogs, {
-          id: `L${Date.now()}`,
-          ngayThayDoi: new Date().toISOString().split('T')[0],
-          ngayCu: project.ngayHoanThanhDuKienHienTai,
-          ngayMoi: ngayHoanThanhDuKienHienTai,
-          soNgayLech: 0,
-          lyDo: autoDelayReason.trim(),
-          nguoiDuyet: 'Chờ Trưởng phòng duyệt lại',
-        } as DelayLog]
-      : delayLogs;
+    // Lịch Sử Dời Tiến Độ (Delay Logs) CHỈ ghi ở luồng riêng "kéo hồ sơ từ Bước 4 về Bước 1"
+    // (CĐT yêu cầu điều chỉnh — xem handlePullBackApply/PullBackDelayModal). Sửa hồ sơ bình
+    // thường ở đây làm hạn lùi xa hơn thì KHÔNG tính là dời tiến độ chính thức, không ép nhập lý
+    // do / không tự ghi log (chị Trâm sửa lại 28/07/2026 — trước đó bắt lỗi nhầm cả lúc chưa
+    // từng gửi CĐT). App.tsx tự gắn cờ choDuyetLai âm thầm để Trưởng phòng biết mà xem lại.
+    const finalDelayLogs = delayLogs;
 
     const savedProject: Project = {
       id: (formMode === 'EDIT_ALL' ? project?.id : undefined) || `P${Date.now()}`,
@@ -452,6 +580,12 @@ export default function ProjectForm({
       tienDoBoPhan: isCompleted ? 100 : tienDoBoPhan,
       tienDoPhong: isCompleted ? 100 : tienDoPhong,
       ketQuaPhong: ketQuaPhong.trim() || undefined,
+      taiLieuKetQuaPhong: joinAttachments(taiLieuKetQuaPhong),
+      // PHẢI mang theo bước Kanban hiện tại: trước đây form không trả trường này nên mỗi lần TP
+      // lưu (ví dụ kéo tiến độ Phòng 100%) hồ sơ mất vị trí cột và bị suy ra lại thành bước 5.
+      kanbanStep: project?.kanbanStep,
+      // Vòng làm việc — mất trường này là hồ sơ tụt về vòng 1, tỉ trọng vòng 2 bị tính sai.
+      vongHienTai: project?.vongHienTai,
       delayLogs: finalDelayLogs,
       ngayHoanThanhThucTe: isCompleted ? (ngayHoanThanhThucTe || new Date().toISOString().split('T')[0]) : undefined,
       nguyenNhanTreHan: delayReasonRequired ? nguyenNhanTreHan : undefined,
@@ -461,7 +595,6 @@ export default function ProjectForm({
       choDuyetLai: project?.choDuyetLai, // Cờ chờ duyệt lại khi delay — App xóa khi TP lưu
       hanHenCDT: hanHenCDT || undefined,
 
-      oneDriveLink,
       kpi: finalKpi,
       chuDauTu: chuDauTu.trim() || undefined,
       diaChi: diaChi.trim() || undefined,
@@ -575,32 +708,118 @@ export default function ProjectForm({
             <label className="block text-xs font-black text-brand-accent-700 dark:text-brand-accent-300 uppercase tracking-wider">
               Chọn Dự Án Cha Để Thêm Công Việc *
             </label>
-            <select
-              value={selectedProjectId}
-              onChange={(e) => {
-                setSelectedProjectId(e.target.value);
-                if (errors.selectedProjectId) {
-                  setErrors(prev => {
-                    const copy = { ...prev };
-                    delete copy.selectedProjectId;
-                    return copy;
-                  });
-                }
-              }}
-              className={`w-full px-3 py-2.5 border rounded-lg text-sm font-bold bg-white dark:bg-dark-elevated text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-brand-accent ${
-                errors.selectedProjectId ? 'border-brand-danger/50' : 'border-brand-accent/25 dark:border-brand-accent-800'
-              }`}
-            >
-              <option value="">-- Click để chọn Dự án cha --</option>
-              {projectsListForSelect.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.projectId} - {p.tenDuAn}
-                </option>
-              ))}
-              {projectsListForSelect.length === 0 && (
-                <option value="" disabled>Chưa có dự án nào — hãy bấm "Dự án mới" để đăng ký trước</option>
-              )}
-            </select>
+            {/* Ô TÌM + danh sách chọn: gõ tên/mã/CĐT để lọc nhanh khi có nhiều gói thầu.
+                Thứ tự: đang làm trước (mới tạo nhất trên cùng), đã xong nằm dưới. */}
+            {projectsListForSelect.length === 0 ? (
+              <div className="px-3 py-2.5 border border-brand-warning/40 rounded-lg text-xs font-bold text-brand-warning bg-brand-warning/5">
+                Chưa có dự án nào — hãy bấm "Dự án mới" để đăng ký trước.
+              </div>
+            ) : (
+              <div className="relative" ref={parentBoxRef}>
+                {/* Nút sổ xuống: hiện dự án đang chọn (hoặc lời mời chọn) — bấm mới mở danh sách */}
+                <button
+                  type="button"
+                  onClick={() => setParentOpen(o => !o)}
+                  aria-expanded={parentOpen}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border text-left bg-white dark:bg-dark-elevated cursor-pointer transition-colors ${
+                    errors.selectedProjectId
+                      ? 'border-brand-danger/50'
+                      : 'border-brand-accent/25 dark:border-brand-accent-800 hover:border-brand-accent'
+                  }`}
+                >
+                  {selectedProject ? (
+                    <>
+                      <span className="text-[9px] font-mono font-black px-1 py-0.5 rounded shrink-0 bg-slate-100 dark:bg-dark-card text-slate-500 dark:text-slate-400">
+                        {selectedProject.projectId}
+                      </span>
+                      <span className="text-xs font-bold truncate flex-1 text-slate-800 dark:text-slate-100" title={selectedProject.tenDuAn}>
+                        {selectedProject.tenDuAn}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-xs font-bold flex-1 text-slate-400 dark:text-slate-500">
+                      Bấm để chọn dự án cha ({projectsListForSelect.length} dự án)...
+                    </span>
+                  )}
+                  <ChevronDown className={`w-4 h-4 shrink-0 text-slate-400 transition-transform ${parentOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                {parentOpen && (
+                <div className="absolute left-0 right-0 top-full mt-1 z-30 rounded-lg border border-brand-accent/25 dark:border-brand-accent-800 bg-white dark:bg-dark-elevated shadow-lg overflow-hidden">
+                <div className="relative p-2 border-b border-slate-100 dark:border-slate-800">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    autoFocus
+                    value={parentQuery}
+                    onChange={(e) => setParentQuery(e.target.value)}
+                    placeholder="Tìm theo tên dự án, mã hồ sơ hoặc Chủ đầu tư..."
+                    className="w-full pl-7 pr-7 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium bg-white dark:bg-dark-bg text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-brand-accent focus:outline-none"
+                  />
+                  {parentQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setParentQuery('')}
+                      title="Xóa từ khóa tìm"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="max-h-52 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                  {parentOptions.length === 0 ? (
+                    <div className="px-3 py-3 text-xs font-bold text-slate-400 text-center">
+                      Không có dự án nào khớp "{parentQuery}".
+                    </div>
+                  ) : parentOptions.map(({ p, daXong }, i) => {
+                    const dauNhomDaXong = daXong && !parentOptions[i - 1]?.daXong;
+                    const chon = selectedProjectId === p.id;
+                    return (
+                      <div key={p.id}>
+                        {dauNhomDaXong && (
+                          <div className="px-3 py-1 bg-slate-50 dark:bg-dark-card text-[9px] font-black uppercase tracking-wider text-slate-400">
+                            Dự án đã xong
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedProjectId(p.id);
+                            setParentOpen(false);   // chọn xong là gập danh sách lại cho gọn
+                            setParentQuery('');
+                            if (errors.selectedProjectId) {
+                              setErrors(prev => { const copy = { ...prev }; delete copy.selectedProjectId; return copy; });
+                            }
+                          }}
+                          className={`w-full text-left px-3 py-2 transition-colors cursor-pointer ${
+                            chon
+                              ? 'bg-brand-accent text-white'
+                              : 'hover:bg-brand-accent/10 dark:hover:bg-brand-accent/20 text-slate-800 dark:text-slate-100'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[9px] font-mono font-black px-1 py-0.5 rounded shrink-0 ${chon ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-dark-card text-slate-500 dark:text-slate-400'}`}>
+                              {p.projectId}
+                            </span>
+                            <span className="text-xs font-bold truncate flex-1" title={p.tenDuAn}>{p.tenDuAn}</span>
+                            {chon && <span className="text-[10px] font-black shrink-0">✓ Đã chọn</span>}
+                          </div>
+                          {(p.chuDauTu || daXong) && (
+                            <div className={`text-[10px] font-semibold mt-0.5 truncate ${chon ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                              {p.chuDauTu || 'Chưa có CĐT'}{daXong ? ` • ${p.tinhTrangDuAn || 'Đã hoàn thành'}` : ''}
+                            </div>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                </div>
+                )}
+              </div>
+            )}
             {errors.selectedProjectId && (
               <span className="text-[11px] text-brand-danger font-bold block">{errors.selectedProjectId}</span>
             )}
@@ -610,29 +829,48 @@ export default function ProjectForm({
           </div>
         )}
 
-        {/* Selected Project Read-only Summary Card in ADD_WORK mode */}
-        {formMode === 'ADD_WORK' && selectedProjectId && (
-          <div className="bg-slate-50 dark:bg-dark-elevated p-4 rounded-xl border border-slate-200 dark:border-slate-800 grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-            <div>
-              <span className="text-slate-400 dark:text-slate-500 block font-bold uppercase tracking-wider text-[9px]">Mã Gói Thầu (Level 1 set)</span>
-              <strong className="text-slate-800 dark:text-slate-200 text-sm font-mono font-black">{projectId}</strong>
+        {/* THÔNG TIN DỰ ÁN (chỉ xem) — hiện khi tạo công việc con và khi sửa hồ sơ công việc.
+            Cố ý KHÔNG có ô nhập nào: mọi trường ở đây thuộc về hồ sơ Dự án, sửa tại đó
+            (chị Trâm chốt 26/07/2026). */}
+        {((formMode === 'ADD_WORK' && selectedProjectId) || (formMode === 'EDIT_ALL' && !isParentEdit)) && (
+          <div className="bg-slate-50 dark:bg-dark-elevated p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-3">
+            <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200/60 dark:border-slate-800 pb-2">
+              <span className="w-1.5 h-3 bg-brand-accent rounded-full"></span>
+              Thông tin dự án
+              <span className="ml-1 normal-case text-[9px] font-bold text-brand-accent dark:text-brand-accent-300">
+                🔒 Chỉ xem — sửa tại hồ sơ Dự án
+              </span>
+            </h3>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+              {([
+                ['Mã gói thầu', projectId, 'font-mono'],
+                ['Tên dự án', tenDuAn || 'Chưa cập nhật', ''],
+                ['Chủ đầu tư', chuDauTu || 'Chưa cập nhật', ''],
+                ['Địa chỉ công trình', diaChi || 'Chưa cập nhật', ''],
+                ['Quốc tịch CĐT', quocTich || 'Chưa cập nhật', ''],
+                ['Hình thức xây dựng', hinhThucXayDung, ''],
+                ['Hồ sơ mời thầu thiết kế bởi', hoSoPhatThau, ''],
+                ['Diện tích đất (m²)', dienTichDat > 0 ? String(dienTichDat) : 'Chưa cập nhật', ''],
+                ['Hình thức đấu thầu', hinhThucDauThau, ''],
+                ['Tình trạng dự án', tinhTrangDuAn || 'Đang triển khai', ''],
+              ] as const).map(([nhan, giaTri, themClass]) => (
+                <div key={nhan}>
+                  <span className="text-slate-400 dark:text-slate-500 block font-bold uppercase tracking-wider text-[9px]">{nhan}</span>
+                  <strong className={`text-slate-800 dark:text-slate-200 text-xs block font-bold ${themClass}`} title={giaTri}>{giaTri}</strong>
+                </div>
+              ))}
             </div>
-            <div>
-              <span className="text-slate-400 dark:text-slate-500 block font-bold uppercase tracking-wider text-[9px]">Tên Dự Án (Level 1 set)</span>
-              <strong className="text-slate-800 dark:text-slate-200 text-sm block truncate" title={tenDuAn}>{tenDuAn}</strong>
-            </div>
-            <div>
-              <span className="text-slate-400 dark:text-slate-500 block font-bold uppercase tracking-wider text-[9px]">Quản lý phụ trách (Level 1 set)</span>
-              <strong className="text-slate-800 dark:text-slate-200 text-xs block font-bold">
-                {staffList.find(s => s.id === quanLyId)?.hoTen || 'Chưa gán'}
-              </strong>
-            </div>
-            <div>
-              <span className="text-slate-400 dark:text-slate-500 block font-bold uppercase tracking-wider text-[9px]">Chuyên viên chính (Level 1 set)</span>
-              <strong className="text-brand-accent dark:text-brand-accent-300 text-xs block font-bold">
-                {staffList.find(s => s.id === thucHienId)?.hoTen || 'Chưa gán'}
-              </strong>
-            </div>
+
+            {/* Mô tả DỰ ÁN — khác với ghi chú công việc ở mục 2 bên dưới */}
+            {moTaDuAnCha !== undefined && (
+              <div>
+                <span className="text-slate-400 dark:text-slate-500 block font-bold uppercase tracking-wider text-[9px] mb-0.5">Mô tả dự án</span>
+                <div className="text-xs font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-bg border border-slate-200 dark:border-slate-800 rounded-lg p-2">
+                  <TextWithLinks text={moTaDuAnCha || 'Trưởng phòng chưa nhập mô tả tại hồ sơ Dự án.'} />
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -641,32 +879,46 @@ export default function ProjectForm({
           <fieldset disabled={infoLocked} className="bg-slate-50/50 dark:bg-dark-card/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 space-y-4 min-w-0">
           <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200/60 dark:border-slate-800 pb-2">
             <span className="w-1.5 h-3 bg-brand-accent rounded-full"></span>
-            1. Thông Tin Chung & Quy Mô Gói Thầu
+            {duAnInfoLocked ? '1. Nhân sự phụ trách gói thầu' : '1. Thông Tin Chung & Quy Mô Gói Thầu'}
             {infoLocked && <span className="ml-1 normal-case text-[9px] font-bold text-brand-warning dark:text-brand-warning">🔒 Chỉ Trưởng phòng (Level 1) chỉnh sửa</span>}
           </h3>
 
+          {/* CÁC TRƯỜNG THUỘC DỰ ÁN — chỉ hiện ở hồ sơ Dự án (khởi tạo / sửa dự án).
+              Ở hồ sơ CÔNG VIỆC thì ẩn hẳn: chúng đã hiện gọn gàng ở khối "Thông tin dự án" phía
+              trên, bày lại thành một loạt ô xám khóa kèm badge 🔒 lặp lại chỉ làm rối form
+              (chị Trâm báo 26/07/2026). Mục 1 ở hồ sơ công việc chỉ còn phần nhân sự. */}
+          {!duAnInfoLocked && (
+          <>
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
             {/* Project_ID */}
             <div className="md:col-span-3" id="field-projectId">
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">Mã Project_ID *</label>
-              <input 
+              {/* Mã thuộc về DỰ ÁN: công việc con dùng chung mã cha → khóa tại hồ sơ công việc,
+                  sửa ở hồ sơ Dự án là mọi công việc con đổi theo. */}
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                Mã Project_ID *{duAnInfoLocked && duAnLockNote}
+              </label>
+              <input
                 type="text"
+                disabled={duAnInfoLocked}
                 value={projectId}
                 onChange={(e) => {
                   setProjectId(e.target.value);
                   if (errors.projectId) setErrors(prev => { const copy = { ...prev }; delete copy.projectId; return copy; });
                 }}
                 placeholder="2026.01"
-                className={`w-full px-3 py-2 border rounded-lg text-sm font-bold text-slate-700 dark:text-slate-100 bg-white dark:bg-dark-elevated uppercase ${errors.projectId ? 'border-brand-danger/50' : 'border-slate-200 dark:border-slate-700'}`}
+                className={`w-full px-3 py-2 border rounded-lg text-sm font-bold text-slate-700 dark:text-slate-100 bg-white dark:bg-dark-elevated uppercase disabled:opacity-60 disabled:cursor-not-allowed ${errors.projectId ? 'border-brand-danger/50' : 'border-slate-200 dark:border-slate-700'}`}
               />
               {errors.projectId && <span className="text-[10px] text-brand-danger mt-1 block font-medium">{errors.projectId}</span>}
             </div>
 
-            {/* Tên dự án */}
+            {/* Tên dự án — thuộc DỰ ÁN, khoá khi đang ở hồ sơ công việc */}
             <div className="md:col-span-9" id="field-tenDuAn">
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">Tên dự án thầu *</label>
-              <input 
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                Tên dự án thầu *{duAnInfoLocked && duAnLockNote}
+              </label>
+              <input
                 type="text"
+                disabled={duAnInfoLocked}
                 value={tenDuAn}
                 onChange={(e) => {
                   setTenDuAn(e.target.value);
@@ -682,9 +934,12 @@ export default function ProjectForm({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Chủ đầu tư */}
             <div>
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">Chủ đầu tư (CĐT)</label>
-              <input 
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                Chủ đầu tư (CĐT){duAnInfoLocked && duAnLockNote}
+              </label>
+              <input
                 type="text"
+                disabled={duAnInfoLocked}
                 value={chuDauTu}
                 onChange={(e) => setChuDauTu(e.target.value)}
                 placeholder="VD: Tập đoàn Riverland, PVEP, Vingroup..."
@@ -694,9 +949,12 @@ export default function ProjectForm({
 
             {/* Địa chỉ dự án */}
             <div>
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">Địa chỉ dự án / Công trình</label>
-              <input 
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                Địa chỉ dự án / Công trình{duAnInfoLocked && duAnLockNote}
+              </label>
+              <input
                 type="text"
+                disabled={duAnInfoLocked}
                 value={diaChi}
                 onChange={(e) => setDiaChi(e.target.value)}
                 placeholder="VD: 36 Nguyễn Cơ Thạch, Quận 2, TP. Hồ Chí Minh..."
@@ -705,11 +963,96 @@ export default function ProjectForm({
             </div>
           </div>
 
+          {/* Thuộc tính công trình — 4 trường này TRƯỞNG PHÒNG TỰ NHẬP, không còn lấy từ Phòng Kinh doanh
+              (chị Trâm chốt 25/07/2026: bỏ khối "Thông tin gốc Phòng Kinh doanh", gộp vào thông tin dự án).
+              Vẫn là thông tin cấp DỰ ÁN → khóa khi đang ở hồ sơ công việc, giống tên dự án / CĐT / địa chỉ. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                Quốc tịch CĐT{duAnInfoLocked && duAnLockNote}
+              </label>
+              <input
+                type="text"
+                disabled={duAnInfoLocked}
+                value={quocTich}
+                onChange={(e) => setQuocTich(e.target.value)}
+                placeholder="Ví dụ: Đài Loan, Việt Nam..."
+                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-dark-elevated text-slate-800 dark:text-slate-100 focus:ring-brand-accent disabled:opacity-60 disabled:cursor-not-allowed"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                Hình thức xây dựng{duAnInfoLocked && duAnLockNote}
+              </label>
+              <select
+                disabled={duAnInfoLocked}
+                value={hinhThucXayDung}
+                onChange={(e) => setHinhThucXayDung(e.target.value as Project['hinhThucXayDung'])}
+                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-dark-elevated text-slate-800 dark:text-slate-100 focus:ring-brand-accent disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <option value="Xây mới">Xây mới</option>
+                <option value="Cải tạo">Cải tạo</option>
+                <option value="Sửa chữa">Sửa chữa</option>
+                <option value="Mở rộng">Mở rộng</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                Hồ sơ mời thầu thiết kế bởi{duAnInfoLocked && duAnLockNote}
+              </label>
+              <select
+                disabled={duAnInfoLocked}
+                value={hoSoPhatThau}
+                onChange={(e) => setHoSoPhatThau(e.target.value as Project['hoSoPhatThau'])}
+                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-dark-elevated text-slate-800 dark:text-slate-100 focus:ring-brand-accent disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <option value="CĐT phát thầu">CĐT phát thầu</option>
+                <option value="HP thiết kế">HP thiết kế</option>
+                <option value="Đơn vị khác thiết kế">Đơn vị khác thiết kế</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                Diện tích đất (m²){duAnInfoLocked && duAnLockNote}
+              </label>
+              <input
+                type="number"
+                min={0}
+                disabled={duAnInfoLocked}
+                value={dienTichDat > 0 ? dienTichDat : ''}
+                onChange={(e) => setDienTichDat(parseFloat(e.target.value) || 0)}
+                placeholder="Nhập diện tích m2"
+                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-dark-elevated text-slate-800 dark:text-slate-100 focus:ring-brand-accent disabled:opacity-60 disabled:cursor-not-allowed"
+              />
+            </div>
+          </div>
+
+          {/* Mô tả nội dung công việc — CHỈ ở hồ sơ Dự án (khởi tạo / chỉnh sửa dự án).
+              Công việc con lấy mô tả này xuống và chỉ được xem. */}
+          {(formMode === 'CREATE_TENDER' || isParentEdit) && (
+            <div>
+              {moTaField(
+                'Mô tả chi tiết nội dung công việc (mô tả dự án)',
+                'Phân tích bản vẽ kết cấu, bóc tách cấu kiện móng và dầm sàn tháp B...',
+                3
+              )}
+              <p className="text-[10px] text-brand-accent dark:text-brand-accent-300 font-semibold italic mt-1">
+                Mô tả này là mô tả chung của dự án; mọi công việc con đều xem được.
+              </p>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Hình thức đấu thầu */}
             <div>
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">Hình thức đấu thầu</label>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                Hình thức đấu thầu{duAnInfoLocked && duAnLockNote}
+              </label>
               <select
+                disabled={duAnInfoLocked}
                 value={hinhThucDauThau}
                 onChange={(e) => setHinhThucDauThau(e.target.value as Project['hinhThucDauThau'])}
                 className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated"
@@ -721,8 +1064,11 @@ export default function ProjectForm({
 
             {/* Tình trạng dự án */}
             <div>
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">Tình trạng dự án thực tế</label>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                Tình trạng dự án thực tế{duAnInfoLocked && duAnLockNote}
+              </label>
               <select
+                disabled={duAnInfoLocked}
                 value={tinhTrangDuAn}
                 onChange={(e) => setTinhTrangDuAn(e.target.value as Project['tinhTrangDuAn'])}
                 className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated"
@@ -733,6 +1079,8 @@ export default function ProjectForm({
               </select>
             </div>
           </div>
+          </>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* Quản lý CHÍNH */}
@@ -747,8 +1095,12 @@ export default function ProjectForm({
                   <option key={s.id} value={s.id} className="dark:bg-dark-card">{s.hoTen} ({s.chucVu})</option>
                 ))}
               </select>
-              {/* Quản lý phụ / kế thừa — chọn nhiều; thao tác được như quản lý khi người chính bận */}
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mt-3 mb-1.5">Quản lý phụ / kế thừa <span className="font-normal text-slate-400">(khi người chính bận — chọn nhiều)</span></label>
+            </div>
+
+            {/* Quản lý phụ / kế thừa — chọn nhiều; thao tác được như quản lý khi người chính bận.
+                Xếp NGANG HÀNG với quản lý chính cho gọn bảng (chị Trâm chốt 26/07/2026). */}
+            <div>
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">Quản lý phụ / kế thừa <span className="font-normal text-slate-400">(khi người chính bận — chọn nhiều)</span></label>
               <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-white dark:bg-dark-elevated max-h-[110px] overflow-y-auto space-y-1 shadow-inner">
                 {staffList.filter(s => s.id !== quanLyId).map(s => {
                   const checked = quanLyIdsPhu.includes(s.id);
@@ -773,7 +1125,7 @@ export default function ProjectForm({
             {/* Nhân sự thực hiện (Lookup Multi-select) — KHÔNG hiện khi tạo/sửa Dự án cha:
                 chuyên viên chỉ gán khi tạo CÔNG VIỆC con */}
             {formMode !== 'CREATE_TENDER' && !isParentEdit && (
-            <div>
+            <div className="md:col-span-2">
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
                 Chuyên viên thực hiện (Multi-select)
               </label>
@@ -816,73 +1168,6 @@ export default function ProjectForm({
         </fieldset>
         )}
 
-        {/* Section 1.5: Thông tin Phòng Kinh doanh (Chuẩn Template 2) */}
-        {(formMode === 'EDIT_ALL' || formMode === 'CREATE_TENDER' || (formMode === 'ADD_WORK' && selectedProjectId)) && (
-        <fieldset disabled={infoLocked} className="bg-brand-warning/5 dark:bg-brand-warning/10 p-4 rounded-xl border border-brand-warning/25 dark:border-brand-warning/30 space-y-4 min-w-0">
-          <h3 className="text-xs font-bold text-brand-warning dark:text-brand-warning uppercase tracking-wider flex items-center gap-1.5 border-b border-brand-warning/60 dark:border-brand-warning/30 pb-2">
-            <span className="w-1.5 h-3 bg-brand-warning rounded-full"></span>
-            Thông Tin Gốc Phòng Kinh Doanh
-            {infoLocked && <span className="ml-1 normal-case text-[9px] font-bold text-brand-warning dark:text-brand-warning">🔒 Chỉ Trưởng phòng (Level 1) chỉnh sửa</span>}
-          </h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-            {/* Quốc tịch */}
-            <div>
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">Quốc tịch CĐT</label>
-              <input
-                type="text"
-                value={quocTich}
-                onChange={(e) => setQuocTich(e.target.value)}
-                placeholder="Ví dụ: Đài Loan, Việt Nam..."
-                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated focus:ring-brand-accent"
-              />
-            </div>
-
-            {/* Hình thức xây dựng */}
-            <div>
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">Hình thức xây dựng</label>
-              <select
-                value={hinhThucXayDung}
-                onChange={(e) => setHinhThucXayDung(e.target.value as Project['hinhThucXayDung'])}
-                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated focus:ring-brand-accent"
-              >
-                <option value="Xây mới">Xây mới</option>
-                <option value="Cải tạo">Cải tạo</option>
-                <option value="Sửa chữa">Sửa chữa</option>
-                <option value="Mở rộng">Mở rộng</option>
-              </select>
-            </div>
-
-            {/* Hồ sơ phát thầu */}
-            <div>
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">Hồ sơ mời thầu thiết kế bởi</label>
-              <select
-                value={hoSoPhatThau}
-                onChange={(e) => setHoSoPhatThau(e.target.value as Project['hoSoPhatThau'])}
-                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated focus:ring-brand-accent"
-              >
-                <option value="CĐT phát thầu">CĐT phát thầu</option>
-                <option value="HP thiết kế">HP thiết kế</option>
-                <option value="Đơn vị khác thiết kế">Đơn vị khác thiết kế</option>
-              </select>
-            </div>
-
-            {/* Diện tích đất */}
-            <div>
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">Diện tích đất (m²)</label>
-              <input
-                type="number"
-                min={0}
-                value={dienTichDat > 0 ? dienTichDat : ''}
-                onChange={(e) => setDienTichDat(parseFloat(e.target.value) || 0)}
-                placeholder="Nhập diện tích m2"
-                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated focus:ring-brand-accent"
-              />
-            </div>
-          </div>
-        </fieldset>
-        )}
-
         {/* Section 2: Bản chất công việc */}
         {(((formMode === 'EDIT_ALL' && !isParentEdit)) || (formMode === 'ADD_WORK' && selectedProjectId)) && (
         <div className="bg-slate-50/50 dark:bg-dark-card/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 space-y-4">
@@ -909,35 +1194,15 @@ export default function ProjectForm({
               </select>
             </div>
 
-            {/* Mô tả chi tiết nội dung công việc */}
+            {/* Ghi chú riêng của CÔNG VIỆC — Quản lý ghi tự do, không liên quan mô tả dự án */}
             <div className="md:col-span-2">
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">Mô tả chi tiết nội dung công việc</label>
-              <textarea
-                rows={2}
-                value={moTa}
-                onChange={(e) => setMoTa(e.target.value)}
-                placeholder="Phân tích bản vẽ kết cấu, bóc tách cấu kiện móng và dầm sàn tháp B..."
-                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium focus:ring-brand-accent bg-white dark:bg-dark-elevated text-slate-800 dark:text-slate-100"
-              />
+              {moTaField(
+                'Mô tả / ghi chú công việc',
+                'Ghi chú riêng của công việc, hoặc dán link thư mục triển khai chung của team...',
+                2
+              )}
             </div>
 
-            {/* OneDrive Link */}
-            <div className="md:col-span-3">
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5 flex items-center gap-1.5">
-                <Link className="w-3.5 h-3.5 text-brand-accent" />
-                Đường dẫn thư mục hồ sơ đấu thầu (OneDrive Link)
-              </label>
-              <input 
-                type="url"
-                value={oneDriveLink}
-                onChange={(e) => setOneDriveLink(e.target.value)}
-                placeholder="VD: https://onedrive.live.com/redir?resid=..."
-                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium focus:ring-brand-accent bg-white dark:bg-dark-elevated text-slate-800 dark:text-slate-100 font-mono text-xs"
-              />
-              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
-                Liên kết OneDrive chứa toàn bộ hồ sơ BVTC, BOQ, và báo giá vật tư của nhà thầu phụ.
-              </p>
-            </div>
           </div>
 
         </div>
@@ -970,14 +1235,18 @@ export default function ProjectForm({
               {errors.ngayBatDau && <span className="text-[11px] text-brand-danger mt-1 block">{errors.ngayBatDau}</span>}
             </div>
 
-            {/* Hạn nộp CĐT (tự tính = ngày BĐ + tổng 3 chặng) */}
+            {/* HẠN HOÀN THÀNH PHÒNG (tự tính = ngày BĐ + thực hiện + TP duyệt, tính cả ngày đầu).
+                KHÔNG gọi là "nộp CĐT" vì sau chặng này hồ sơ còn phải qua BGĐ (chị Trâm chốt 25/07/2026). */}
             <div>
-              <label className="block text-xs font-bold text-brand-primary dark:text-brand-primary-300 mb-1.5">Hạn nộp CĐT (tự tính)</label>
+              <label className="block text-xs font-bold text-brand-primary dark:text-brand-primary-300 mb-1.5">Hạn hoàn thành Phòng (tự tính)</label>
               <div className="px-3 py-2 bg-brand-primary/10 dark:bg-brand-primary/15 border border-brand-primary/25 dark:border-brand-primary/50 rounded-lg text-sm font-extrabold text-brand-primary-700 dark:text-brand-primary-300 flex items-center gap-1.5">
                 <Calendar className="w-4 h-4" />
                 {fmtDateVN(ngayHoanThanhDuKienGoc) || 'N/A'}
               </div>
-              <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1">Ngày BĐ + {soNgayDuKien} ngày (TH {soNgayThucHien} + TP {soNgayDuyetTP})</p>
+              <p className="text-[9px] text-slate-400 dark:text-slate-500 mt-1">
+                Ngày BĐ + {soNgayDuKien} ngày (TH {soNgayThucHien} + TP {soNgayDuyetTP}) — tính cả ngày đầu.
+                Nộp CĐT = hạn Phòng + số ngày BGĐ duyệt.
+              </p>
             </div>
 
             {/* Hạn hoàn thành hiện tại */}
@@ -996,7 +1265,7 @@ export default function ProjectForm({
           <div className="bg-white dark:bg-dark-bg border border-slate-200/70 dark:border-slate-800 rounded-xl p-3 space-y-3 mt-1">
             <div className="flex items-center justify-between gap-2">
               <span className="text-[11px] font-black uppercase tracking-wide text-slate-700 dark:text-slate-200">
-                Phân bổ thời hạn theo chặng (ra hạn nộp CĐT)
+                Phân bổ thời hạn theo chặng (ra hạn hoàn thành Phòng)
               </span>
               {currentUserRole === 'MANAGER' && (
                 <span className="text-[9px] font-bold text-brand-warning dark:text-brand-warning bg-brand-warning/10 dark:bg-brand-warning/10 px-2 py-0.5 rounded-full">🔒 Do Trưởng phòng thiết lập</span>
@@ -1031,7 +1300,7 @@ export default function ProjectForm({
             )}
             <div className="flex items-center justify-between text-[10px] font-bold">
               <span className="text-slate-500 dark:text-slate-400">Bắt đầu: {fmtDateVN(ngayBatDau) || '—'}</span>
-              <span className="text-slate-700 dark:text-slate-200">Tổng <b className="text-brand-primary dark:text-brand-primary-300">{soNgayDuKien} ngày</b> → Nộp CĐT: <b className="text-brand-primary dark:text-brand-primary-300">{soNgayDuKien > 0 ? (fmtDateVN(ngayHoanThanhDuKienGoc) || '—') : 'Chưa có'}</b></span>
+              <span className="text-slate-700 dark:text-slate-200">Tổng <b className="text-brand-primary dark:text-brand-primary-300">{soNgayDuKien} ngày</b> → Hạn hoàn thành Phòng: <b className="text-brand-primary dark:text-brand-primary-300">{soNgayDuKien > 0 ? (fmtDateVN(ngayHoanThanhDuKienGoc) || '—') : 'Chưa có'}</b></span>
             </div>
             {/* Thời hạn ĐÃ HẸN với CĐT — mốc cam kết ngoài (nếu có), khác với hạn tự tính ở trên */}
             <div className="flex items-center gap-2 pt-1 border-t border-dashed border-slate-200 dark:border-slate-800">
@@ -1056,19 +1325,30 @@ export default function ProjectForm({
           
           {/* Bảng phân rã DUY NHẤT: việc con + tỉ trọng + người giao + ngày bắt đầu + số ngày + thanh Gantt.
               Ngày bắt đầu công việc = min kế hoạch; kết thúc = max kế hoạch → ra số ngày Bộ phận tự động. */}
-          <div className="space-y-1.5">
-            <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-brand-accent" />
-              Lịch trình công việc con &amp; Sơ đồ Gantt (tiến độ Bộ phận tự động gộp: <strong className="text-brand-accent dark:text-brand-accent-300">{tienDoBoPhan}%</strong>)
-            </span>
+          <div className="space-y-1.5" id="field-tasksWeight">
+            {/* Gọn giao diện (chị Trâm chốt 26/07/2026): bỏ dòng nhãn dài — bảng bên dưới đã có tiêu đề
+                riêng, còn tiến độ Bộ phận đã hiện ở ô "Tiến độ Bộ phận" ngay dưới bảng. Chỉ giữ nhãn
+                VÒNG khi hồ sơ làm lại nhiều vòng, vì thông tin đó không hiện ở đâu khác. */}
+            {soVong > 1 && (
+              <span className="text-[10px] font-bold text-brand-warning flex items-center gap-1.5">
+                🔁 Vòng {vongHienTai}/{soVong} · lũy kế tỉ trọng {viTrongLuyKe}/{soVong * 100}%
+              </span>
+            )}
             <SubtaskGantt
               tasks={tasks}
               staff={staffList}
               projectStartDate={ngayBatDau}
               canEdit={currentUserRole === 'BOOD' || currentUserRole === 'MANAGER'}
               isBOOD={currentUserRole === 'BOOD'}
+              vongHienTai={vongHienTai}
               onChange={setTasks}
             />
+            {/* Lỗi phân bổ tỉ trọng — hiện ngay dưới bảng để Quản lý thấy đang kẹt chỗ nào */}
+            {errors.tasksWeight && (
+              <p className="text-[11px] font-bold text-brand-danger bg-brand-danger/10 border border-brand-danger/25 rounded-lg px-2.5 py-2">
+                ⛔ {errors.tasksWeight}
+              </p>
+            )}
             {planRange && (
               <p className="text-[10px] font-bold text-brand-accent dark:text-brand-accent-300">
                 📐 Kế hoạch con: {fmtDateVN(planRange.minDate)} → {fmtDateVN(planRange.maxDate)} = <b>{planRange.days} ngày</b> — đã tự cập nhật vào chặng "Bộ phận thực hiện".
@@ -1108,11 +1388,11 @@ export default function ProjectForm({
               <div className="mt-2">
                 <span className="text-[9px] uppercase font-bold text-brand-primary/80 dark:text-brand-primary-300/80 block mb-1">Kết quả kiểm tra cấp Phòng</span>
                 {currentUserRole === 'BOOD' ? (
-                  <textarea
+                  <AutoGrowTextarea
                     value={ketQuaPhong}
                     onChange={(e) => setKetQuaPhong(e.target.value)}
                     placeholder="VD: Đã rà soát toàn bộ đơn giá và khối lượng BOQ, hồ sơ đạt yêu cầu trình ký..."
-                    className="w-full h-14 p-2 text-xs bg-white dark:bg-dark-bg border border-slate-200 dark:border-slate-800 rounded-lg font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-primary"
+                    className="w-full p-2 text-xs bg-white dark:bg-dark-bg border border-slate-200 dark:border-slate-800 rounded-lg font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-primary"
                   />
                 ) : (
                   <div className="p-2 bg-white/60 dark:bg-dark-bg/60 border border-slate-200/70 dark:border-slate-800 rounded-lg text-xs text-slate-600 dark:text-slate-300 min-h-8 font-medium whitespace-pre-wrap">
@@ -1120,6 +1400,65 @@ export default function ProjectForm({
                   </div>
                 )}
               </div>
+
+              {/* Tệp kết quả công việc — kéo-thả hoặc bấm chọn. Kết quả có thể là MÔ TẢ ở trên,
+                  hoặc TỆP ở đây, hoặc cả hai, hoặc để trống (không bắt buộc). */}
+              <div className="mt-2">
+                <span className="text-[9px] uppercase font-bold text-brand-primary/80 dark:text-brand-primary-300/80 block mb-1">
+                  Tệp kết quả công việc {currentUserRole === 'BOOD' && <span className="normal-case font-medium text-brand-primary/60 dark:text-brand-primary-300/60">(kéo-thả tệp vào ô bên dưới)</span>}
+                </span>
+                {taiLieuKetQuaPhong.length > 0 && (
+                  <ul className="space-y-1 mb-1.5">
+                    {taiLieuKetQuaPhong.map((name, i) => (
+                      <li key={`${name}-${i}`} className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-white/70 dark:bg-dark-bg/70 border border-slate-200/70 dark:border-slate-800 rounded-lg px-2 py-1">
+                        <span className="flex-1 truncate" title={name}>📎 {name}</span>
+                        {currentUserRole === 'BOOD' && (
+                          <button
+                            type="button"
+                            onClick={() => setTaiLieuKetQuaPhong(prev => prev.filter((_, idx) => idx !== i))}
+                            className="shrink-0 text-brand-danger hover:underline uppercase cursor-pointer"
+                            title={`Bỏ tệp ${name}`}
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {currentUserRole === 'BOOD' ? (
+                  <FileDropZone
+                    inputId={`file-kq-phong-${project?.id || 'new'}`}
+                    multiple
+                    label="📤 Đính kèm tệp kết quả công việc"
+                    onFiles={(files) => setTaiLieuKetQuaPhong(prev =>
+                      Array.from(new Set([...prev, ...files.map(f => f.name)])))}
+                  />
+                ) : taiLieuKetQuaPhong.length === 0 && (
+                  <div className="p-2 bg-white/60 dark:bg-dark-bg/60 border border-slate-200/70 dark:border-slate-800 rounded-lg text-xs italic text-slate-400">
+                    Chưa có tệp kết quả nào.
+                  </div>
+                )}
+              </div>
+
+              {/* NHẬT KÝ GỬI CĐT — chỉ XEM. Mỗi lần Trưởng phòng kéo hồ sơ từ bước 4 sang bước 5
+                  (đã gửi CĐT) hệ thống ghi 1 dòng, kèm số liệu của đúng vòng đó. */}
+              {(project?.guiCDTLogs || []).length > 0 && (
+                <div className="mt-3 pt-2 border-t border-brand-primary/20 dark:border-brand-primary/30">
+                  <span className="text-[9px] uppercase font-bold text-brand-primary/80 dark:text-brand-primary-300/80 block mb-1">
+                    Nhật ký gửi Chủ đầu tư — {(project?.guiCDTLogs || []).length} lần
+                  </span>
+                  {/* Chỉ ghi LẦN MẤY + NGÀY GỬI (chị Trâm chốt 25/07/2026) */}
+                  <ul className="space-y-1">
+                    {[...(project?.guiCDTLogs || [])].sort((a, b) => b.lan - a.lan).map(log => (
+                      <li key={log.lan} className="flex items-center justify-between gap-2 bg-white/70 dark:bg-dark-bg/70 border border-slate-200/70 dark:border-slate-800 rounded-lg px-2 py-1.5 text-[10px] font-black">
+                        <span className="text-brand-accent dark:text-brand-accent-300">📤 Gửi CĐT lần {log.lan}</span>
+                        <span className="text-slate-500 dark:text-slate-400">{log.ngay.split('-').reverse().join('-')}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -1385,8 +1724,7 @@ export default function ProjectForm({
                 <AlertTriangle className="w-4 h-4 text-brand-danger dark:text-brand-danger" />
                 Ghi chú nguyên nhân trễ hạn (BẮT BUỘC ĐIỀN) *
               </label>
-              <textarea
-                rows={3}
+              <AutoGrowTextarea
                 value={nguyenNhanTreHan}
                 onChange={(e) => {
                   setNguyenNhanTreHan(e.target.value);
@@ -1457,30 +1795,6 @@ export default function ProjectForm({
             </div>
           </div>
         </div>
-        )}
-
-        {/* Chốt chặn dời tiến độ: Quản lý sửa làm hạn lùi xa hơn → bắt buộc lý do mới cho Lưu */}
-        {scheduleExtended && (
-          <div id="field-autoDelayReason" className="bg-brand-warning/5 dark:bg-brand-warning/10 border border-brand-warning/40 dark:border-brand-warning/50 rounded-xl p-4 space-y-2">
-            <span className="text-xs font-black text-brand-warning dark:text-brand-warning flex items-center gap-1.5">
-              <AlertTriangle className="w-4 h-4" />
-              Cập nhật này làm TIẾN ĐỘ TỔNG TĂNG THÊM {scheduleExtendDays} ngày ({fmtDateVN(project?.ngayHoanThanhDuKienHienTai)} → {fmtDateVN(ngayHoanThanhDuKienHienTai)})
-            </span>
-            <p className="text-[10px] text-brand-warning/80 dark:text-brand-warning/80 font-semibold">
-              Bắt buộc nhập lý do dời tiến độ — hệ thống sẽ tự ghi vào Lịch Sử Dời Tiến Độ (Delay Logs) và báo Trưởng phòng duyệt lại.
-            </p>
-            <textarea
-              value={autoDelayReason}
-              onChange={(e) => {
-                setAutoDelayReason(e.target.value);
-                if (errors.autoDelayReason) setErrors(prev => { const c = { ...prev }; delete c.autoDelayReason; return c; });
-              }}
-              rows={2}
-              placeholder="Ví dụ: CĐT bổ sung hạng mục MEPF, khối lượng bóc tách tăng 30% so với kế hoạch ban đầu..."
-              className="w-full px-3 py-2 border border-brand-warning/40 dark:border-brand-warning/60 rounded-lg text-xs font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-bg focus:ring-1 focus:ring-brand-warning focus:outline-none"
-            />
-            {errors.autoDelayReason && <span className="text-[11px] text-brand-danger block font-bold">{errors.autoDelayReason}</span>}
-          </div>
         )}
 
         {/* Action buttons */}

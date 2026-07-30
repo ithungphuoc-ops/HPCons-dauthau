@@ -3,7 +3,13 @@ export interface DelayLog {
   ngayThayDoi: string; // Ngày thực hiện điều chỉnh
   ngayCu: string; // Hạn hoàn thành cũ
   ngayMoi: string; // Hạn hoàn thành mới
-  soNgayLech: number; // Số ngày lệch tự động tính toán
+  // ⚠ KHÔNG PHẢI "số ngày đã dời" — đây là phần ngày cần CỘNG THÊM vào hạn gốc.
+  // Hạn gốc đã được tính lại từ kế hoạch việc con (ngày bắt đầu + span việc con + ngày TP duyệt),
+  // nên lần dời nào phát sinh TỪ việc con thì để 0, bằng không hạn bị cộng hai lần
+  // (chị Trâm báo 29/07/2026: hạn Phòng 01/08 nhưng "hạn hiện tại" nhảy lên 03/08).
+  // Chỉ lần dời KHAI TAY (chọn ngày mới ở mục "Đăng ký dời tiến độ") mới mang số thật.
+  // Muốn biết đã dời bao nhiêu ngày để hiển thị/báo cáo: dùng tongNgayDoiHan() trong utils/dateVN.
+  soNgayLech: number;
   lyDo: string; // Lý do dời tiến độ
   nguoiDuyet: string; // Nhân sự phê duyệt
 }
@@ -26,6 +32,10 @@ export interface ProjectTask {
   taiLieuDinhKem?: string; // Tên file tài liệu đính kèm kết quả
   ngayBatDau?: string; // Ngày bắt đầu công việc con (YYYY-MM-DD) — phục vụ sơ đồ Gantt
   soNgay?: number; // Số ngày dự kiến thực hiện công việc con — phục vụ sơ đồ Gantt
+  // VÒNG làm việc: mỗi lần hồ sơ bị trả về làm lại rồi gửi CĐT lần nữa là một vòng mới.
+  // Tỉ trọng phải đủ 100% TRONG TỪNG VÒNG (2 lần báo giá → lũy kế 200%).
+  // Bỏ trống = vòng 1 (dữ liệu cũ đọc bình thường).
+  vong?: number;
 }
 
 export interface ProjectComment {
@@ -67,10 +77,26 @@ export interface Project {
   createdBy?: string; // ID người đăng ký hồ sơ thầu
   tasks: ProjectTask[]; // Danh sách tác vụ phụ để tự động nội suy tiến độ
   comments?: ProjectComment[]; // Thảo luận trao đổi (Level 3 Staff)
-  oneDriveLink?: string; // Đường dẫn liên kết thư mục OneDrive tài liệu thầu
+  // @deprecated 25/07/2026 — đã bỏ ô nhập; nội dung chuyển vào moTa. Giữ trường để đọc dữ liệu cũ.
+  oneDriveLink?: string;
   kpi?: number; // Điểm KPI tự động tính toán cho dự án thầu (chỉ dựa trên tiến độ)
   kanbanStep?: number; // Bước hiện tại trên bảng Kanban quy trình thầu (1-7)
   ketQuaPhong?: string; // Kết quả kiểm tra & cập nhật cấp Phòng do Trưởng phòng nhập
+  // Tệp kết quả công việc cấp Phòng (nhiều tệp nối bằng " | " — cùng quy ước với taiLieuDinhKem
+  // của việc con, xem utils/attachments.ts). Chỉ lưu TÊN tệp, không lưu nội dung tệp.
+  taiLieuKetQuaPhong?: string;
+  // NHẬT KÝ GỬI CĐT: mỗi lần Trưởng phòng kéo tay hồ sơ từ bước 4 (trình BLĐ/Giám đốc) sang
+  // bước 5 (đã gửi CĐT) = 1 lần gửi. Hồ sơ bị CĐT/BGĐ yêu cầu sửa → TP kéo về bước 1-3, làm
+  // lại quy trình, rồi kéo 4→5 lần nữa = lần gửi kế tiếp. Mỗi bản ghi chụp lại tiến độ Phòng
+  // và kết quả công việc của đúng vòng đó để về sau đối chiếu.
+  guiCDTLogs?: {
+    lan: number;              // Lần gửi thứ mấy (1, 2, 3...)
+    ngay: string;             // Ngày gửi (YYYY-MM-DD)
+    tienDoPhong: number;      // Tiến độ Phòng tại thời điểm gửi
+    ketQuaPhong?: string;     // Mô tả kết quả công việc của vòng đó
+    taiLieuKetQuaPhong?: string; // Tệp kết quả của vòng đó (nối bằng " | ")
+    nguoiGui?: string;        // Người kéo thẻ sang bước 5
+  }[];
   // Quy trình duyệt: Quản lý tạo công việc → false (chờ TP duyệt qua chuông). TP mở, kiểm tra kế hoạch,
   // thêm ngày kiểm tra của mình, lưu → true. CHỈ công việc đã duyệt mới lên Kanban / Gantt.
   // Bỏ trống (dữ liệu cũ / TP tự tạo) = coi như đã duyệt.
@@ -79,6 +105,16 @@ export interface Project {
   // Quản lý cập nhật kế hoạch làm tiến độ DELAY xa hơn hạn đã báo → true (chờ TP duyệt lại &
   // chỉnh ngày kiểm tra phòng). Thẻ VẪN ở trên Kanban. TP lưu là xóa cờ.
   choDuyetLai?: boolean;
+  // VÌ SAO phải duyệt lại — để Trưởng phòng nhìn chuông là biết có phải việc gấp không
+  // (chị Trâm chốt 29/07/2026: đang báo "DELAY" cho cả trường hợp chỉ chia lại việc con).
+  //   'DOI_HAN'  — hạn nộp bị đẩy ra, đây mới là DELAY thật.
+  //   'PHAN_BO'  — chỉ đổi phân bổ / thêm việc con, THỜI GIAN GÓI THẦU KHÔNG ĐỔI → duyệt cho nhanh.
+  // Bỏ trống (dữ liệu cũ) = coi như 'DOI_HAN' để không vô tình báo nhẹ đi một ca delay thật.
+  lyDoChoDuyetLai?: 'DOI_HAN' | 'PHAN_BO';
+  // VÒNG làm việc đang chạy (1, 2, 3...). Trưởng phòng mở vòng mới khi kéo hồ sơ về Bước 1 để làm lại
+  // sau khi đã gửi CĐT. Mỗi vòng phải phân bổ tỉ trọng việc con đủ 100% → 2 vòng thì lũy kế 200%.
+  // Bỏ trống = vòng 1 (dữ liệu cũ đọc bình thường).
+  vongHienTai?: number;
   cdtDieuChinh?: { ngay: string; noiDung: string; buocVe: number }[]; // Lịch sử CĐT yêu cầu điều chỉnh (kéo tiến độ về bước trước)
   chuDauTu?: string; // Tên Chủ đầu tư (CĐT)
   diaChi?: string; // Địa chỉ dự án / Công trình
@@ -99,7 +135,7 @@ export interface Project {
 export interface Personnel {
   id: string;
   hoTen: string;
-  chucVu: 'Ban giám đốc' | 'Trưởng phòng' | 'Phó phòng' | 'Quản lý' | 'Chuyên viên đấu thầu' | 'Quản trị hệ thống';
+  chucVu: 'Ban giám đốc' | 'Trưởng phòng' | 'Phó phòng' | 'Quản lý' | 'Chuyên viên đấu thầu' | 'Quản trị hệ thống' | 'Khách (chỉ xem)';
   avatar: string;
   kpiDiem: number; // Điểm KPI trung bình hiện tại
   soDuAnDangLam: number;
@@ -108,7 +144,7 @@ export interface Personnel {
   email?: string;
   password?: string;
   mustChangePassword?: boolean; // Bắt buộc đổi mật khẩu ở lần đăng nhập tới (acc mới dùng mật khẩu mặc định 123456)
-  role?: 'BOOD' | 'MANAGER' | 'STAFF';
+  role?: 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER';
   daNghi?: boolean; // Nhân sự đã nghỉ việc: khóa tài khoản nhưng giữ nguyên công việc đã/đang làm
   // Quản lý phụ trách (đội ngũ): id của Quản lý (Level 2) mà nhân viên này trực thuộc.
   // Do Trưởng phòng (L1) gán trong mục Đội Ngũ & KPI. Mỗi nhân viên chỉ thuộc 1 quản lý.
@@ -139,6 +175,11 @@ export interface AppNotification {
   projId?: string; // Hồ sơ liên quan (bấm vào mở)
   ngay: string; // Thời điểm phát sinh (ISO)
   daDoc?: boolean; // Đã xem (mở chuông là tính đã xem) — tin vẫn giữ trong danh sách, chỉ tắt số đếm
+  // NGƯỜI GÂY RA tin này (chị Trâm chốt 30/07/2026 — làm chuông dễ đọc như Base):
+  // để hiện ảnh + tên người thao tác ngay đầu dòng, nhìn là biết ai làm gì.
+  // App tự gán = người đang đăng nhập lúc phát sinh, không phải khai ở từng chỗ gọi.
+  // Bỏ trống = tin do HỆ THỐNG tự nhắc (nhắc hạn, lịch cá nhân) — hiện biểu tượng hệ thống.
+  actorId?: string;
 }
 
 // Việc cá nhân trong "Lịch cá nhân" — nhắc trên chuông (và popup trình duyệt nếu được cấp quyền).

@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { Project } from '../types';
 import { RefreshCw, X, Plus, Trash2, Save } from 'lucide-react';
 import { useModalA11y } from '../utils/useModalA11y';
+import { AutoGrowTextarea } from './ui';
 
 interface CdtRevisionModalProps {
   project: Project;
@@ -55,11 +56,11 @@ export default function CdtRevisionModal({ project, onSubmit, onClose }: CdtRevi
             <label className="block text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
               Nội dung CĐT điều chỉnh <span className="text-brand-danger">*</span>
             </label>
-            <textarea
+            <AutoGrowTextarea
               value={noiDung}
               onChange={(e) => { setNoiDung(e.target.value); setError(''); }}
               placeholder="VD: CĐT điều chỉnh khối lượng phần MEP, bổ sung hạng mục PCCC..."
-              className="w-full h-20 p-2 text-xs bg-white dark:bg-dark-bg border border-slate-200 dark:border-slate-800 rounded-lg font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-warning"
+              className="w-full p-2 text-xs bg-white dark:bg-dark-bg border border-slate-200 dark:border-slate-800 rounded-lg font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-warning"
             />
           </div>
 

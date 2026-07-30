@@ -131,10 +131,6 @@ EXECUTE FUNCTION fn_offset_ngay_hoan_thanh();`;
             </li>
             <li className="flex items-start gap-2">
               <span className="w-1.5 h-1.5 rounded-full bg-brand-primary mt-1.5 flex-shrink-0"></span>
-              <span><strong>Tài liệu thầu OneDrive:</strong> Hỗ trợ liên kết trực tiếp đến thư mục tài liệu OneDrive chứa bản vẽ BVTC, BOQ của nhà thầu phụ phục vụ hậu kiểm.</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-brand-primary mt-1.5 flex-shrink-0"></span>
               <span><strong>Ràng buộc KPI ngặt nghèo:</strong> Trường nguyên nhân trễ hạn bắt buộc kích hoạt ở mức Database nếu xảy ra tình trạng trễ ngày thầu dự kiến.</span>
             </li>
           </ul>
