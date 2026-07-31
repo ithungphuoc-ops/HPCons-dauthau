@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as xlsx from "xlsx";
+import { rateLimitOrNull } from "@/src/lib/apiRateLimit";
 
 // 2. SECURE EXCEL IMPORT & VALIDATION API
 // Nhận danh sách dự án + nhân sự HIỆN CÓ trực tiếp từ trình duyệt (nguồn thật là Firebase/state
 // client) để merge — không đọc/ghi file trên server vì ổ đĩa server (Vercel) chỉ đọc.
 export async function POST(req: NextRequest) {
+  // Giới hạn chặt hơn filter vì đây là thao tác tốn CPU (parse Excel) — nhập hàng loạt
+  // không phải hành động làm liên tục trong ngày như lọc theo ngày.
+  const limited = await rateLimitOrNull(req, "projects_import", { windowSeconds: 60, maxRequests: 10 });
+  if (limited) return limited;
+
   try {
     const body = await req.json();
     const { fileData } = body;

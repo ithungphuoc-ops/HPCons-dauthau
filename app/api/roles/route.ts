@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { checkRateLimit, getClientIp } from "@/src/lib/apiRateLimit";
 
 // Danh sách vai trò CỦA CHÍNH app đấu thầu — App Tổng (account.hpcore.vn) gọi
 // endpoint này để dựng dropdown gán quyền tại trang "Quản lý ứng dụng", không
@@ -18,7 +19,20 @@ const CORS = {
   "Cache-Control": "public, max-age=300",
 };
 
-export function GET() {
+export async function GET(req: NextRequest) {
+  // Endpoint public không cần đăng nhập (CORS mở *) — vẫn giới hạn nhẹ để chặn spam,
+  // hào phóng vì Cache-Control: public, max-age=300 đã tự giảm phần lớn lượt gọi lặp lại.
+  try {
+    const result = await checkRateLimit("roles", getClientIp(req), { windowSeconds: 60, maxRequests: 30 });
+    if (!result.allowed) {
+      return NextResponse.json(
+        { error: "Quá nhiều yêu cầu, vui lòng thử lại sau." },
+        { status: 429, headers: { ...CORS, ...(result.retryAfterSeconds ? { "Retry-After": String(result.retryAfterSeconds) } : {}) } },
+      );
+    }
+  } catch (e) {
+    console.error("[api/roles] Lỗi kiểm tra rate-limit, cho qua:", e);
+  }
   const roles = Object.entries(ROLES).map(([key, label]) => ({ key, label }));
   return NextResponse.json({ roles }, { headers: CORS });
 }
