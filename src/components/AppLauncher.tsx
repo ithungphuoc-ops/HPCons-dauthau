@@ -33,7 +33,22 @@ interface RemoteApp {
   comingSoon?: boolean;
 }
 
-function Tile({ app, onNavigate }: { app: RemoteApp; onNavigate: () => void }) {
+/** Tô sáng phần chữ khớp với từ khoá tìm kiếm — plain-match, khớp đúng luật lọc app.name.toLowerCase().includes(ql) ở trên. */
+function HighlightMatch({ text, query }: { text: string; query: string }) {
+  const q = query.trim();
+  if (!q) return <>{text}</>;
+  const index = text.toLowerCase().indexOf(q.toLowerCase());
+  if (index === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, index)}
+      <mark className="rounded bg-green-100 px-0.5 font-semibold text-green-800">{text.slice(index, index + q.length)}</mark>
+      {text.slice(index + q.length)}
+    </>
+  );
+}
+
+function Tile({ app, onNavigate, query }: { app: RemoteApp; onNavigate: () => void; query: string }) {
   const Icon = (app.iconKey && ICONS[app.iconKey]) || AppWindow;
   const current = !!app.href && app.href.includes('dauthau.hpcore.vn');
   const inner = (
@@ -46,7 +61,7 @@ function Tile({ app, onNavigate }: { app: RemoteApp; onNavigate: () => void }) {
         }
       </div>
       <span className={`text-center text-xs font-medium leading-tight ${app.comingSoon ? 'text-text-disabled' : 'text-foreground'}`}>
-        {app.name}
+        <HighlightMatch text={app.name} query={query} />
       </span>
       {current && <span className="rounded-full bg-brand-accent/15 px-1.5 py-0.5 text-[9px] text-brand-accent dark:text-brand-accent-300">Đang dùng</span>}
       {app.comingSoon && <span className="rounded-full bg-brand-warning/15 px-1.5 py-0.5 text-[9px] text-brand-warning">Sắp ra mắt</span>}
@@ -132,7 +147,7 @@ export function AppLauncher({
                 <p className="font-semibold">{g.title}</p>
                 <p className="mb-3 text-xs text-text-desc">{g.subtitle}</p>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
-                  {g.apps.map((app) => <Tile key={app.name} app={app} onNavigate={onClose} />)}
+                  {g.apps.map((app) => <Tile key={app.name} app={app} onNavigate={onClose} query={ql} />)}
                 </div>
               </div>
             ))
