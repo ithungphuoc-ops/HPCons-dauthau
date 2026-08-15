@@ -71,7 +71,7 @@ import CdtRevisionModal from './components/CdtRevisionModal';
 import PullBackDelayModal from './components/PullBackDelayModal';
 import PhongProgressModal from './components/PhongProgressModal';
 import DateInput from './components/DateInput';
-import { subscribeCollection, pushCollection, watchAuth, authEmailFor, signInWithHpcoreToken, signInAnonymouslyFb, signOutFb, fbAuth, projectIdDangChay, PROJECT_THAT } from './lib/firebase';
+import { subscribeCollection, pushCollection, deleteDocsFromCollection, watchAuth, authEmailFor, signInWithHpcoreToken, signInAnonymouslyFb, signOutFb, fbAuth, projectIdDangChay, PROJECT_THAT } from './lib/firebase';
 import { sandboxStaff, duAnNhap } from './data/sandboxData';
 
 // ===== BẢN THỬ (chỉ chạy trên máy cá nhân) =====
@@ -1817,6 +1817,13 @@ export default function App() {
         const target = projects.find(p => p.id === id);
         const updated = projects.filter(p => p.id !== id);
         setProjects(updated);
+        // Xoá NGAY trên cloud, không chờ effect debounce đẩy cả mảng (xem note
+        // deleteDocsFromCollection trong lib/firebase.ts) — tránh bị đẩy trượt
+        // ghi đè lại bản ghi vừa xoá.
+        deleteDocsFromCollection('projects', [id]).catch(err => {
+          console.error('[Firebase] Lỗi xoá hồ sơ trên cloud:', err);
+          triggerToast(`Xoá cục bộ xong nhưng chưa xoá được trên cloud: ${err?.message || 'lỗi kết nối'}. Vui lòng thử lại.`);
+        });
         triggerToast(`Đã xóa hồ sơ: "${name}"`);
         logAction('Xóa hồ sơ thầu', `Xóa vĩnh viễn hồ sơ dự án thầu: "${name}" (ID: ${id})`, undefined, getProjectParticipants(target));
       },
@@ -1840,6 +1847,13 @@ export default function App() {
       onConfirm: () => {
         const removeIds = new Set([parent.id, ...children.map(c => c.id)]);
         setProjects(projects.filter(p => !removeIds.has(p.id)));
+        // Xoá NGAY trên cloud (kể cả gói thầu con) — không chờ effect debounce
+        // đẩy cả mảng, tránh bị đẩy trượt ghi đè lại (xem note trong lib/firebase.ts,
+        // đúng góp ý "xóa dự án còn kẹt 1 gói thầu... xóa xong sẽ quay lại như cũ").
+        deleteDocsFromCollection('projects', [...removeIds]).catch(err => {
+          console.error('[Firebase] Lỗi xoá dự án trên cloud:', err);
+          triggerToast(`Xoá cục bộ xong nhưng chưa xoá được trên cloud: ${err?.message || 'lỗi kết nối'}. Vui lòng thử lại.`);
+        });
         triggerToast(`Đã xóa dự án "${parent.tenDuAn}"${children.length > 0 ? ` cùng ${children.length} công việc con` : ''}.`);
         logAction('Xóa dự án', `Xóa dự án "${parent.tenDuAn}" (${parent.projectId})${children.length > 0 ? ` kèm ${children.length} công việc con` : ''}.`);
       },

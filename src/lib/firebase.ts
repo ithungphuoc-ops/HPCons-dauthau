@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore, collection, doc, getDocs, onSnapshot, writeBatch } from 'firebase/firestore';
+import { getFirestore, collection, doc, deleteDoc, getDocs, onSnapshot, writeBatch } from 'firebase/firestore';
 import type { Unsubscribe } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged, signInAnonymously, signInWithCustomToken, signOut } from 'firebase/auth';
 import type { User } from 'firebase/auth';
@@ -133,6 +133,28 @@ export async function pushCollection<T extends { id: string }>(colName: string, 
   for (let i = 0; i < ghi.length; i += CO_LO) {
     const batch = writeBatch(fsDb);
     ghi.slice(i, i + CO_LO).forEach((apply) => apply(batch));
+    await batch.commit();
+  }
+}
+
+/**
+ * Xoá NGAY các doc theo id trên cloud — dùng cho thao tác "xoá" thay vì chỉ
+ * cập nhật state cục bộ rồi chờ effect debounce đẩy cả mảng lên (pushCollection
+ * ở trên). Lý do: effect debounce chạy `getDocs()` đọc lại toàn bộ collection
+ * TRƯỚC KHI tính diff xoá — nếu có 1 pushCollection khác đang chạy dở (từ thao
+ * tác ngay trước đó) commit SAU lần đẩy phản ánh việc xoá này, bản ghi vừa xoá
+ * có thể bị ghi đè trở lại (đúng triệu chứng góp ý: "xoá dự án còn kẹt 1 gói
+ * thầu... xoá xong sẽ quay lại như cũ"). Gọi hàm này NGAY khi xác nhận xoá để
+ * đảm bảo cloud phản ánh đúng ngay lập tức, không phụ thuộc thời điểm effect
+ * debounce chạy tới.
+ */
+export async function deleteDocsFromCollection(colName: string, ids: string[]): Promise<void> {
+  const validIds = ids.filter(Boolean);
+  if (validIds.length === 0) return;
+  const CO_LO = 450;
+  for (let i = 0; i < validIds.length; i += CO_LO) {
+    const batch = writeBatch(fsDb);
+    validIds.slice(i, i + CO_LO).forEach((id) => batch.delete(doc(fsDb, colName, id)));
     await batch.commit();
   }
 }

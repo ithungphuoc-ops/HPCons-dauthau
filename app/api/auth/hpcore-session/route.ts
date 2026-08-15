@@ -40,45 +40,58 @@ export async function GET(req: NextRequest) {
     const adminAuth = getAdminAuth();
     const adminDb = getAdminDb();
 
-    const centralRole = (await fetchCentralRole(identity.uid)) as Role | null;
+    // Trước đây 6 lệnh gọi mạng chạy TUẦN TỰ (role → tạo/cập nhật Auth user →
+    // đọc staff → avatar → ghi staff → mint token) — mỗi lượt cộng dồn khiến
+    // đăng nhập chậm rõ rệt (góp ý Trâm: "xác thực tài khoản vào app lâu lắm").
+    // Gộp các bước ĐỘC LẬP với nhau chạy song song bằng Promise.all — chỉ còn
+    // 3 lượt round-trip nối tiếp thay vì 6.
+    const [centralRole, centralAvatar] = await Promise.all([
+      fetchCentralRole(identity.uid),
+      fetchCentralAvatar(identity.uid),
+    ]);
     // Chưa được Sếp phân quyền ở "Quản lý ứng dụng" (account.hpcore.vn) → KHÔNG tự cấp
     // quyền STAFF mặc định nữa, từ chối thẳng (không tạo Auth user/staff doc/token).
     if (!centralRole || !(centralRole in CHUC_VU_BY_ROLE)) {
       return NextResponse.json({ error: "NOT_AUTHORIZED" }, { status: 403 });
     }
-    const role: Role = centralRole;
+    const role: Role = centralRole as Role;
 
-    try {
-      await adminAuth.updateUser(identity.uid, { email: identity.email, emailVerified: true });
-    } catch {
-      await adminAuth
-        .createUser({ uid: identity.uid, email: identity.email, emailVerified: true })
-        .catch(() => {});
-    }
+    const ensureAuthUser = adminAuth
+      .updateUser(identity.uid, { email: identity.email, emailVerified: true })
+      .catch(() =>
+        adminAuth
+          .createUser({ uid: identity.uid, email: identity.email, emailVerified: true })
+          .catch(() => {})
+      );
 
     const staffRef = adminDb.collection("staff").doc(identity.uid);
-    const existing = await staffRef.get();
+    // updateUser/createUser (Auth) và đọc staff doc (Firestore) không phụ thuộc
+    // nhau — chạy song song.
+    const [, existing] = await Promise.all([ensureAuthUser, staffRef.get()]);
+
     // Avatar: ưu tiên ảnh thật từ hồ sơ App Tổng (account.hpcore.vn/profile), đọc sống mỗi
     // lần đăng nhập — đổi avatar bên đó thì app này cũng cập nhật theo ngay lần sau, không
     // còn kẹt cứng ảnh cũ nữa. Chỉ giữ ảnh local cũ khi App Tổng chưa có avatar nào.
-    const centralAvatar = await fetchCentralAvatar(identity.uid);
-    await staffRef.set(
-      {
-        id: identity.uid,
-        hoTen: identity.fullName || existing.data()?.hoTen || identity.email,
-        chucVu: CHUC_VU_BY_ROLE[role],
-        avatar: centralAvatar || existing.data()?.avatar || "",
-        kpiDiem: existing.data()?.kpiDiem ?? 0,
-        soDuAnDangLam: existing.data()?.soDuAnDangLam ?? 0,
-        tiLeDungHan: existing.data()?.tiLeDungHan ?? 100,
-        email: identity.email,
-        role,
-        mustChangePassword: false,
-      },
-      { merge: true }
-    );
+    // Ghi staff doc và mint custom token cũng không phụ thuộc nhau — chạy song song.
+    const [, token] = await Promise.all([
+      staffRef.set(
+        {
+          id: identity.uid,
+          hoTen: identity.fullName || existing.data()?.hoTen || identity.email,
+          chucVu: CHUC_VU_BY_ROLE[role],
+          avatar: centralAvatar || existing.data()?.avatar || "",
+          kpiDiem: existing.data()?.kpiDiem ?? 0,
+          soDuAnDangLam: existing.data()?.soDuAnDangLam ?? 0,
+          tiLeDungHan: existing.data()?.tiLeDungHan ?? 100,
+          email: identity.email,
+          role,
+          mustChangePassword: false,
+        },
+        { merge: true }
+      ),
+      adminAuth.createCustomToken(identity.uid),
+    ]);
 
-    const token = await adminAuth.createCustomToken(identity.uid);
     return NextResponse.json({ token });
   } catch (e: any) {
     console.error("[hpcore-session] Lỗi cấp Custom Token:", e);
