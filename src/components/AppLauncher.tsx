@@ -27,12 +27,11 @@ interface RemoteApp {
   name: string;
   iconKey?: string;
   color?: string;
+  category?: 'ops' | 'business';
   image?: string;
   href?: string;
   comingSoon?: boolean;
 }
-
-const isBiz = (n: string) => n.startsWith('HPC ');
 
 function Tile({ app, onNavigate }: { app: RemoteApp; onNavigate: () => void }) {
   const Icon = (app.iconKey && ICONS[app.iconKey]) || AppWindow;
@@ -85,8 +84,8 @@ export function AppLauncher({
   const ql = q.trim().toLowerCase();
   const list = (apps ?? []).filter((a) => !ql || a.name.toLowerCase().includes(ql));
   const groups = [
-    { title: 'Nhân sự & Vận hành', subtitle: 'Chấm công, đơn từ, đặt phòng, báo cáo...', apps: list.filter((a) => !isBiz(a.name)) },
-    { title: 'Ứng dụng nghiệp vụ', subtitle: 'Kinh doanh, kho, tài sản, quy trình...', apps: list.filter((a) => isBiz(a.name)) },
+    { title: 'Nhân sự & Vận hành', subtitle: 'Chấm công, đơn từ, đặt phòng, báo cáo...', apps: list.filter((a) => a.category !== 'business') },
+    { title: 'Ứng dụng nghiệp vụ', subtitle: 'Kinh doanh, kho, tài sản, quy trình...', apps: list.filter((a) => a.category === 'business') },
   ].filter((g) => g.apps.length > 0);
 
   return (
