@@ -107,11 +107,32 @@ export const signOutFb = (): Promise<void> => signOut(fbAuth);
 // Firestore không nhận giá trị `undefined` — làm sạch object trước khi ghi
 const sanitize = <T,>(item: T): T => JSON.parse(JSON.stringify(item));
 
+// Hàng đợi tuần tự theo TỪNG collection — đảm bảo 2 lệnh pushCollection cùng tên collection
+// KHÔNG BAO GIỜ chạy chồng lên nhau. Vá lỗi (2026-08-18): "bấm Lưu Hồ Sơ liên tục 2-3 lần
+// trong thời gian ngắn thì không chuyển được bước Kanban, F5 lại quay về bước cũ". Nguyên
+// nhân: pushCollection đọc lại TOÀN BỘ collection (getDocs) rồi mới ghi — khi 2 lệnh gọi
+// chồng lên nhau (lưu nhanh liên tiếp), lệnh đọc dữ liệu CŨ HƠN nhưng lại GHI XONG SAU (do
+// mạng/độ trễ không đều) sẽ đè mất kết quả của lệnh mới hơn, không báo lỗi gì — đúng loại
+// lỗi đã từng gặp ở thao tác xoá dự án (xem chú thích deleteDocsFromCollection bên dưới),
+// nay vá tận gốc bằng cách xếp hàng NGAY TRONG pushCollection để mọi nơi gọi đều được bảo vệ.
+const pushQueues = new Map<string, Promise<void>>();
+
 /**
  * Ghi TOÀN BỘ danh sách bản ghi lên một collection (ghi đè theo id, xóa doc không còn trong danh sách).
  * Dùng cho mô hình đồng bộ cả mảng như app đang làm với db.json/staff.json.
+ *
+ * Các lệnh gọi cùng `colName` được xếp hàng tuần tự (xem `pushQueues` ở trên) — lệnh sau
+ * luôn đợi lệnh trước ghi xong hẳn (dù thành công hay lỗi) rồi mới bắt đầu đọc+ghi của mình,
+ * nên không còn tình trạng 2 lệnh chồng lên nhau làm dữ liệu cũ đè mất dữ liệu mới.
  */
-export async function pushCollection<T extends { id: string }>(colName: string, items: T[]): Promise<void> {
+export function pushCollection<T extends { id: string }>(colName: string, items: T[]): Promise<void> {
+  const previous = pushQueues.get(colName) ?? Promise.resolve();
+  const next = previous.catch(() => {}).then(() => pushCollectionNow(colName, items));
+  pushQueues.set(colName, next);
+  return next;
+}
+
+async function pushCollectionNow<T extends { id: string }>(colName: string, items: T[]): Promise<void> {
   const colRef = collection(fsDb, colName);
   const existing = await getDocs(colRef);
   const keep = new Set(items.map((i) => i.id));
