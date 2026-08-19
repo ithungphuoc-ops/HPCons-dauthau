@@ -17,4 +17,10 @@ src/data/staff_predemo_backup.json
 
 # Dữ liệu dự án đấu thầu đang làm việc thật — Sếp muốn giữ lại, đẩy lên sau (2026-07-30)
 src/data/db_predemo_backup.json
-node_modules
+
+# Tệp Excel nghiệp vụ chị Trâm để tạm trong thư mục repo để Claude đối chiếu (góp ý, mẫu báo cáo
+# ISO ~8MB). Là dữ liệu thật của Phòng + rất nặng, không đưa lên Git.
+GopY_HPC*.xlsx
+PHONG DAU THAU*.xlsx
+# Tệp tạm Excel tự sinh khi đang mở file (~$Ten.xlsx)
+~$*

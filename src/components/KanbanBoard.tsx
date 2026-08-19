@@ -1,8 +1,10 @@
 import { useState, useMemo } from 'react';
 import { Project, Staff } from '../types';
 import { getInitials, getInitialsColor } from '../App';
-import { ChevronLeft, ChevronRight, Lock, LayoutGrid, Calendar, ClipboardCheck } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Lock, LayoutGrid, ClipboardCheck } from 'lucide-react';
 import DateInput from './DateInput';
+import { tongSoLanGuiCDT, nhanLanGui } from '../utils/guiCDT';
+import { namHienTaiVN } from '../utils/dateVN';
 
 // 7 bước quy trình thầu trên bảng Kanban.
 // Bước 1-2: Level 1 (Trưởng phòng) + Level 2 (Quản lý) đều được thao tác (bộ phận thực hiện).
@@ -58,17 +60,32 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
   const [dragOverStep, setDragOverStep] = useState<number | null>(null);
   const [fromDate, setFromDate] = useState<string>('');
   const [toDate, setToDate] = useState<string>('');
-  const [yearFilter, setYearFilter] = useState<string>('ALL');
+  // MẶC ĐỊNH lọc theo NĂM HIỆN TẠI (chị Trâm chốt 17/08/2026) — tự đổi theo lịch, sang 2027 thì
+  // mặc định thành 2027, không phải sửa code lại. Năm lấy theo giờ Việt Nam, không theo giờ máy.
+  const [yearFilter, setYearFilter] = useState<string>(() => namHienTaiVN());
 
-  // Năm của hồ sơ: ưu tiên tiền tố mã dự án (YYYY.NN), thiếu thì lấy năm của ngày bắt đầu
+  // ===== NĂM CỦA HỒ SƠ =====
+  // Lấy theo NGÀY BẮT ĐẦU — trường này luôn có và luôn là ISO nên không thể suy ra sai.
+  //
+  // TRƯỚC ĐÂY: cắt 4 chữ số đầu của mã dự án rồi coi đó là năm. Sai với mã kiểu YYMMNN mà Phòng
+  // đang dùng — "260002-HPCS-BG-PSD" ra "2600", "261006-HPCS-BG-BMP" ra "2610" — nên ô lọc hiện
+  // ra những năm không tồn tại (chị Trâm báo 17/08/2026, kèm ảnh màn hình).
+  //
+  // Vẫn nhận tiền tố mã, nhưng CHỈ khi đúng dạng "YYYY." có dấu chấm (vd "2026.01") — dạng này
+  // không thể nhầm với YYMMNN. Kèm chặn năm vô lý để dữ liệu hỏng không lọt lên ô lọc.
+  const namHopLe = (n: number) => n >= 2000 && n <= 2100;
   const projectYear = (p: Project): string => {
-    const fromId = (p.projectId || '').match(/^(\d{4})/)?.[1];
-    if (fromId) return fromId;
+    const tuMa = (p.projectId || '').match(/^(\d{4})\./)?.[1];
+    if (tuMa && namHopLe(Number(tuMa))) return tuMa;
     const d = new Date(p.ngayBatDau);
-    return isNaN(d.getTime()) ? '' : String(d.getFullYear());
+    if (isNaN(d.getTime())) return '';
+    const nam = d.getFullYear();
+    return namHopLe(nam) ? String(nam) : '';
   };
+  // Năm hiện tại LUÔN có trong danh sách, kể cả khi chưa có hồ sơ nào của năm đó — nếu không,
+  // ô lọc đang chọn mặc định năm hiện tại mà không tìm được <option> khớp thì hiện trống trơ.
   const years = useMemo(
-    () => [...new Set(projects.map(projectYear).filter(Boolean))].sort().reverse(),
+    () => [...new Set([namHienTaiVN(), ...projects.map(projectYear).filter(Boolean)])].sort().reverse(),
     [projects]
   );
 
@@ -130,7 +147,8 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 shrink-0 w-full xl:w-auto">
-          {/* Lọc nhanh theo NĂM (lấy từ mã dự án YYYY.NN) */}
+          {/* Lọc nhanh theo NĂM — năm lấy từ ngày bắt đầu hồ sơ (xem projectYear ở trên).
+              Mặc định là năm hiện tại theo lịch Việt Nam. */}
           <select
             value={yearFilter}
             onChange={(e) => setYearFilter(e.target.value)}
@@ -141,8 +159,9 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
             {years.map(y => <option key={y} value={y}>Năm {y}</option>)}
           </select>
           {/* Mobile: dòng lọc thời gian xuống hàng riêng bên dưới (chị chốt 14/07) */}
+          {/* KHÔNG đặt biểu tượng lịch trang trí ở đây: mỗi ô DateInput đã có nút lịch riêng
+              (thêm ở góp ý #6), để thêm nữa là dòng lọc có 3 cuốn lịch — chị Trâm báo 17/08/2026. */}
           <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-dark-bg/50 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 w-full sm:w-auto order-last sm:order-none">
-            <Calendar className="w-3.5 h-3.5 text-brand-accent dark:text-brand-accent-300 shrink-0" />
             <DateInput
               value={fromDate}
               onChange={setFromDate}
@@ -287,12 +306,12 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
                         )}
                         {/* Số lần đã gửi CĐT — hiện ngay trên thẻ để TP nhìn bảng là biết hồ sơ
                             đã qua mấy vòng gửi Chủ đầu tư (chi tiết từng lần xem trong hồ sơ). */}
-                        {(p.guiCDTLogs || []).length > 0 && (
+                        {tongSoLanGuiCDT(p) > 0 && (
                           <span
                             className="inline-block mt-1 ml-1 text-[0.58rem] font-black uppercase tracking-wide bg-brand-accent/10 text-brand-accent dark:text-brand-accent-300 px-1 py-0.5 rounded leading-none"
-                            title={(p.guiCDTLogs || []).map(l => `Lần ${l.lan}: ${l.ngay.split('-').reverse().join('-')} · Phòng ${l.tienDoPhong}%`).join('\n')}
+                            title={(p.guiCDTLogs || []).map(l => `Lần ${nhanLanGui(p, l.lan)}: ${l.ngay.split('-').reverse().join('-')} · Phòng ${l.tienDoPhong}%`).join('\n') || 'Số lần gửi khai tay từ trước khi dùng app'}
                           >
-                            📤 Gửi CĐT {(p.guiCDTLogs || []).length} lần
+                            📤 Gửi CĐT {tongSoLanGuiCDT(p)} lần
                           </span>
                         )}
                         {/* Hồ sơ đang làm lại vòng thứ mấy — tỉ trọng việc con tính riêng theo vòng */}
@@ -358,8 +377,14 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
                               title={step > 4 ? '' : nextAllowed ? `Chuyển sang bước ${step + 1}` : choTPDuyet
                                 // Câu này phải đúng ở MỌI bước: thẻ ở Bước 3 mà ghi "tự sang Bước 2" là sai.
                                 // Hồ sơ ở Bước 1 thì đúng là duyệt xong tự sang Bước 2, nói riêng ở đó.
+                                //
+                                // TỪ 18/08/2026 (góp ý #74): Trưởng phòng bấm nút này là app MỞ LUÔN hồ sơ
+                                // ra soát, soát xong bấm Lưu là thẻ tự sang Bước 2 — không còn phải tự đi
+                                // sang tab Báo Cáo Tiến Độ tìm hồ sơ. Nói đúng việc đó trong tooltip.
                                 ? (step === 1
-                                  ? 'Hồ sơ đang chờ Trưởng phòng duyệt kế hoạch — duyệt xong thẻ tự sang Bước 2'
+                                  ? (currentUserRole === 'BOOD'
+                                    ? 'Bấm để mở hồ sơ soát lại kế hoạch — soát xong bấm "Lưu Hồ Sơ" là thẻ tự sang Bước 2'
+                                    : 'Hồ sơ đang chờ Trưởng phòng duyệt kế hoạch — duyệt xong thẻ tự sang Bước 2')
                                   : 'Hồ sơ đang chờ Trưởng phòng duyệt lại kế hoạch — duyệt xong mới đẩy thẻ tiếp được')
                                 : 'Chỉ Trưởng phòng được thao tác vùng này'}
                             >

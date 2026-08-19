@@ -32,6 +32,14 @@ export interface ProjectTask {
   taiLieuDinhKem?: string; // Tên file tài liệu đính kèm kết quả
   ngayBatDau?: string; // Ngày bắt đầu công việc con (YYYY-MM-DD) — phục vụ sơ đồ Gantt
   soNgay?: number; // Số ngày dự kiến thực hiện công việc con — phục vụ sơ đồ Gantt
+  // ===== GIỜ CỦA VIỆC CON (chị Trâm chốt 17/08/2026 — góp ý #20) =====
+  // Việc con được tính tới GIỜ, không chỉ tới ngày. Cả hai trường đều TÙY CHỌN, dạng 'HH:MM'
+  // (24 giờ). BỎ TRỐNG = TRỌN NGÀY: bắt đầu 00:00:00 và hạn 23:59:59 của ngày tương ứng —
+  // đúng như cách app đang tính trước đây, nên dữ liệu cũ đọc lên không đổi nghĩa.
+  // Việc gọn trong một ngày thì để soNgay = 1 rồi nhập 08:00 → 14:00.
+  // Hàm dùng chung: mocBatDauViec / mocHanViec / fmtHanViecVN trong utils/dateVN.
+  gioBatDau?: string; // Giờ bắt đầu — bỏ trống = 00:00
+  gioHan?: string;    // Giờ hết hạn của NGÀY HẠN — bỏ trống = hết ngày (23:59:59)
   // VÒNG làm việc: mỗi lần hồ sơ bị trả về làm lại rồi gửi CĐT lần nữa là một vòng mới.
   // Tỉ trọng phải đủ 100% TRONG TỪNG VÒNG (2 lần báo giá → lũy kế 200%).
   // Bỏ trống = vòng 1 (dữ liệu cũ đọc bình thường).
@@ -102,6 +110,14 @@ export interface Project {
   // Bỏ trống (dữ liệu cũ / TP tự tạo) = coi như đã duyệt.
   tpDaDuyet?: boolean;
   hanHenCDT?: string; // Thời hạn ĐÃ HẸN với Chủ đầu tư (nếu có) — mốc cam kết ngoài, nhập tay
+  // Số lần ĐÃ GỬI CĐT TRƯỚC KHI DÙNG APP — khai tay (chị Trâm, góp ý #11): gói thầu đang dở khi app
+  // mới dựng nên nhật ký của app không có các lần gửi cũ. Chỉ cộng vào lúc HIỂN THỊ, KHÔNG đụng
+  // trường `lan` của guiCDTLogs (lan đang khớp với VÒNG làm việc). Dùng hàm trong utils/guiCDT.ts.
+  soLanGuiCDTTruocApp?: number;
+  // ẢNH BÁO CÁO ĐÃ GỬI BÁO GIÁ (chị Trâm — góp ý #12): bắt buộc có ít nhất 1 ảnh mới cho kéo thẻ
+  // từ Bước 2 sang Bước 3. Chỉ lưu TÊN tệp, nhiều tệp nối bằng " | " (utils/attachments.ts).
+  anhBaoCaoGuiBaoGia?: string;
+  ghiChuGuiBaoGia?: string;   // Gửi cho ai, gửi bằng đường nào — tùy chọn
   // Quản lý cập nhật kế hoạch làm tiến độ DELAY xa hơn hạn đã báo → true (chờ TP duyệt lại &
   // chỉnh ngày kiểm tra phòng). Thẻ VẪN ở trên Kanban. TP lưu là xóa cờ.
   choDuyetLai?: boolean;
@@ -203,6 +219,47 @@ export interface PersonalTask {
   fired?: { created?: boolean; d3?: boolean; d1?: boolean };
   // Khóa các mốc đã nhắc theo TỪNG lần xảy ra: 'created' | '<YYYY-MM-DD>:d3|d1|t0' — cho phép lịch lặp nhắc mỗi chu kỳ
   firedKeys?: string[];
+}
+
+// TEMPLATE MẪU ĐẤU THẦU (chị Trâm — góp ý #8): danh mục biểu mẫu dùng chung của phòng.
+// Lưu ĐƯỜNG LINK tệp (OneDrive/Drive/thư mục chung), KHÔNG nhúng nội dung tệp: app chưa dùng
+// Firebase Storage và 1 document Firestore tối đa 1MB — file Excel biểu mẫu vượt xa mức đó.
+export interface TenderTemplate {
+  id: string;
+  ten: string;        // Tên biểu mẫu
+  link: string;       // Đường link tới tệp
+  ghiChu?: string;    // Ghi chú / phiên bản
+  nguoiThem?: string; // Ai thêm vào danh mục
+  ngay?: string;      // Thời điểm thêm (ISO)
+  // AI ĐƯỢC THẤY biểu mẫu này (chị Trâm chốt 18/08/2026). Bỏ trống = MỌI cấp đều thấy.
+  // Ví dụ mẫu nội bộ của Trưởng phòng thì chỉ để ['BOOD'].
+  levels?: ('BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER')[];
+  // BIỂU MẪU CŨ: không xoá hẳn (còn hồ sơ cũ dùng bản đó) mà chuyển xuống mục "Biểu mẫu đã hủy",
+  // tên bị gạch ngang. Bấm khôi phục là dùng lại.
+  daHuy?: boolean;
+  ngayHuy?: string;   // Thời điểm đánh dấu là mẫu cũ (ISO)
+  // LỠ XOÁ THÌ PHỤC HỒI ĐƯỢC (chị Trâm báo 18/08/2026: "c mới xóa 2 biểu mẫu thì ko thấy nằm ở đâu
+  // trong thùng rác nữa"). Nút xoá nay chỉ đưa vào THÙNG RÁC, không xoá dữ liệu; xoá vĩnh viễn là
+  // một nút riêng nằm trong thùng rác, có hỏi lại.
+  daXoa?: boolean;
+  ngayXoa?: string;   // Thời điểm bỏ vào thùng rác (ISO)
+  nguoiXoa?: string;  // Ai bỏ vào thùng rác
+}
+
+// ===== THÔNG BÁO NỘI BỘ ĐƯỢC LƯU LẠI (chị Trâm chốt 18/08/2026) =====
+// "thông báo nội bộ cũng rất quan trọng, sẽ đc lưu lại, chứ phải chỉ là 1 cái thông báo rồi trôi đi
+//  đâu nhé" → ngoài việc bắn lên chuông (AppNotification, chỉ giữ 30 tin/người), mỗi thông báo nội
+// bộ còn được lưu THÀNH BẢN GHI RIÊNG, không bị dồn mất, tra cứu lại được bất cứ lúc nào.
+export interface ThongBaoNoiBo {
+  id: string;
+  noiDung: string;
+  nguoiGui?: string;      // Tên người gửi
+  nguoiGuiId?: string;    // Mã nhân sự người gửi
+  ngay: string;           // Thời điểm gửi (ISO)
+  targetIds: string[];    // Mã nhân sự đã nhận tin
+  // Cách chọn người nhận lúc gửi — để đọc lại biết tin này gửi cho ai.
+  kieuNhan?: 'toanBo' | 'theoCap' | 'tungNguoi';
+  capNhan?: ('BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER')[];  // chỉ có khi kieuNhan = 'theoCap'
 }
 
 export interface DatabaseTable {

@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Staff } from '../types';
 import { chucVuToRole } from '../App';
 import { downscaleImage } from '../lib/firebase';
-import { X, Save, User, Key, Mail, ShieldAlert, Upload } from 'lucide-react';
+import { X, Save, User, Key, Mail, Upload } from 'lucide-react';
 import { useModalA11y } from '../utils/useModalA11y';
 
 type ChucVu = 'Ban giám đốc' | 'Trưởng phòng' | 'Phó phòng' | 'Quản lý' | 'Chuyên viên đấu thầu' | 'Quản trị hệ thống' | 'Khách (chỉ xem)';
@@ -230,13 +230,18 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
                 disabled={isManager}
                 className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated focus:outline-none focus:ring-2 focus:ring-brand-accent disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <option value="Ban giám đốc">Ban giám đốc</option>
                 <option value="Trưởng phòng">Trưởng phòng</option>
                 <option value="Phó phòng">Phó phòng</option>
                 <option value="Quản lý">Quản lý</option>
                 <option value="Chuyên viên đấu thầu">Chuyên viên đấu thầu</option>
+                <option value="Ban giám đốc">Ban giám đốc</option>
                 <option value="Quản trị hệ thống">Quản trị hệ thống</option>
-                <option value="Khách (chỉ xem)">Khách (chỉ xem)</option>
+                {/* "Khách (chỉ xem)" là chức danh CŨ — chị Trâm chốt 17/08/2026 dùng "Ban giám đốc"
+                    cho Level 4. Chỉ hiện lại option này khi bản ghi đang mang giá trị cũ, để
+                    select không bị trống và Trưởng phòng thấy rõ cần đổi sang chức danh mới. */}
+                {chucVu === 'Khách (chỉ xem)' && (
+                  <option value="Khách (chỉ xem)">Khách (chỉ xem) — chức danh cũ, nên đổi thành Ban giám đốc</option>
+                )}
               </select>
             </div>
 
@@ -250,10 +255,11 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
                 disabled={isManager}
                 className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated focus:outline-none focus:ring-2 focus:ring-brand-accent disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <option value="BOOD">Level 1 - Ban Giám đốc / Trưởng phòng / Phó phòng / Quản trị</option>
+                {/* Thang Level chị Trâm chốt 17/08/2026 — giữ khớp app/api/roles/route.ts */}
+                <option value="BOOD">Level 1 - Trưởng phòng / Phó phòng / Quản trị</option>
                 <option value="MANAGER">Level 2 - Quản lý</option>
-                <option value="STAFF">Level 3 - Nhân sự (Chuyên viên)</option>
-                <option value="VIEWER">Level 4 - Khách (chỉ xem)</option>
+                <option value="STAFF">Level 3 - Nhân viên</option>
+                <option value="VIEWER">Level 4 - Ban giám đốc</option>
               </select>
               {isManager && (
                 <p className="text-[9px] text-slate-400 mt-1 leading-tight">Quản lý chỉ tạo được tài khoản Chuyên viên (Level 3).</p>
@@ -289,19 +295,9 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
             </div>
           )}
 
-          <div className="bg-slate-50 dark:bg-dark-card/40 p-3 rounded-lg border border-slate-100 dark:border-slate-800 text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed font-medium flex gap-2 items-start">
-            <ShieldAlert className="w-4 h-4 text-brand-accent shrink-0 mt-0.5" />
-            <div>
-              <strong>Phân quyền trong app Đấu Thầu.</strong> Tên đăng nhập, email, mật khẩu và ảnh đại diện do
-              <b> App Tổng (account.hpcore.vn)</b> quản lý — sửa tại đó; app này chỉ đặt chức danh &amp; cấp quyền.
-              <ul className="list-disc pl-4 mt-1 space-y-0.5">
-                <li><strong>Level 1 (BOOD):</strong> Toàn quyền phê duyệt dời hạn và xem tất cả dự án.</li>
-                <li><strong>Level 2 (MANAGER):</strong> Chỉ quản lý, chỉnh sửa, gán việc cho nhóm.</li>
-                <li><strong>Level 3 (STAFF):</strong> Chỉ cập nhật tiến độ bóc BOQ được phân bổ.</li>
-                <li><strong>Level 4 (Khách):</strong> CHỈ XEM — không thêm/sửa/xóa. Thấy 4 mục: Liên kết phòng ban · Dashboard · Báo cáo tiến độ · Bảng Kanban.</li>
-              </ul>
-            </div>
-          </div>
+          {/* Chị Trâm chốt 17/08/2026: BỎ khối giải thích dài về phân quyền ở đây — nhìn rối và
+              không chuyên nghiệp. Tên các Level ở ô chọn phía trên đã đủ nghĩa; chi tiết quyền hạn
+              tra trong tài liệu bàn giao, không nhồi vào hộp thoại thêm nhân sự. */}
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">

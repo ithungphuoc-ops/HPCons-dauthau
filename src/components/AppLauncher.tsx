@@ -17,10 +17,13 @@ const ICONS: Record<string, LucideIcon> = {
   Warehouse, Briefcase, Receipt, Workflow, Heart, Laptop, PenTool, ClipboardCheck, Gavel,
 };
 
+// Thang Level chị Trâm chốt 17/08/2026. Trước đây THIẾU HẲN VIEWER nên người Level 4 đăng nhập
+// thấy chữ "VIEWER" thô trong khung tài khoản.
 const ROLE_LABELS: Record<string, string> = {
-  BOOD: 'Ban Giám đốc / Trưởng phòng (Level 1)',
+  BOOD: 'Trưởng phòng / Phó phòng (Level 1)',
   MANAGER: 'Quản lý (Level 2)',
-  STAFF: 'Chuyên viên (Level 3)',
+  STAFF: 'Nhân viên (Level 3)',
+  VIEWER: 'Ban giám đốc — chỉ xem (Level 4)',
 };
 
 interface RemoteApp {

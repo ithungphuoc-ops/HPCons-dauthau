@@ -1,13 +1,38 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Project, Staff, DelayLog, ProjectTask } from '../types';
+import { chucVuToRole, CHUC_VU_KHONG_TINH_NHAN_SU } from '../App';
+
+// Ai được đứng trong ô "Chuyên viên thực hiện" (chị Trâm chốt 17/08/2026: "không hiện tên Level 4").
+// Lọc theo ĐÚNG luật nhân sự đang có của app, không tự đặt luật riêng:
+//   · Bỏ Level 4 (Ban giám đốc — chỉ xem, không nhận việc).
+//   · Bỏ các chức danh KHÔNG tính là nhân sự Phòng: Ban giám đốc · Quản trị hệ thống · Khách
+//     (hằng CHUC_VU_KHONG_TINH_NHAN_SU trong App.tsx — dùng chung với ô chọn người giao việc).
+//     Cần thiết vì tài khoản chức danh "Ban giám đốc" có thể đang mang quyền Level 1, lọc mỗi
+//     theo Level là vẫn lọt (đúng cảnh chị Trâm thấy 18/08).
+//   · Bỏ người đã nghỉ việc.
+const nhanSuNhanViecDuoc = (s: Staff): boolean =>
+  !s.daNghi
+  && (s.role || chucVuToRole(s.chucVu)) !== 'VIEWER'
+  && !CHUC_VU_KHONG_TINH_NHAN_SU.includes(s.chucVu);
 import { Plus, Trash2, Calendar, Clock, AlertTriangle, CheckCircle2, Save, X, CheckSquare, Square, Search, ChevronDown } from 'lucide-react';
 import { motion } from 'motion/react';
-import SubtaskGantt, { DEFAULT_TASK_DAYS } from './SubtaskGantt';
+import SubtaskGantt, { DEFAULT_TASK_DAYS, khoangKeHoachViecCon } from './SubtaskGantt';
+import { TenViecConThuongDung } from '../utils/thuVienViecCon';
 import { calculateProjectProgress, progressOfRound, weightIssue, weightSumOfRound, weightSumAllRounds, soVongCoViec, tasksOfRound } from '../utils/taskTree';
 import { fmtDateVN } from '../utils/dateVN';
+import { tongSoLanGuiCDT, nhanLanGui, soLanGuiTruocApp } from '../utils/guiCDT';
 import DateInput from './DateInput';
 import TextWithLinks from './TextWithLinks';
 import FileDropZone from './FileDropZone';
+import { luuAnh, taiAnhVe } from '../utils/anhDinhKem';
+
+// ===== CÂU NHẮC KHI FIRESTORE CHƯA MỞ QUYỀN CHO ẢNH (chị Trâm báo 18/08/2026) =====
+// Chị Trâm bấm thả ảnh và nhận đúng câu lỗi gốc của Firebase: "Missing or insufficient permissions."
+// — đọc lên không ai hiểu phải làm gì. App vẫn GHI TẠM ảnh trên máy đang dùng (xem utils/anhDinhKem)
+// nên chị tải về được ngay; câu này nói rõ việc còn thiếu để nhờ IT làm.
+const CAU_NHAC_CHUA_MO_QUYEN =
+  'Đã lưu ảnh trên máy này và tải về được ngay. Nhưng máy khác CHƯA xem được vì Firestore chưa mở '
+  + 'quyền cho mục ảnh đính kèm (collection "anhDinhKem") — nhờ IT mở quyền như các mục khác là xong.';
 import { AutoGrowTextarea } from './ui';
 import { parseAttachments, joinAttachments } from '../utils/attachments';
 import { useModalA11y } from '../utils/useModalA11y';
@@ -21,9 +46,21 @@ interface ProjectFormProps {
   currentUserRole?: 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER';
   formMode?: 'CREATE_TENDER' | 'ADD_WORK' | 'EDIT_ALL';
   projectsListForSelect?: Project[];
+  /** Thông tin chung của mỗi DỰ ÁN dùng làm mẫu (tra theo id dự án cha) — App đã gộp sẵn dữ liệu
+   *  của dự án cha với gói thầu con gần nhất, vì hồ sơ dự án cha thường chỉ khai tên + CĐT, còn
+   *  quốc tịch / diện tích / hình thức đấu thầu... nằm ở gói thầu (chị Trâm nhắc 18/08/2026). */
+  thongTinMauTheoDuAn?: Record<string, Partial<Project>>;
   // Thông tin mô tả của các DỰ ÁN CHA (tra theo id) — để hiện "Mô tả dự án" chỉ-xem trên hồ sơ
   // công việc. Gom từ toàn bộ dự án nên không bị bộ lọc quyền cắt mất như projectsListForSelect.
   duAnChaInfo?: Record<string, { tenDuAn: string; chuDauTu?: string; diaChi?: string; moTa?: string }>;
+  /** Thư viện tên việc con (đếm từ mọi hồ sơ) — hiện thành gợi ý ở thanh "Thêm việc con" (góp ý #62). */
+  thuVienTenViecCon?: TenViecConThuongDung[];
+  /** ===== DỰ ÁN CHỌN SẴN khi mở form "Công việc mới" (chị Trâm chốt 18/08/2026) =====
+   *  "khi quản lý nhận đc thông báo đc chọn làm quản lý dự án A, lúc click vô e thẳng tới trường công
+   *   việc mới + chọn đúng tên dự án đó sẵn cho họ tạo luôn, còn thao tác thủ công bấm nút tạo công
+   *   việc sau đó chọn dự án vẫn giữ nguyên bình thường."
+   *  Bỏ trống (đường bấm nút "CÔNG VIỆC MỚI" như cũ) thì form vẫn để trống cho người dùng tự chọn. */
+  duAnChonSan?: string;
   /** Mã của các DỰ ÁN đã tồn tại (đã in hoa, bỏ khoảng trắng) — trừ chính hồ sơ đang sửa.
    *  Mỗi dự án chỉ có một mã duy nhất trong môi trường Phòng Đấu Thầu; trùng mã thì không cho lưu. */
   maDuAnDaDung?: string[];
@@ -54,6 +91,9 @@ export default function ProjectForm({
   currentUserRole,
   formMode = 'EDIT_ALL',
   projectsListForSelect = [],
+  thongTinMauTheoDuAn = {},
+  thuVienTenViecCon = [],
+  duAnChonSan,
   maDuAnDaDung = [],
   duAnChaInfo
 }: ProjectFormProps) {
@@ -76,6 +116,15 @@ export default function ProjectForm({
 
   // New specific bidding statistics fields
   const [chuDauTu, setChuDauTu] = useState<string>(project?.chuDauTu || '');
+  // ===== DỰ ÁN MẪU — LẤY SẴN THÔNG TIN TỪ MỘT DỰ ÁN CŨ (chị Trâm chốt 18/08/2026) =====
+  // "Nhiều dự án có nhiều gói thầu, hoặc triển khai GĐ2 — cho em 1 trường dự án mẫu, chọn bằng tên
+  //  dự án rồi lấy được các trường của dự án cũ, sau đó chị sửa lại tên gói thầu, mã dự án..."
+  // Chỉ chép phần THÔNG TIN CHUNG (CĐT, địa chỉ, KCN, loại công trình, nhân sự phụ trách...).
+  // TUYỆT ĐỐI KHÔNG chép: mã dự án, tên, ngày tháng, tiến độ, việc con, nhật ký — những thứ đó
+  // phải là của hồ sơ mới, chép sang là số liệu sai ngay từ đầu.
+  const [duAnMauId, setDuAnMauId] = useState<string>('');
+  const [duAnMauTimKiem, setDuAnMauTimKiem] = useState<string>('');   // gõ tên/mã để lọc
+  const [moDsDuAnMau, setMoDsDuAnMau] = useState<boolean>(false);     // danh sách chỉ bung khi bấm
   const [diaChi, setDiaChi] = useState<string>(project?.diaChi || '');
   const [hinhThucDauThau, setHinhThucDauThau] = useState<Project['hinhThucDauThau']>(project?.hinhThucDauThau || 'Đấu thầu cạnh tranh');
   const [tinhTrangDuAn, setTinhTrangDuAn] = useState<Project['tinhTrangDuAn']>(project?.tinhTrangDuAn || 'Đang triển khai');
@@ -103,6 +152,11 @@ export default function ProjectForm({
   const [soNgayDuyetTP, setSoNgayDuyetTP] = useState<number>(project?.soNgayDuyetTP ?? 1);
   // Thời hạn ĐÃ HẸN với CĐT (nếu có) — mốc cam kết ngoài, nhập tay, độc lập với hạn tự tính
   const [hanHenCDT, setHanHenCDT] = useState<string>(project?.hanHenCDT || '');
+  // Số lần ĐÃ GỬI CĐT trước khi dùng app — khai tay (góp ý #11). Giữ dạng chuỗi để ô nhập xoá
+  // trắng được; lúc lưu mới đổi sang số.
+  const [soLanGuiCDTTruocApp, setSoLanGuiCDTTruocApp] = useState<string>(
+    project?.soLanGuiCDTTruocApp ? String(project.soLanGuiCDTTruocApp) : ''
+  );
   const soNgayDuyetBLD = 0; // Bỏ chặng Giám đốc/BLĐ khỏi hạn CĐT — chỉ tính tới TP duyệt
   // Tổng số ngày (ra hạn nộp CĐT) = thực hiện + TP duyệt
   const soNgayDuKien = soNgayThucHien + soNgayDuyetTP;
@@ -120,34 +174,14 @@ export default function ProjectForm({
   // ===== Chu kỳ tạo tiến độ: KẾ HOẠCH CON quyết định chặng "Bộ phận thực hiện" =====
   // Ngày bắt đầu = min(ngày bắt đầu việc con); kết thúc = max(ngày kết thúc việc con)
   // → số ngày Bộ phận tự tính, KHÔNG nhập tay. TP chỉ điền thêm ngày kiểm tra của mình.
-  const planRange = useMemo(() => {
-    const DAY = 24 * 60 * 60 * 1000;
-    const parse = (s?: string) => { if (!s) return NaN; const t = new Date(s).getTime(); return isNaN(t) ? NaN : t; };
-    // CHỈ tính việc con của VÒNG hiện tại (chị Trâm chốt 27/07/2026): hồ sơ sang vòng 2 thì chặng
-    // "Bộ phận thực hiện" & ngày bắt đầu phải đo LẠI từ vòng 2, không kẹt ở việc vòng 1. Việc con
-    // dữ liệu cũ không ghi `vong` được coi là vòng 1 nên hồ sơ 1 vòng chạy y như trước.
-    const vong = Math.max(1, project?.vongHienTai || 1);
-    const tasksVong = tasksOfRound(tasks, vong);
-    // DÙNG CHUNG logic với SubtaskGantt: việc CHƯA đặt ngày được xếp nối tiếp (cursor) và số ngày
-    // mặc định = DEFAULT_TASK_DAYS (3), KHÔNG phải 1 — nếu không "Bộ phận thực hiện" sẽ lệch với Gantt.
-    const base = parse(ngayBatDau);
-    let cursor = !isNaN(base) ? base : Date.now();
-    let min: number | null = null, max: number | null = null, hasDates = false;
-    tasksVong.forEach(t => {
-      const ex = parse(t.ngayBatDau);
-      const start = !isNaN(ex) ? ex : cursor;
-      if (!isNaN(ex)) hasDates = true;
-      const days = t.soNgay && t.soNgay > 0 ? t.soNgay : DEFAULT_TASK_DAYS;
-      const end = start + days * DAY;
-      cursor = end;
-      if (min === null || start < min) min = start;
-      if (max === null || end > max) max = end;
-    });
-    if (!hasDates || min === null || max === null) return null;
-    const f = (ms: number) => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
-    // maxDate = NGÀY CUỐI LÀM VIỆC (max exclusive - 1); days = số ngày (đếm cả 2 đầu min→ngày cuối)
-    return { minDate: f(min), maxDate: f(max - DAY), days: Math.max(1, Math.round((max - min) / DAY)) };
-  }, [tasks, ngayBatDau, project?.vongHienTai]);
+  // MỘT NGUỒN DUY NHẤT với tiêu đề bảng phân rã: dùng chung khoangKeHoachViecCon trong SubtaskGantt.
+  // Trước đây đoạn này tự cộng `soNgay × 1 ngày` của việc CẤP 1, không xét phần cấp 2 và không có luật
+  // nửa ngày → cùng một kế hoạch mà tiêu đề bảng in một ngày kết thúc, dòng này in một ngày khác
+  // (chị Trâm báo 18/08/2026). Nay hai chỗ chắc chắn khớp nhau.
+  const planRange = useMemo(
+    () => khoangKeHoachViecCon(tasks, Math.max(1, project?.vongHienTai || 1), ngayBatDau),
+    [tasks, ngayBatDau, project?.vongHienTai],
+  );
 
   // Đồng bộ: có kế hoạch con đặt ngày → ngày bắt đầu & số ngày Bộ phận bám theo kế hoạch
   useEffect(() => {
@@ -156,6 +190,32 @@ export default function ProjectForm({
       setSoNgayThucHien(planRange.days);
     }
   }, [planRange]);
+
+  /** Chép thông tin chung từ một dự án cũ sang form đang mở (xem ghi chú ở state duAnMauId). */
+  const chepTuDuAnMau = (id: string) => {
+    setDuAnMauId(id);
+    if (!id) return;
+    const goc = (projectsListForSelect || []).find(x => x.id === id);
+    if (!goc) return;
+    // Ưu tiên bản đã gộp (dự án cha + gói thầu con) rồi mới tới bản ghi dự án cha.
+    const m = { ...goc, ...(thongTinMauTheoDuAn[id] || {}) } as Project;
+    setChuDauTu(m.chuDauTu || '');
+    setDiaChi(m.diaChi || '');
+    setQuocTich(m.quocTich || '');
+    setKhuCongNghiep(m.khuCongNghiep || '');
+    setTinhThanh(m.tinhThanh || '');
+    setLoaiCongTrinh(m.loaiCongTrinh || '');
+    setHinhThucXayDung(m.hinhThucXayDung || 'Xây mới');
+    setGiaiDoanDuAn(m.giaiDoanDuAn || 'Thiết kế & Báo giá');
+    setDienTichDat(m.dienTichDat || 0);
+    setMucUuTien(m.mucUuTien || 0);
+    setHoSoPhatThau(m.hoSoPhatThau || 'CĐT phát thầu');
+    setHinhThucDauThau(m.hinhThucDauThau || 'Đấu thầu cạnh tranh');
+    setTinhTrangDuAn(m.tinhTrangDuAn || 'Đang triển khai');
+    setMoTa(m.moTa || '');
+    if (m.quanLyId) setQuanLyId(m.quanLyId);
+    setQuanLyIdsPhu((m.quanLyIdsPhu || []).filter(x => x !== m.quanLyId));
+  };
 
   // Chuyên viên thực hiện = tổng hợp từ NGƯỜI ĐƯỢC GIAO các việc con (không lấy mặc định đầu danh sách).
   // Chuyên viên chính = người được giao nhiều việc nhất.
@@ -176,6 +236,48 @@ export default function ProjectForm({
   const [ketQuaPhong, setKetQuaPhong] = useState<string>(project?.ketQuaPhong || '');
   // Tệp kết quả công việc cấp Phòng (kéo-thả). Chỉ lưu TÊN tệp — cùng quy ước với việc con.
   const [taiLieuKetQuaPhong, setTaiLieuKetQuaPhong] = useState<string[]>(parseAttachments(project?.taiLieuKetQuaPhong));
+  // ===== ẢNH BÁO CÁO ĐÃ GỬI BÁO GIÁ — NAY SỬA ĐƯỢC NGAY TRONG FORM (góp ý #75, 18/08/2026) =====
+  // Trước đây ô này CHỈ có trong hộp AnhBaoCaoModal bật lên lúc kéo thẻ Bước 2 → 3. Từ khi nới cửa
+  // cho Quản lý (kéo thẻ là mở form để cập nhật), nếu form không có ô ảnh thì Quản lý cập nhật xong
+  // vẫn bị báo "chưa có ảnh" mà không có chỗ nào để thêm — kẹt vòng lặp. Nên đưa ô này vào form.
+  const [anhBaoCao, setAnhBaoCao] = useState<string[]>(parseAttachments(project?.anhBaoCaoGuiBaoGia));
+  const [ghiChuGuiBaoGia, setGhiChuGuiBaoGia] = useState<string>(project?.ghiChuGuiBaoGia || '');
+  const [vuaDanAnh, setVuaDanAnh] = useState(false);
+  const [loiAnh, setLoiAnh] = useState<string | null>(null);
+
+  // DÁN ẢNH BẰNG Ctrl+V ngay trong form (cùng cách làm với AnhBaoCaoModal — chị Trâm chốt 17/08/2026):
+  // chụp màn hình rồi Ctrl+V là ảnh vào danh sách luôn, không phải lưu ra tệp rồi kéo-thả.
+  // CHỈ bắt khi clipboard có ẢNH, nên dán chữ vào các ô nhập khác không bị ảnh hưởng.
+  useEffect(() => {
+    const dan = (e: ClipboardEvent) => {
+      const anh = Array.from(e.clipboardData?.items || []).filter(i => i.type.startsWith('image/'));
+      if (!anh.length) return;
+      e.preventDefault();
+      const gio = new Date();
+      const hai = (n: number) => String(n).padStart(2, '0');
+      const dau = `anh-da-gui-bao-gia-${gio.getFullYear()}${hai(gio.getMonth() + 1)}${hai(gio.getDate())}`;
+      // LƯU NỘI DUNG ẢNH THẬT để sau tải về được (chị Trâm 18/08/2026: cần ảnh làm bằng chứng khi
+      // báo cáo mục tiêu). Ảnh dán từ clipboard không có tên nên app tự đặt theo ngày-giờ dán.
+      anh.forEach((it, i) => {
+        const f = it.getAsFile();
+        if (!f) return;
+        const ten = (f.name && f.name !== 'image.png')
+          ? f.name
+          : `${dau}-${hai(gio.getHours())}${hai(gio.getMinutes())}${hai(gio.getSeconds())}${anh.length > 1 ? `-${i + 1}` : ''}.png`;
+        const tepDatTen = new File([f], ten, { type: f.type });
+        luuAnh(project?.id || 'moi', tepDatTen, currentUserRole)
+          .then((kq) => {
+            setAnhBaoCao(prev => Array.from(new Set([...prev, ten])));
+            setVuaDanAnh(true);
+            setLoiAnh(kq.luuTamTrenMay ? CAU_NHAC_CHUA_MO_QUYEN : null);
+            window.setTimeout(() => setVuaDanAnh(false), 2500);
+          })
+          .catch((err) => setLoiAnh(String(err?.message || err)));
+      });
+    };
+    document.addEventListener('paste', dan);
+    return () => document.removeEventListener('paste', dan);
+  }, []);
   
   const [ngayHoanThanhThucTe, setNgayHoanThanhThucTe] = useState<string>(project?.ngayHoanThanhThucTe || '');
   const [nguyenNhanTreHan, setNguyenNhanTreHan] = useState<string>(project?.nguyenNhanTreHan || '');
@@ -184,7 +286,8 @@ export default function ProjectForm({
   const [delayLogs, setDelayLogs] = useState<DelayLog[]>(project?.delayLogs || []);
 
   // Selection state for ADD_WORK mode
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(project?.id || '');
+  // Mở từ thông báo "được chọn làm Quản lý" thì dự án đã được chọn sẵn (xem prop duAnChonSan).
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(project?.id || duAnChonSan || '');
   // Ô tìm dự án cha theo tên/mã (danh sách dài thì gõ vài chữ là ra — chị Trâm chốt 25/07/2026)
   const [parentQuery, setParentQuery] = useState<string>('');
   // Danh sách dự án cha dạng SỔ XUỐNG: bấm mới mở, chọn xong tự đóng — form gọn hơn là
@@ -581,6 +684,8 @@ export default function ProjectForm({
       tienDoPhong: isCompleted ? 100 : tienDoPhong,
       ketQuaPhong: ketQuaPhong.trim() || undefined,
       taiLieuKetQuaPhong: joinAttachments(taiLieuKetQuaPhong),
+      anhBaoCaoGuiBaoGia: joinAttachments(anhBaoCao) || undefined,
+      ghiChuGuiBaoGia: ghiChuGuiBaoGia.trim() || undefined,
       // PHẢI mang theo bước Kanban hiện tại: trước đây form không trả trường này nên mỗi lần TP
       // lưu (ví dụ kéo tiến độ Phòng 100%) hồ sơ mất vị trí cột và bị suy ra lại thành bước 5.
       kanbanStep: project?.kanbanStep,
@@ -594,6 +699,10 @@ export default function ProjectForm({
       tpDaDuyet: project?.tpDaDuyet, // Cờ TP duyệt — App quyết định giá trị cuối theo vai trò người lưu
       choDuyetLai: project?.choDuyetLai, // Cờ chờ duyệt lại khi delay — App xóa khi TP lưu
       hanHenCDT: hanHenCDT || undefined,
+      soLanGuiCDTTruocApp: (() => {
+        const n = parseInt(soLanGuiCDTTruocApp, 10);
+        return Number.isFinite(n) && n > 0 ? n : undefined;
+      })(),
 
       kpi: finalKpi,
       chuDauTu: chuDauTu.trim() || undefined,
@@ -615,7 +724,11 @@ export default function ProjectForm({
   };
 
   return (
-    <div className="bg-white dark:bg-dark-card rounded-xl border border-slate-100 dark:border-slate-800 shadow-md p-6 max-w-4xl mx-auto" id="project-form-container">
+    /* ===== FORM DÙNG HẾT BỀ RỘNG (chị Trâm chốt 18/08/2026: "banh bự ra luôn đi em cho đẹp") =====
+       Trước đây bó `max-w-4xl` (896px) rồi căn giữa, nên trên màn hình rộng hai bên trống mênh mông
+       trong khi các ô nhập bên trong lại chật. Nay bỏ chặn bề rộng — form ăn hết vùng làm việc,
+       các khối 2–4 cột bên trong tự giãn theo (giống việc bỏ chặn max-w-7xl ở mục A6/#10). */
+    <div className="bg-white dark:bg-dark-card rounded-xl border border-slate-100 dark:border-slate-800 shadow-md p-6 w-full" id="project-form-container">
       <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-850 pb-4 mb-6">
         <div>
           <span className="text-xs bg-brand-accent/10 dark:bg-brand-accent/15 text-brand-accent-700 dark:text-brand-accent-300 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider">
@@ -889,6 +1002,95 @@ export default function ProjectForm({
               (chị Trâm báo 26/07/2026). Mục 1 ở hồ sơ công việc chỉ còn phần nhân sự. */}
           {!duAnInfoLocked && (
           <>
+          {/* ===== DỰ ÁN MẪU — LẤY SẴN THÔNG TIN TỪ MỘT DỰ ÁN CŨ (chị Trâm chốt 18/08/2026) =====
+              "Nhiều dự án có nhiều gói thầu, hoặc triển khai GĐ2 — chọn bằng tên dự án rồi lấy được
+               các trường của dự án cũ, sau đó chị sửa lại tên gói thầu, mã dự án."
+              Chỉ hiện khi ĐĂNG KÝ MỚI (sửa dự án cũ thì không cần), và chỉ chép THÔNG TIN CHUNG —
+              mã, tên, ngày tháng, tiến độ, việc con vẫn để trống cho hồ sơ mới. */}
+          {!project && (projectsListForSelect || []).length > 0 && (() => {
+            // Danh sách CHỈ BUNG KHI BẤM (chị Trâm chốt 18/08/2026: "không show ra như dị, chỉ cần
+            // cho chị nút xổ xuống và thêm chỗ gõ tên"). Trong bảng xổ mới có ô gõ để lọc.
+            const q = duAnMauTimKiem.trim().toLowerCase();
+            const ds = [...(projectsListForSelect || [])]
+              .filter(m => !q || `${m.projectId} ${m.tenDuAn} ${m.chuDauTu || ''}`.toLowerCase().includes(q))
+              .sort((a, b) => (b.projectId || '').localeCompare(a.projectId || ''))
+              .slice(0, 40);
+            const dangChon = (projectsListForSelect || []).find(m => m.id === duAnMauId);
+            return (
+              <div className="mb-4 p-3 rounded-xl border border-brand-accent/30 bg-brand-accent/5 dark:bg-brand-accent/10">
+                <label className="block text-xs font-bold text-brand-accent dark:text-brand-accent-300 mb-1.5">
+                  📋 Lấy thông tin từ dự án cũ
+                </label>
+
+                <div className="relative">
+                  {/* Nút xổ xuống — gập lại là chỉ thấy 1 dòng */}
+                  <button
+                    type="button"
+                    onClick={() => { setMoDsDuAnMau(v => !v); setDuAnMauTimKiem(''); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-dark-elevated text-left"
+                  >
+                    {dangChon ? (
+                      <>
+                        <span className="text-[10px] font-mono font-black text-slate-500 dark:text-slate-400 shrink-0">{dangChon.projectId}</span>
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{dangChon.tenDuAn}</span>
+                      </>
+                    ) : (
+                      <span className="text-sm font-semibold text-slate-400 dark:text-slate-500 truncate">— Chọn dự án để lấy thông tin —</span>
+                    )}
+                    <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 ml-auto transition-transform ${moDsDuAnMau ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {dangChon && !moDsDuAnMau && (
+                    <button
+                      type="button"
+                      onClick={() => { setDuAnMauId(''); setDuAnMauTimKiem(''); }}
+                      className="absolute -top-6 right-0 text-[11px] font-bold text-slate-500 dark:text-slate-400 hover:text-brand-danger"
+                    >
+                      Bỏ chọn
+                    </button>
+                  )}
+
+                  {moDsDuAnMau && (
+                    <div className="absolute z-30 left-0 right-0 mt-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-dark-card shadow-2xl overflow-hidden">
+                      <div className="p-2 border-b border-slate-100 dark:border-slate-800">
+                        <input
+                          autoFocus
+                          value={duAnMauTimKiem}
+                          onChange={(e) => setDuAnMauTimKiem(e.target.value)}
+                          placeholder="Gõ tên dự án, mã hoặc tên Chủ đầu tư để tìm..."
+                          className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated"
+                        />
+                      </div>
+                      <ul className="max-h-52 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                        {ds.length === 0 ? (
+                          <li className="px-3 py-2 text-[11px] text-slate-400 italic">Không có dự án nào khớp "{duAnMauTimKiem}".</li>
+                        ) : ds.map(m => (
+                          <li key={m.id}>
+                            <button type="button"
+                              onClick={() => { chepTuDuAnMau(m.id); setDuAnMauTimKiem(''); setMoDsDuAnMau(false); }}
+                              className="w-full text-left px-3 py-1.5 hover:bg-brand-accent/10 flex items-center gap-2 min-w-0">
+                              <span className="text-[10px] font-mono font-black text-slate-500 dark:text-slate-400 shrink-0">{m.projectId}</span>
+                              <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{m.tenDuAn}</span>
+                              {m.chuDauTu && <span className="text-[10px] text-slate-400 truncate shrink">· {m.chuDauTu}</span>}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                      <div className="px-3 py-1.5 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                        <button type="button" onClick={() => setMoDsDuAnMau(false)}
+                          className="text-[11px] font-bold text-slate-500 dark:text-slate-400 hover:text-brand-accent">Đóng</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1.5">
+                  Lấy sẵn thông tin chung của dự án. Mã, tên, ngày tháng và tiến độ vẫn để trống.
+                </p>
+              </div>
+            );
+          })()}
+
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
             {/* Project_ID */}
             <div className="md:col-span-3" id="field-projectId">
@@ -1100,16 +1302,48 @@ export default function ProjectForm({
             {/* Quản lý phụ / kế thừa — chọn nhiều; thao tác được như quản lý khi người chính bận.
                 Xếp NGANG HÀNG với quản lý chính cho gọn bảng (chị Trâm chốt 26/07/2026). */}
             <div>
-              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">Quản lý phụ / kế thừa <span className="font-normal text-slate-400">(khi người chính bận — chọn nhiều)</span></label>
-              <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-white dark:bg-dark-elevated max-h-[110px] overflow-y-auto space-y-1 shadow-inner">
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                Quản lý phụ / kế thừa
+                <span className="font-normal text-slate-400">
+                  {duAnInfoLocked ? ' (do bên khởi tạo dự án đặt — chỉ xem)' : ' (khi người chính bận — chọn nhiều)'}
+                </span>
+              </label>
+              {/* XỔ HẾT danh sách, KHÔNG cuộn trong khung (chị Trâm chốt 17/08/2026: "đừng cuộn nhìn xấu").
+                  Nhiều người thì xếp 2-3 cột cho gọn chiều cao. */}
+              {/* ===== Ở HỒ SƠ CÔNG VIỆC: CHỈ HIỆN TÊN =====
+                  Chị Trâm chốt 18/08/2026: quản lý phụ / kế thừa là do bên KHỞI TẠO dự án đặt, nên
+                  tại hồ sơ gói thầu chỉ để Quản lý nhìn thấy mình được kế thừa, không sửa ở đây.
+                  Muốn đổi thì sửa ở hồ sơ DỰ ÁN (nơi khối này vẫn cho tick). */}
+              {duAnInfoLocked ? (
+                <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50/60 dark:bg-dark-bg/40 shadow-inner flex flex-wrap gap-1.5">
+                  {quanLyIdsPhu.length === 0 ? (
+                    <p className="text-[11px] text-slate-400 italic px-1 py-0.5">Dự án này chưa đặt quản lý phụ / kế thừa.</p>
+                  ) : quanLyIdsPhu.map(id => {
+                    const ns = staffList.find(x => x.id === id);
+                    if (!ns) return null;
+                    return (
+                      <span key={id} title={`${ns.hoTen} — ${ns.chucVu}`}
+                        className="inline-flex items-center gap-1.5 max-w-full bg-white dark:bg-dark-elevated border border-slate-200 dark:border-slate-700 rounded-full px-2.5 py-0.5">
+                        <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">{ns.hoTen}</span>
+                        <span className="text-[10px] text-slate-400 truncate">({ns.chucVu})</span>
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : (
+              <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-white dark:bg-dark-elevated shadow-inner grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-0.5">
                 {staffList.filter(s => s.id !== quanLyId).map(s => {
                   const checked = quanLyIdsPhu.includes(s.id);
                   return (
-                    <label key={s.id} className="flex items-center gap-2 px-1.5 py-1 rounded hover:bg-slate-50 dark:hover:bg-dark-card/40 cursor-pointer text-xs">
+                    /* MỖI NGƯỜI GỌN MỘT DÒNG (chị Trâm báo 18/08/2026: tên bị bẻ đôi, chức vụ dồn
+                       sang phải nhìn rất rối). min-w-0 + truncate để tên dài thì cắt bớt bằng "…",
+                       KHÔNG xuống dòng; chức vụ đứng sát sau tên. */
+                    <label key={s.id} title={`${s.hoTen} — ${s.chucVu}`}
+                      className="flex items-center gap-1.5 px-1.5 py-1 rounded hover:bg-slate-50 dark:hover:bg-dark-card/40 cursor-pointer text-xs min-w-0">
                       <input type="checkbox" checked={checked} onChange={() => setQuanLyIdsPhu(prev => checked ? prev.filter(id => id !== s.id) : [...prev, s.id])}
-                        className="rounded border-slate-300 dark:border-slate-600 accent-brand-primary" />
-                      <span className="font-semibold text-slate-700 dark:text-slate-200">{s.hoTen}</span>
-                      <span className="text-[10px] text-slate-400">({s.chucVu})</span>
+                        className="rounded border-slate-300 dark:border-slate-600 accent-brand-primary shrink-0" />
+                      <span className="font-semibold text-slate-700 dark:text-slate-200 truncate">{s.hoTen}</span>
+                      <span className="text-[10px] text-slate-400 truncate shrink">({s.chucVu})</span>
                     </label>
                   );
                 })}
@@ -1117,48 +1351,44 @@ export default function ProjectForm({
                   <p className="text-[11px] text-slate-400 italic px-1.5 py-1">Không còn nhân sự nào để chọn làm quản lý phụ.</p>
                 )}
               </div>
-              {quanLyIdsPhu.length > 0 && (
+              )}
+              {!duAnInfoLocked && quanLyIdsPhu.length > 0 && (
                 <p className="text-[10px] text-brand-primary dark:text-brand-primary-300 font-bold mt-1">✓ {quanLyIdsPhu.length} quản lý phụ — đều có quyền thao tác như quản lý.</p>
               )}
             </div>
 
-            {/* Nhân sự thực hiện (Lookup Multi-select) — KHÔNG hiện khi tạo/sửa Dự án cha:
-                chuyên viên chỉ gán khi tạo CÔNG VIỆC con */}
+            {/* ===== CHUYÊN VIÊN THỰC HIỆN — CHỈ HIỆN TÊN, KHÔNG CHO CHỌN =====
+                Chị Trâm chốt 18/08/2026: *"mục này em hiện tên thôi không cho chọn, vì sẽ lấy từ
+                thông tin phân rã công việc con bên dưới"*. Đúng với cách app đang lưu: lúc bấm Lưu,
+                `thucHienIds` được TỔNG HỢP LẠI từ người được giao các việc con (xem taskAssignees),
+                nên danh sách tick tay ở đây vốn đã bị ghi đè — để ô tick chỉ làm người dùng tưởng
+                mình gán được rồi thắc mắc sao lưu xong lại khác. */}
             {formMode !== 'CREATE_TENDER' && !isParentEdit && (
             <div className="md:col-span-2">
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
-                Chuyên viên thực hiện (Multi-select)
+                Chuyên viên thực hiện
+                <span className="font-normal text-slate-400"> (tự lấy từ phân rã công việc con bên dưới)</span>
               </label>
-              <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-white dark:bg-dark-elevated max-h-[120px] overflow-y-auto space-y-1.5 shadow-inner">
-                {staffList.map(s => {
-                  const isSelected = thucHienIds.includes(s.id);
+              <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-2 bg-slate-50/60 dark:bg-dark-bg/40 shadow-inner flex flex-wrap gap-1.5">
+                {taskAssignees.length === 0 ? (
+                  <p className="text-[11px] text-slate-400 italic px-1 py-0.5">
+                    Chưa có ai — giao người ở bảng “Phân rã công việc &amp; Sơ đồ Gantt” bên dưới, tên sẽ hiện ở đây.
+                  </p>
+                ) : taskAssignees.map(id => {
+                  const ns = staffList.find(x => x.id === id);
+                  if (!ns) return null;
                   return (
-                    <label key={s.id} className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-200 cursor-pointer hover:bg-slate-50 dark:hover:bg-dark-elevated p-1 rounded transition-colors">
-                       <input 
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={(e) => {
-                          let newIds = [];
-                          if (e.target.checked) {
-                            newIds = [...thucHienIds, s.id];
-                          } else {
-                            newIds = thucHienIds.filter(id => id !== s.id);
-                          }
-                          setThucHienIds(newIds);
-                          if (newIds.length > 0) {
-                            setThucHienId(newIds[0]);
-                          }
-                        }}
-                        className="rounded border-slate-300 dark:border-slate-700 text-brand-accent focus:ring-brand-accent bg-transparent"
-                      />
-                      {s.avatar ? (
-                        <img src={s.avatar} alt={s.hoTen} className="w-4.5 h-4.5 rounded-full object-cover" />
+                    <span key={id} title={`${ns.hoTen} — ${ns.chucVu}`}
+                      className="inline-flex items-center gap-1.5 max-w-full bg-white dark:bg-dark-elevated border border-slate-200 dark:border-slate-700 rounded-full pl-1 pr-2.5 py-0.5">
+                      {ns.avatar ? (
+                        <img src={ns.avatar} alt="" className="w-4 h-4 rounded-full object-cover shrink-0" />
                       ) : (
-                        <span className="w-4.5 h-4.5 rounded-full bg-slate-100 dark:bg-dark-elevated flex items-center justify-center text-[8px] font-black text-slate-500 shrink-0">{(s.hoTen || '?').trim().charAt(0).toUpperCase()}</span>
+                        <span className="w-4 h-4 rounded-full bg-slate-100 dark:bg-dark-card flex items-center justify-center text-[8px] font-black text-slate-500 shrink-0">
+                          {(ns.hoTen || '?').trim().charAt(0).toUpperCase()}
+                        </span>
                       )}
-                      <span className="font-semibold">{s.hoTen}</span>
-                      <span className="text-[10px] text-slate-400 dark:text-slate-500">({s.chucVu})</span>
-                    </label>
+                      <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">{ns.hoTen}</span>
+                    </span>
                   );
                 })}
               </div>
@@ -1310,6 +1540,29 @@ export default function ProjectForm({
                 className="w-32 px-2 py-1 border border-brand-primary/25 dark:border-brand-primary/50 rounded-lg text-[11px] font-bold text-brand-primary-700 dark:text-brand-primary-300 bg-brand-primary/5 dark:bg-brand-primary/15 disabled:opacity-60 disabled:cursor-not-allowed" />
               {hanHenCDT && <button type="button" onClick={() => setHanHenCDT('')} className="text-[10px] font-bold text-brand-danger hover:underline">✕ bỏ hẹn</button>}
             </div>
+            {/* KHAI TAY SỐ LẦN ĐÃ GỬI CĐT (chị Trâm — góp ý #11): gói thầu đang làm dở từ trước khi
+                có app nên nhật ký của app không có các lần gửi cũ. Con số này chỉ CỘNG THÊM vào phần
+                đếm khi hiển thị, không đụng tới nhật ký app tự ghi. */}
+            <div className="flex items-center gap-2 flex-wrap pt-1 border-t border-dashed border-slate-200 dark:border-slate-800">
+              <label htmlFor="field-soLanGuiCDTTruocApp" className="text-[10px] font-bold text-slate-600 dark:text-slate-300 shrink-0">
+                📤 Đã gửi CĐT trước khi dùng app:
+              </label>
+              <input
+                id="field-soLanGuiCDTTruocApp"
+                type="number"
+                min={0}
+                inputMode="numeric"
+                value={soLanGuiCDTTruocApp}
+                onChange={(e) => setSoLanGuiCDTTruocApp(e.target.value)}
+                placeholder="0"
+                title="Số lần đã gửi báo giá cho Chủ đầu tư TRƯỚC khi hồ sơ được đưa vào app. Để trống nếu hồ sơ bắt đầu từ trong app."
+                className="w-16 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] font-black text-center text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated"
+              />
+              <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500">lần</span>
+              <span className="text-[10px] text-slate-400 dark:text-slate-500">
+                Cộng vào số lần app tự ghi → ra tổng số lần gửi hiển thị trên thẻ Kanban và báo cáo.
+              </span>
+            </div>
             {errors.soNgayDuKien && <span className="text-[11px] text-brand-danger block">{errors.soNgayDuKien}</span>}
           </div>
         </div>
@@ -1320,7 +1573,7 @@ export default function ProjectForm({
         <div className="bg-slate-50/50 dark:bg-dark-card/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 space-y-4">
           <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200/60 dark:border-slate-800 pb-2">
             <span className="w-1.5 h-3 bg-brand-primary rounded-full"></span>
-            3. Sơ đồ phân rã công việc &amp; Giao việc đa cấp
+            4. Sơ đồ phân rã công việc &amp; Giao việc đa cấp
           </h3>
           
           {/* Bảng phân rã DUY NHẤT: việc con + tỉ trọng + người giao + ngày bắt đầu + số ngày + thanh Gantt.
@@ -1341,6 +1594,7 @@ export default function ProjectForm({
               canEdit={currentUserRole === 'BOOD' || currentUserRole === 'MANAGER'}
               isBOOD={currentUserRole === 'BOOD'}
               vongHienTai={vongHienTai}
+              thuVienTen={thuVienTenViecCon}
               onChange={setTasks}
             />
             {/* Lỗi phân bổ tỉ trọng — hiện ngay dưới bảng để Quản lý thấy đang kẹt chỗ nào */}
@@ -1361,6 +1615,88 @@ export default function ProjectForm({
               <span className="text-[10px] uppercase font-bold text-brand-accent block">Tiến độ Bộ phận (Team Level % - Tự động tính)</span>
               <strong className="text-xl font-black text-brand-accent-700 mt-1 block">{tienDoBoPhan}%</strong>
               <p className="text-[9px] text-brand-accent/70 mt-1">Được nội suy từ tổng tỉ trọng các tác vụ thành viên đã hoàn thành.</p>
+
+              {/* ===== ẢNH BÁO CÁO ĐÃ GỬI BÁO GIÁ (góp ý #12, đưa vào form theo góp ý #75) =====
+                  ⚠ ĐẶT Ở CỘT "TIẾN ĐỘ BỘ PHẬN" (chị Trâm chốt 18/08/2026: "vị trí ảnh báo cáo là của
+                  quản lý, thì phải nằm bên cột tiến độ bộ phận em ơi") — trước đó em để bên cột Tiến
+                  độ Phòng phê duyệt, mà cột đó là phần của Trưởng phòng, không phải việc Quản lý.
+                  Quản lý và Trưởng phòng đều sửa được ngay tại đây: kéo-thả tệp, bấm chọn, hoặc
+                  CHỤP MÀN HÌNH RỒI Ctrl+V dán thẳng vào ô. Đây là cửa của bước 2 → 3, nên phải có
+                  chỗ cập nhật trong form — nếu không, Quản lý được mở form để bổ sung mà không có ô
+                  nào để bổ sung (chị Trâm chốt 18/08/2026).
+                  ⚠ App chỉ lưu TÊN tệp, không lưu nội dung ảnh (xem utils/attachments.ts). */}
+              {project?.loaiBanGhi !== 'DU_AN' && (currentUserRole === 'BOOD' || currentUserRole === 'MANAGER') && (
+                <div className="mt-3 pt-2 border-t border-brand-accent/20 dark:border-brand-accent/30">
+                  <span className="text-[9px] uppercase font-bold text-brand-accent/80 dark:text-brand-accent-300/80 block mb-1">
+                    Ảnh báo cáo đã gửi báo giá
+                    <span className="normal-case font-medium text-brand-accent/60 dark:text-brand-accent-300/60">
+                      {/* Nhãn phải nói ĐÚNG luật đang chạy: xem ANH_BAO_CAO_BAT_BUOC trong App.tsx.
+                          Chị Trâm chốt 18/08/2026 tạm để chỉ nhắc, không chặn bước. */}
+                      {' '}(nên có để làm bằng chứng đã gửi — không bắt buộc để qua Bước 3)
+                    </span>
+                  </span>
+                  {anhBaoCao.length > 0 && (
+                    <ul className="space-y-1 mb-1.5">
+                      {anhBaoCao.map((name, i) => (
+                        <li key={`${name}-${i}`} className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-white/70 dark:bg-dark-bg/70 border border-slate-200/70 dark:border-slate-800 rounded-lg px-2 py-1">
+                          <span className="flex-1 truncate" title={name}>🖼 {name}</span>
+                          {/* TẢI VỀ — ảnh thêm từ bản 18/08/2026 có nội dung thật nên tải được;
+                              ảnh khai từ trước chỉ có tên, bấm sẽ báo rõ là không có tệp. */}
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const ok = await taiAnhVe(project?.id || 'moi', name);
+                              if (!ok) setLoiAnh(`Ảnh "${name}" chỉ được khai TÊN từ trước (bản cũ chưa lưu nội dung tệp) nên không tải về được. Nhờ chị dán lại ảnh để app lưu tệp thật.`);
+                            }}
+                            className="shrink-0 text-brand-accent dark:text-brand-accent-300 hover:underline cursor-pointer"
+                            title={`Tải ảnh "${name}" về máy`}
+                          >
+                            ⬇ Tải về
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setAnhBaoCao(prev => prev.filter((_, idx) => idx !== i))}
+                            className="shrink-0 text-brand-danger hover:underline uppercase cursor-pointer"
+                            title={`Bỏ ảnh ${name}`}
+                          >
+                            ✕
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <FileDropZone
+                    inputId={`anh-bao-cao-form-${project?.id || 'new'}`}
+                    label="🖼 Kéo-thả ảnh · bấm để chọn · hoặc Ctrl+V dán ảnh vừa chụp"
+                    accept="image/*,.pdf"
+                    multiple
+                    maxSizeMB={25}
+                    onFiles={(files) => {
+                      setLoiAnh(null);
+                      files.forEach(f => {
+                        luuAnh(project?.id || 'moi', f, currentUserRole)
+                          .then((kq) => {
+                            setAnhBaoCao(prev => Array.from(new Set([...prev, f.name])));
+                            if (kq.luuTamTrenMay) setLoiAnh(CAU_NHAC_CHUA_MO_QUYEN);
+                          })
+                          .catch((err) => setLoiAnh(String(err?.message || err)));
+                      });
+                    }}
+                  />
+                  {vuaDanAnh && (
+                    <p className="mt-1 text-[10px] font-bold text-brand-success">✓ Đã lưu ảnh dán từ clipboard — tải về được.</p>
+                  )}
+                  {loiAnh && (
+                    <p className="mt-1 text-[10px] font-bold text-brand-warning">{loiAnh}</p>
+                  )}
+                  <input
+                    value={ghiChuGuiBaoGia}
+                    onChange={(e) => setGhiChuGuiBaoGia(e.target.value)}
+                    placeholder="Ghi chú (không bắt buộc) — VD: gửi qua Zalo cho anh Minh lúc 15h20"
+                    className="mt-1.5 w-full px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="bg-brand-primary/5 dark:bg-brand-primary/15 p-3 rounded-lg border border-brand-primary/15 dark:border-brand-primary/30">
@@ -1443,16 +1779,17 @@ export default function ProjectForm({
 
               {/* NHẬT KÝ GỬI CĐT — chỉ XEM. Mỗi lần Trưởng phòng kéo hồ sơ từ bước 4 sang bước 5
                   (đã gửi CĐT) hệ thống ghi 1 dòng, kèm số liệu của đúng vòng đó. */}
-              {(project?.guiCDTLogs || []).length > 0 && (
+              {tongSoLanGuiCDT(project) > 0 && (
                 <div className="mt-3 pt-2 border-t border-brand-primary/20 dark:border-brand-primary/30">
                   <span className="text-[9px] uppercase font-bold text-brand-primary/80 dark:text-brand-primary-300/80 block mb-1">
-                    Nhật ký gửi Chủ đầu tư — {(project?.guiCDTLogs || []).length} lần
+                    Nhật ký gửi Chủ đầu tư — {tongSoLanGuiCDT(project)} lần
+                    {soLanGuiTruocApp(project) > 0 && ` (gồm ${soLanGuiTruocApp(project)} lần khai tay trước khi dùng app)`}
                   </span>
                   {/* Chỉ ghi LẦN MẤY + NGÀY GỬI (chị Trâm chốt 25/07/2026) */}
                   <ul className="space-y-1">
                     {[...(project?.guiCDTLogs || [])].sort((a, b) => b.lan - a.lan).map(log => (
                       <li key={log.lan} className="flex items-center justify-between gap-2 bg-white/70 dark:bg-dark-bg/70 border border-slate-200/70 dark:border-slate-800 rounded-lg px-2 py-1.5 text-[10px] font-black">
-                        <span className="text-brand-accent dark:text-brand-accent-300">📤 Gửi CĐT lần {log.lan}</span>
+                        <span className="text-brand-accent dark:text-brand-accent-300">📤 Gửi CĐT lần {nhanLanGui(project, log.lan)}</span>
                         <span className="text-slate-500 dark:text-slate-400">{log.ngay.split('-').reverse().join('-')}</span>
                       </li>
                     ))}
@@ -1471,7 +1808,7 @@ export default function ProjectForm({
           <div className="flex items-center justify-between border-b border-slate-200/60 dark:border-slate-800 pb-2">
             <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
               <span className="w-1.5 h-3 bg-brand-warning rounded-full"></span>
-              4. Lịch Sử Dời Tiến Độ (Delay Logs)
+              5. Lịch Sử Dời Tiến Độ (Delay Logs)
             </h3>
             <button
               type="button"
@@ -1667,7 +2004,7 @@ export default function ProjectForm({
         <div className="bg-slate-50/50 dark:bg-dark-card/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 space-y-4">
           <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-200/60 dark:border-slate-800 pb-2">
             <span className="w-1.5 h-3 bg-brand-accent-700 rounded-full"></span>
-            5. Đóng Gói Thầu & Đánh Giá KPI Cuối Kỳ
+            6. Đóng Gói Thầu & Đánh Giá KPI Cuối Kỳ
           </h3>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

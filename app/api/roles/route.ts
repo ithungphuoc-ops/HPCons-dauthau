@@ -4,13 +4,17 @@ import { checkRateLimit, getClientIp } from "@/src/lib/apiRateLimit";
 // Danh sách vai trò CỦA CHÍNH app đấu thầu — App Tổng (account.hpcore.vn) gọi
 // endpoint này để dựng dropdown gán quyền tại trang "Quản lý ứng dụng", không
 // hard-code danh sách vai trò ở phía App Tổng. Public, CORS mở cho *.hpcore.vn.
+// Thang Level chị Trâm chốt 17/08/2026:
+//   L1 = Trưởng phòng + Phó phòng · L2 = Quản lý · L3 = Nhân viên · L4 = Ban giám đốc.
+// Nhãn ở đây hiện lên dropdown gán quyền của App Tổng, nên phải khớp đúng thang trên —
+// trước đây L1 ghi "Ban Giám đốc / Trưởng phòng" và L4 ghi "Khách — chỉ xem" nên người phân
+// quyền bên App Tổng gán Ban giám đốc vào Level 1 (toàn quyền) thay vì Level 4 (chỉ xem).
 const ROLES = {
-  BOOD: "Ban Giám đốc / Trưởng phòng (Level 1)",
+  BOOD: "Trưởng phòng / Phó phòng (Level 1)",
   MANAGER: "Quản lý (Level 2)",
-  STAFF: "Chuyên viên (Level 3)",
-  // Level 4 — Khách (chị Trâm chốt 26/07/2026): CHỈ XEM, không thêm/sửa/xóa gì.
-  // Chỉ thấy 4 mục: Liên kết phòng ban · Dashboard · Báo cáo tiến độ · Bảng Kanban.
-  VIEWER: "Khách — chỉ xem (Level 4)",
+  STAFF: "Nhân viên (Level 3)",
+  // Level 4 — Ban giám đốc: XEM HẾT nhưng KHÔNG thao tác (không thêm/sửa/xóa/duyệt).
+  VIEWER: "Ban giám đốc — chỉ xem (Level 4)",
 };
 
 const CORS = {

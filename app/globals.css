@@ -172,3 +172,33 @@
     border: 0;
   }
 }
+
+/* ===== Ô CHỌN (select) TRÊN NỀN TỐI (chị Trâm báo 18/08/2026) =====
+   Danh sách xổ xuống của <select> do TRÌNH DUYỆT tự vẽ, không ăn theo màu nền của app: ở chế độ
+   tối, ô chọn để nền trong suốt thì trình duyệt vẽ nền TRẮNG mà chữ vẫn TRẮNG → không đọc được.
+   Đặt màu chữ + nền cho mọi <option> một lần ở đây, khỏi phải nhớ sửa từng ô. */
+select option {
+  background-color: #ffffff;
+  color: #334155; /* slate-700 */
+}
+.dark select option {
+  background-color: #16202e; /* dark-card */
+  color: #cbd5e1;            /* slate-300 */
+}
+
+/* ===== KHAY "XEM NHANH HỒ SƠ" KHÔNG ĐƯỢC LỌT RA NGOÀI KHUNG (chị Trâm báo 18/08/2026) =====
+   Khay nằm trong một <td colSpan> của bảng Báo cáo tiến độ, nên bề rộng của nó ăn theo BỀ RỘNG CẢ
+   BẢNG. Khi phóng to chữ (Ctrl + lăn chuột) bảng rộng gần gấp đôi vùng đang thấy → nửa khay bị đẩy
+   ra ngoài khung, thông tin bị cắt và phải cuộn ngang mới thấy.
+   Cách chữa: ghim khay vào mép trái vùng cuộn (sticky left) và cho bề rộng đúng bằng VÙNG ĐANG THẤY
+   (biến --rong-vung-xem do App.tsx đo bằng ResizeObserver). Nhờ vậy cuộn ngang bảng thì khay đứng
+   yên, không thông tin nào lọt ra ngoài; các bảng con bên trong khay tự cuộn trong hộp của nó.
+   Chỉ áp từ 768px trở lên — dưới mức đó <td> là block, bảng đã reflow thành thẻ. */
+@media (min-width: 768px) {
+  .drawer-vung-xem {
+    position: sticky;
+    left: 0;
+    width: var(--rong-vung-xem, 100%);
+    max-width: var(--rong-vung-xem, 100%);
+  }
+}
