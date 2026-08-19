@@ -2,15 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyHpcore, fetchCentralRole, fetchCentralAvatar, SSO_COOKIE_NAME } from "@/src/lib/hpcore";
 import { getAdminAuth, getAdminDb } from "@/src/lib/firebase-admin";
 
-// VIEWER = Level 4 "Khách — chỉ xem" (chị Trâm chốt 26/07/2026). Phải khai ở đây, nếu không
-// App Tổng gán quyền VIEWER thì route này coi là không hợp lệ và chặn đăng nhập (403).
+// VIEWER = Level 4 (chị Trâm chốt 26/07/2026). Phải khai ở đây, nếu không App Tổng gán quyền
+// VIEWER thì route này coi là không hợp lệ và chặn đăng nhập (403).
 type Role = "BOOD" | "MANAGER" | "STAFF" | "VIEWER";
 
+// ===== CHỨC VỤ MẶC ĐỊNH KHI TẠO HỒ SƠ NHÂN SỰ TỪ SSO =====
+// LỖI ĐÃ SỬA 17/08/2026 (chị Trâm báo, kèm ảnh màn "Đội ngũ & KPI"):
+// BOOD trước đây ghi thành "Ban giám đốc", nên MỌI người được App Tổng cấp quyền Level 1 —
+// Trưởng phòng, Phó phòng, cả tài khoản IT — đều hiện là "BAN GIÁM ĐỐC". Chính chị Trâm
+// (Trưởng phòng) cũng bị ghi sai thành Ban giám đốc.
+//
+// Thang Level chị Trâm chốt 17/08/2026:
+//   L1 = Trưởng phòng / Phó phòng · L2 = Quản lý · L3 = Nhân viên · L4 = Ban giám đốc.
+// Nên BOOD → "Trưởng phòng" và VIEWER → "Ban giám đốc".
+//
+// LƯU Ý: đây chỉ là chức vụ MẶC ĐỊNH lúc tạo hồ sơ. Trưởng phòng vẫn sửa lại được trong
+// "Đội ngũ & KPI" (vd đổi thành "Phó phòng"), và `merge: true` bên dưới không ghi đè... —
+// xem ghi chú ở chỗ staffRef.set.
 const CHUC_VU_BY_ROLE: Record<Role, string> = {
-  BOOD: "Ban giám đốc",
+  BOOD: "Trưởng phòng",
   MANAGER: "Quản lý",
   STAFF: "Chuyên viên đấu thầu",
-  VIEWER: "Khách (chỉ xem)",
+  VIEWER: "Ban giám đốc",
 };
 
 function parseCookie(req: NextRequest, name: string): string | undefined {
@@ -40,21 +53,19 @@ export async function GET(req: NextRequest) {
     const adminAuth = getAdminAuth();
     const adminDb = getAdminDb();
 
-    // Trước đây 6 lệnh gọi mạng chạy TUẦN TỰ (role → tạo/cập nhật Auth user →
-    // đọc staff → avatar → ghi staff → mint token) — mỗi lượt cộng dồn khiến
-    // đăng nhập chậm rõ rệt (góp ý Trâm: "xác thực tài khoản vào app lâu lắm").
-    // Gộp các bước ĐỘC LẬP với nhau chạy song song bằng Promise.all — chỉ còn
-    // 3 lượt round-trip nối tiếp thay vì 6.
+    // Trước đây 6 lệnh gọi mạng chạy TUẦN TỰ (role → tạo/cập nhật Auth user → đọc staff →
+    // avatar → ghi staff → mint token) — mỗi lượt cộng dồn khiến đăng nhập chậm rõ rệt
+    // (góp ý Trâm 14/08: "xác thực đăng nhập vào app lâu lắm"). Gộp các bước ĐỘC LẬP với
+    // nhau chạy song song bằng Promise.all — chỉ còn 3 lượt round-trip nối tiếp thay vì 6.
     const [centralRole, centralAvatar] = await Promise.all([
-      fetchCentralRole(identity.uid),
+      fetchCentralRole(identity.uid) as Promise<Role | null>,
       fetchCentralAvatar(identity.uid),
     ]);
-    // Chưa được Sếp phân quyền ở "Quản lý ứng dụng" (account.hpcore.vn) → KHÔNG tự cấp
-    // quyền STAFF mặc định nữa, từ chối thẳng (không tạo Auth user/staff doc/token).
+    // App Tổng vẫn là CỬA VÀO: chưa được phân quyền ở "Quản lý ứng dụng" (account.hpcore.vn)
+    // thì từ chối thẳng, không tạo Auth user / staff doc / token.
     if (!centralRole || !(centralRole in CHUC_VU_BY_ROLE)) {
       return NextResponse.json({ error: "NOT_AUTHORIZED" }, { status: 403 });
     }
-    const role: Role = centralRole as Role;
 
     const ensureAuthUser = adminAuth
       .updateUser(identity.uid, { email: identity.email, emailVerified: true })
@@ -65,24 +76,42 @@ export async function GET(req: NextRequest) {
       );
 
     const staffRef = adminDb.collection("staff").doc(identity.uid);
-    // updateUser/createUser (Auth) và đọc staff doc (Firestore) không phụ thuộc
-    // nhau — chạy song song.
+    // updateUser/createUser (Auth) và đọc staff doc (Firestore) không phụ thuộc nhau — chạy song song.
     const [, existing] = await Promise.all([ensureAuthUser, staffRef.get()]);
+    const cu = existing.data();
 
-    // Avatar: ưu tiên ảnh thật từ hồ sơ App Tổng (account.hpcore.vn/profile), đọc sống mỗi
-    // lần đăng nhập — đổi avatar bên đó thì app này cũng cập nhật theo ngay lần sau, không
-    // còn kẹt cứng ảnh cũ nữa. Chỉ giữ ảnh local cũ khi App Tổng chưa có avatar nào.
-    // Ghi staff doc và mint custom token cũng không phụ thuộc nhau — chạy song song.
+    // ===== NGUỒN QUYỀN: BẢNG NHÂN SỰ CỦA APP ĐẤU THẦU (chị Trâm chốt hướng 2 — 17/08/2026) =====
+    // "App đấu thầu giữ bảng quyền riêng, App Tổng chỉ lo đăng nhập."
+    //
+    // TRƯỚC ĐÂY route này ghi đè `role` và `chucVu` bằng giá trị của App Tổng ở MỖI LẦN đăng nhập.
+    // Hậu quả: Trưởng phòng sửa lại quyền/chức vụ trong "Đội ngũ & KPI" xong, người đó đăng nhập
+    // lại là mất hết — đúng điểm "CÒN TREO" ghi trong BAN-GIAO-2026-07-27.md.
+    //
+    // NAY: App Tổng chỉ quyết ĐƯỢC VÀO HAY KHÔNG (đã kiểm ở trên, chưa phân quyền thì 403).
+    // Còn LEVEL và CHỨC VỤ thì:
+    //   · Hồ sơ ĐÃ CÓ  → giữ nguyên giá trị của app đấu thầu, App Tổng không ghi đè.
+    //   · Hồ sơ MỚI    → lấy giá trị App Tổng làm mức khởi đầu, sau đó Trưởng phòng tự chỉnh.
+    //
+    // Đánh đổi đã báo và chị Trâm chấp nhận: quyền ở hai app có thể lệch nhau. Muốn thu quyền
+    // của ai thì bỏ phân quyền app này bên account.hpcore.vn (họ sẽ bị 403 ngay lần đăng nhập sau).
+    const role: Role = (cu?.role as Role) || centralRole;
+    const chucVu: string = cu?.chucVu || CHUC_VU_BY_ROLE[centralRole];
+
+    // Avatar: ưu tiên ảnh thật từ hồ sơ App Tổng (account.hpcore.vn/profile) — đã lấy song song
+    // ở bước fetchCentralRole/fetchCentralAvatar bên trên, đổi avatar bên đó thì app này cũng
+    // cập nhật theo ngay lần sau, không còn kẹt cứng ảnh cũ nữa. Chỉ giữ ảnh local cũ khi App
+    // Tổng chưa có avatar nào. Ghi staff doc và mint custom token cũng không phụ thuộc nhau —
+    // chạy song song.
     const [, token] = await Promise.all([
       staffRef.set(
         {
           id: identity.uid,
-          hoTen: identity.fullName || existing.data()?.hoTen || identity.email,
-          chucVu: CHUC_VU_BY_ROLE[role],
-          avatar: centralAvatar || existing.data()?.avatar || "",
-          kpiDiem: existing.data()?.kpiDiem ?? 0,
-          soDuAnDangLam: existing.data()?.soDuAnDangLam ?? 0,
-          tiLeDungHan: existing.data()?.tiLeDungHan ?? 100,
+          hoTen: identity.fullName || cu?.hoTen || identity.email,
+          chucVu,
+          avatar: centralAvatar || cu?.avatar || "",
+          kpiDiem: cu?.kpiDiem ?? 0,
+          soDuAnDangLam: cu?.soDuAnDangLam ?? 0,
+          tiLeDungHan: cu?.tiLeDungHan ?? 100,
           email: identity.email,
           role,
           mustChangePassword: false,
@@ -91,7 +120,6 @@ export async function GET(req: NextRequest) {
       ),
       adminAuth.createCustomToken(identity.uid),
     ]);
-
     return NextResponse.json({ token });
   } catch (e: any) {
     console.error("[hpcore-session] Lỗi cấp Custom Token:", e);

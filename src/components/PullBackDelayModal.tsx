@@ -3,6 +3,7 @@ import { Project, ProjectTask, Staff } from '../types';
 import { fmtDateVN } from '../utils/dateVN';
 import { Clock, Info, X, AlertTriangle } from 'lucide-react';
 import SubtaskGantt, { DEFAULT_TASK_DAYS } from './SubtaskGantt';
+import { TenViecConThuongDung } from '../utils/thuVienViecCon';
 import { AutoGrowTextarea } from './ui';
 import { weightIssue } from '../utils/taskTree';
 
@@ -22,6 +23,8 @@ interface PullBackDelayModalProps {
    * lưu được, mất luôn bằng chứng phân công.
    */
   doiTienDo: boolean;
+  /** Thư viện tên việc con (đếm từ mọi hồ sơ) — gợi ý ở thanh "Thêm việc con" (góp ý #62). */
+  thuVienTenViecCon?: TenViecConThuongDung[];
   onCancel: () => void;
   /** Áp dụng: danh sách việc con đã chỉnh, số ngày dời THỰC (0 khi giữ nguyên hạn), lý do. */
   onApply: (tasks: ProjectTask[], delayDays: number, reason: string) => void;
@@ -29,7 +32,7 @@ interface PullBackDelayModalProps {
 
 const taskDays = (t: ProjectTask) => (t.soNgay && t.soNgay > 0 ? t.soNgay : DEFAULT_TASK_DAYS);
 
-export default function PullBackDelayModal({ project, staff, isBOOD, doiTienDo, onCancel, onApply }: PullBackDelayModalProps) {
+export default function PullBackDelayModal({ project, staff, isBOOD, doiTienDo, thuVienTenViecCon = [], onCancel, onApply }: PullBackDelayModalProps) {
   // Quản lý chỉnh việc con (ngày · người · thêm/xóa) — offset TỰ ĐỘNG tính, không nhập tay.
   const [tasks, setTasks] = useState<ProjectTask[]>(() => (project.tasks || []).map(t => ({ ...t })));
   const [reason, setReason] = useState('');
@@ -134,6 +137,7 @@ export default function PullBackDelayModal({ project, staff, isBOOD, doiTienDo, 
             isBOOD={isBOOD}
             hideFooter
             vongHienTai={vong}
+            thuVienTen={thuVienTenViecCon}
             onChange={setTasks}
           />
         </div>

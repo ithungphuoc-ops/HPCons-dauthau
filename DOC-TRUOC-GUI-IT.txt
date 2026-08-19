@@ -1,0 +1,35 @@
+========================================================================
+  APP BÁO CÁO TIẾN ĐỘ — PHÒNG ĐẤU THẦU HP-CONS  (mã nguồn gửi IT)
+  Gói ngày: 18-08-2026   ·   Người gửi: Ngô Trâm (ngotram@hpcons.com.vn)
+========================================================================
+
+ĐÂY LÀ GÌ
+  Mã nguồn đầy đủ của app "Báo cáo tiến độ Phòng Đấu thầu" (Next.js 15 +
+  React 19 + TypeScript + Tailwind v4), bản mới nhất đã sửa xong 60 góp ý
+  của Phòng. Đã kiểm TypeScript sạch (npx tsc --noEmit → 0 lỗi).
+
+ĐỌC FILE NÀO TRƯỚC
+  1. HUONG-DAN-CHO-IT.md   ← hướng dẫn triển khai đầy đủ, ĐỌC FILE NÀY.
+  2. README.md             ← giới thiệu ngắn về dự án.
+  3. docs/KE-HOACH-SUA-2026-08-17.md ← chi tiết những gì vừa sửa (tham khảo).
+
+BA VIỆC IT CẦN LÀM
+  1. Cài & chạy thử:      npm install   →   npm run build   →   npm start
+  2. Khai 4 biến môi trường bí mật (xem mục 2 của HUONG-DAN-CHO-IT.md).
+     File .env.example là mẫu; KHÓA THẬT xin trực tiếp từ Sếp, không gửi qua chat.
+  3. Deploy lên subdomain  dauthau.hpcore.vn  (bắt buộc — xem mục 1 của
+     HUONG-DAN-CHO-IT.md: cookie phiên của App Tổng không gửi sang domain khác).
+
+VIỆC MỚI PHÁT SINH TRONG BẢN NÀY (nhờ IT làm giúp)
+  • Mở quyền Firestore cho collection "templates" (danh mục biểu mẫu dùng chung),
+    đặt cùng điều kiện với collection "notifications". Không mở thì mục
+    "Template mẫu" trong app sẽ báo lỗi quyền.
+
+GÓI NÀY KHÔNG CÓ (cố ý, vì lý do bảo mật / dung lượng)
+  • .env.local và mọi khóa thật (service account Firebase).
+  • node_modules, .next, dist-desktop  → chạy npm install để tự sinh.
+  • Các file Excel dữ liệu thật của Phòng.
+
+LIÊN HỆ
+  Có gì chưa rõ, liên hệ chị Ngô Trâm — Phòng Đấu thầu.
+========================================================================

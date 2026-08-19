@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Project, Staff, ProjectTask, ActivityLog, AppNotification, PersonalTask, DelayLog } from './types';
+import { Project, Staff, ProjectTask, ActivityLog, AppNotification, PersonalTask, DelayLog , TenderTemplate, ThongBaoNoiBo } from './types';
 import { mockProjects, mockStaff, ADMIN_SEED } from './data/mockData';
 import StatsDashboard from './components/StatsDashboard';
 import GanttChart from './components/GanttChart';
@@ -13,15 +13,16 @@ import StaffEditModal from './components/StaffEditModal';
 import TenderMindmap from './components/TenderMindmap';
 import KanbanBoard, { KANBAN_STEPS, KANBAN_L1_ONLY_FROM, deriveKanbanStep } from './components/KanbanBoard';
 import NotificationFeed from './components/NotificationFeed';
-import MyTasksPanel, { DEFAULT_PROJECT_TASKS, taskDeadlineISO, todayISO, hoSoChoTPDuyet } from './components/MyTasksPanel';
+import MyTasksPanel, { DEFAULT_PROJECT_TASKS, taskDeadlineISO, taskHanText, todayISO, hoSoChoTPDuyet, laNuaNgayViec } from './components/MyTasksPanel';
 import StaffTaskResultPanel from './components/StaffTaskResultPanel';
 import SubtaskGantt, { DEFAULT_TASK_DAYS } from './components/SubtaskGantt';
 import { AppLauncher } from './components/AppLauncher';
 import TextWithLinks from './components/TextWithLinks';
 import { Badge, TimelineProgress, EmptyState, AutoGrowTextarea } from './components/ui';
 import { updateTaskInTree, calculateProjectProgress, getTaskProgress, progressOfRound, weightIssue, weightSumAllRounds, soVongCoViec, tasksOfRound } from './utils/taskTree';
-import { reportActivity } from './lib/reportActivity';
-import { fmtDateVN, fmtDateTimeVN, tongNgayDoiHan } from './utils/dateVN';
+import { fmtDateVN, fmtDateTimeVN, tongNgayDoiHan, nowVN, namHienTaiVN, chuanHoaGio, mocHanViec } from './utils/dateVN';
+import { tongSoLanGuiCDT, nhanLanGui, lanGuiKeTiep, soLanGuiTruocApp } from './utils/guiCDT';
+import { dungBangThongKeISO, tenTepBangISO, type KyBaoCao } from './utils/bangThongKeISO';
 import { parseAttachments } from './utils/attachments';
 import { useModalA11y } from './utils/useModalA11y';
 import * as xlsx from 'xlsx';
@@ -65,13 +66,19 @@ import {
   CalendarDays,
   X,
   MoreHorizontal
-} from 'lucide-react';
+, FileSpreadsheet, Megaphone, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import CdtRevisionModal from './components/CdtRevisionModal';
 import PullBackDelayModal from './components/PullBackDelayModal';
 import PhongProgressModal from './components/PhongProgressModal';
+import AnhBaoCaoModal from './components/AnhBaoCaoModal';
+import { dungThuVienTenViecCon } from './utils/thuVienViecCon';
+import { taiAnhVe } from './utils/anhDinhKem';
+import ThongBaoNoiBoPanel from './components/ThongBaoNoiBoPanel';
+import TemplateMauPanel from './components/TemplateMauPanel';
 import DateInput from './components/DateInput';
-import { subscribeCollection, pushCollection, deleteDocsFromCollection, watchAuth, authEmailFor, signInWithHpcoreToken, signInAnonymouslyFb, signOutFb, fbAuth, projectIdDangChay, PROJECT_THAT } from './lib/firebase';
+import { subscribeCollection, pushCollection, watchAuth, authEmailFor, signInWithHpcoreToken, signInAnonymouslyFb, signOutFb, fbAuth, projectIdDangChay, PROJECT_THAT } from './lib/firebase';
+import { reportActivity } from './lib/reportActivity';
 import { sandboxStaff, duAnNhap } from './data/sandboxData';
 
 // ===== BẢN THỬ (chỉ chạy trên máy cá nhân) =====
@@ -119,6 +126,8 @@ const NHAN_CHE_DO_CLOUD = DEMO_WEB_DUOC_YEU_CAU ? 'BẢN DEMO' : 'Thử-cloud';
 
 // Hai chế độ dev đều KHÔNG đăng nhập SSO và đều dùng màn chọn vai trò của Bản thử.
 const DEV_CHON_VAI_TRO = DEV_SANDBOX || DEV_CLOUD_TEST;
+
+// Giờ Việt Nam dùng hàm chung `nowVN` trong src/utils/dateVN.ts (xem lý do cố định múi giờ ở đó).
 
 // One-time clean-slate: xóa dữ liệu demo cũ trong trình duyệt (nếu có) và seed tài khoản
 // admin gốc. Dữ liệu cũ được sao lưu vào các khóa "*__predemo_backup" để khôi phục nếu cần.
@@ -236,20 +245,45 @@ export function ptNextOccurrence(t: PersonalTask, fromYMD: string): string | nul
   return null;
 }
 
-// Ánh xạ chức danh → quyền hệ thống (RBAC) khi tài khoản chưa gán quyền tường minh.
-// Ban giám đốc / Trưởng phòng / Phó phòng / Quản trị hệ thống = Level 1 (BOOD); Quản lý = Level 2; còn lại = Level 3.
-// (2026-07-15, chị chốt: Phó phòng lên Level 1; chức danh "Quản lý" thay Phó phòng ở Level 2)
+// Ánh xạ chức danh → quyền hệ thống (RBAC) khi tài khoản CHƯA gán quyền tường minh.
+// Đây chỉ là mức MẶC ĐỊNH: nếu bản ghi nhân sự đã có `role` thì `role` luôn thắng
+// (mọi chỗ gọi đều viết `s.role || chucVuToRole(s.chucVu)`).
+//
+// THANG LEVEL (chị Trâm chốt 17/08/2026):
+//   Level 1 = Trưởng phòng + Phó phòng   (+ Quản trị hệ thống: tài khoản kỹ thuật vận hành app)
+//   Level 2 = Quản lý
+//   Level 3 = Nhân viên (Chuyên viên đấu thầu)
+//   Level 4 = Ban giám đốc — xem HẾT nhưng KHÔNG thao tác
+//
+// ĐỔI SO VỚI TRƯỚC: 'Ban giám đốc' trước đây mặc định là BOOD (Level 1), nay mặc định là
+// VIEWER (Level 4). Ban giám đốc nào cần toàn quyền thì Trưởng phòng gán thẳng role BOOD cho
+// người đó — khi ấy được thêm/xóa/sửa TẤT CẢ dự án, kể cả dự án không liên quan tới mình.
 export const chucVuToRole = (chucVu?: string): 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER' =>
-  (chucVu === 'Ban giám đốc' || chucVu === 'Trưởng phòng' || chucVu === 'Phó phòng' || chucVu === 'Quản trị hệ thống') ? 'BOOD' :
+  (chucVu === 'Trưởng phòng' || chucVu === 'Phó phòng' || chucVu === 'Quản trị hệ thống') ? 'BOOD' :
   chucVu === 'Quản lý' ? 'MANAGER' :
-  chucVu === 'Khách (chỉ xem)' ? 'VIEWER' : 'STAFF';
+  // 'Khách (chỉ xem)' là chức danh CŨ, giữ lại để bản ghi đã lưu không bị hiểu sai thành Level 3.
+  (chucVu === 'Ban giám đốc' || chucVu === 'Khách (chỉ xem)') ? 'VIEWER' : 'STAFF';
 
-// ===== LEVEL 4 — KHÁCH (VIEWER), chị Trâm chốt 26/07/2026 =====
-// Chỉ ĐỌC: không thêm/sửa/xóa, không kéo thẻ Kanban, không duyệt gì. Chỉ thấy 4 mục bên dưới.
-// Dùng để mời Ban giám đốc / khách vào theo dõi tiến độ mà không sợ đụng dữ liệu.
-export const VIEWER_TABS = ['DEPTLINKS', 'DASHBOARD', 'PROJECTS', 'KANBAN'];
-/** Người đang đăng nhập CHỈ ĐƯỢC XEM (Level 4) — dùng để tắt mọi nút thêm/sửa/xóa. */
+// ===== LEVEL 4 — BAN GIÁM ĐỐC (VIEWER) =====
+// Chỉ ĐỌC: không thêm/sửa/xóa, không kéo thẻ Kanban, không duyệt gì.
+//
+// Chị Trâm chốt 17/08/2026: "L4 = Ban giám đốc, thay cho chữ Khách mời, còn tính năng thì không
+// thay đổi gì cả — CHO XEM HẾT, chỉ là không cho thao tác thôi."
+// → Trước đây chỉ mở 4 mục (DEPTLINKS, DASHBOARD, PROJECTS, KANBAN). Nay mở TẤT CẢ mục xem được:
+//   thêm GANTT (biểu đồ Gantt), CALENDAR (lịch cá nhân), HISTORY (nhật ký), STAFF (đội ngũ & KPI).
+// CỐ Ý KHÔNG mở 'SYSTEM': đó là mục kỹ thuật (xem cấu trúc dữ liệu, Sao lưu/Khôi phục) dành cho
+//   Trưởng phòng vận hành app, không phải thông tin điều hành. Chị Trâm muốn mở luôn thì thêm vào đây.
+export const VIEWER_TABS = ['DEPTLINKS', 'DASHBOARD', 'PROJECTS', 'KANBAN', 'GANTT', 'CALENDAR', 'TEMPLATES', 'HISTORY', 'STAFF'];
+/** Người đang đăng nhập CHỈ ĐƯỢC XEM (Level 4 — Ban giám đốc) — dùng để tắt mọi nút thêm/sửa/xóa. */
 export const laKhachChiXem = (role?: string): boolean => role === 'VIEWER';
+
+// ===== AI ĐƯỢC QUẢN LÝ TÀI KHOẢN NHÂN SỰ (chị Trâm chốt 18/08/2026) =====
+// "Level4 cho xem danh sách nhân sự. cho xóa và thêm nhân sự như level 1 đi em."
+// Trước đây Ban giám đốc (L4) bị coi là "khách chỉ xem" nên tab Đội ngũ ra 0 nhân sự và không có
+// nút nào — trong khi BGĐ là cấp trên của Phòng, việc mở/khoá tài khoản là quyền của họ.
+// Nay L1 và L4 quản lý tài khoản NGANG NHAU. Giữ nguyên laKhachChiXem cho các phần khác (BGĐ vẫn
+// chỉ xem hồ sơ/tiến độ, không thao tác nghiệp vụ) — chỉ mở đúng phần nhân sự.
+export const quanLyDuocNhanSu = (role?: string): boolean => role === 'BOOD' || role === 'VIEWER';
 
 // Các chức danh KHÔNG tính là nhân sự Phòng Đấu thầu (chị Trâm chốt 27/07/2026) — không đứng
 // trong "Danh sách nhân sự", không đếm vào quân số, không chấm KPI:
@@ -262,6 +296,18 @@ export const CHUC_VU_KHONG_TINH_NHAN_SU: string[] = ['Ban giám đốc', 'Quản
 /** Số Level hiển thị cho 4 mức quyền: BOOD = 1 · MANAGER = 2 · STAFF = 3 · VIEWER = 4. */
 export const nhanLevelSo = (role?: string): string =>
   role === 'BOOD' ? '1' : role === 'MANAGER' ? '2' : role === 'VIEWER' ? '4' : '3';
+
+// ===== MẶC ĐỊNH BỘ LỌC TRẠNG THÁI HỒ SƠ (chị Trâm chốt 17/08/2026 — góp ý #9) =====
+// "Level 1 được phép xem toàn bộ công việc, kể cả lịch sử công việc đã xong; hiện tại chưa được
+//  xem các công việc đã xong khi công việc đó đang làm giữa TP và Quản lý."
+//
+// Dữ liệu thì L1 vốn đã thấy hết (rbacProjects trả nguyên danh sách cho BOOD) — cái chặn tầm nhìn
+// là BỘ LỌC MẶC ĐỊNH 'ACTIVE' áp cho mọi vai trò, nên mở app lên là việc đã xong bị ẩn sạch.
+//   · L1 (Trưởng phòng/Phó phòng) và L4 (Ban giám đốc, "cho xem hết") → mặc định 'ALL'.
+//   · L2/L3 giữ 'ACTIVE' cho danh sách gọn, đúng phần việc đang phải làm.
+// Người dùng vẫn tự bấm đổi được; đây chỉ là điểm khởi đầu.
+export const macDinhLocTrangThai = (role?: string): 'ACTIVE' | 'DONE' | 'ALL' =>
+  (role === 'BOOD' || role === 'VIEWER') ? 'ALL' : 'ACTIVE';
 
 // ===== CHỐT TIẾN ĐỘ PHÒNG 100% TRƯỚC KHI ĐI TIẾP =====
 // Liệt kê các bước mà khi RỜI khỏi bước đó để TIẾN lên bước kế tiếp, hồ sơ bắt buộc phải có
@@ -283,6 +329,17 @@ export const CHOT_TIEN_DO_PHONG_KHI_ROI_BUOC: number[] = [3];
 // Cùng cách đọc với CHOT_TIEN_DO_PHONG_KHI_ROI_BUOC: liệt kê bước mà khi RỜI khỏi để tiến lên
 // thì phải đủ 100%. Muốn bỏ chốt thì để mảng rỗng.
 export const CHOT_TIEN_DO_BO_PHAN_KHI_ROI_BUOC: number[] = [2];
+
+// ===== ẢNH BÁO CÁO ĐÃ GỬI BÁO GIÁ: BẮT BUỘC hay CHỈ NHẮC? (chị Trâm chốt 18/08/2026) =====
+// Ban đầu đây là CỬA CHẶN của bước 2 → 3 (góp ý #12, chính chị Trâm đặt ra). Nhưng ảnh cần lưu vào
+// collection `anhDinhKem` mà Firestore chưa mở quyền, nên trên bản web việc kéo 2 → 3 bị KẸT CỨNG —
+// chị Trâm: "tại vì sợ IT ko mở, nếu mở ảnh hưởng tới luồng hệ thống, cái này c đưa sau này cũng đc"
+// và "còn giờ đừng gán cứng, cũng cực cho anh em quản lý".
+//
+// Nay để `false` = chỉ NHẮC: thiếu ảnh vẫn cho thẻ sang Bước 3, app hiện câu nhắc bổ sung sau.
+// 👉 KHI IT ĐÃ MỞ QUYỀN và Phòng muốn siết lại: đổi đúng MỘT dòng này thành `true` là quay về bắt buộc,
+//    không phải sửa chỗ nào khác.
+export const ANH_BAO_CAO_BAT_BUOC = false;
 
 // Đa quản lý (chị chốt 17/07): 1 quản lý CHÍNH + nhiều quản lý PHỤ/kế thừa đều có quyền thao tác.
 // Dùng cho mọi kiểm tra "người này có phải quản lý của dự án không".
@@ -497,17 +554,55 @@ function PhongResultCard({ project, canEdit, onSave, hideNotes = false }: {
       {(project.guiCDTLogs || []).length > 0 && (
         <div className="space-y-1">
           <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block">
-            Nhật ký gửi CĐT ({(project.guiCDTLogs || []).length} lần):
+            Nhật ký gửi CĐT ({tongSoLanGuiCDT(project)} lần{soLanGuiTruocApp(project) > 0 ? ` — trong đó ${soLanGuiTruocApp(project)} lần khai tay từ trước khi dùng app` : ''}):
           </span>
           {/* Chỉ ghi LẦN MẤY + NGÀY GỬI (chị Trâm chốt 25/07/2026 — không cần tiến độ/người gửi/kết quả) */}
           <ul className="space-y-1">
             {[...(project.guiCDTLogs || [])].sort((a, b) => b.lan - a.lan).map(log => (
               <li key={log.lan} className="flex items-center justify-between gap-2 bg-slate-50 dark:bg-dark-bg border border-slate-200/70 dark:border-slate-800 rounded-lg px-2 py-1.5 text-[10px] font-black">
-                <span className="text-brand-accent dark:text-brand-accent-300">📤 Gửi CĐT lần {log.lan}</span>
+                <span className="text-brand-accent dark:text-brand-accent-300">📤 Gửi CĐT lần {nhanLanGui(project, log.lan)}</span>
                 <span className="text-slate-500 dark:text-slate-400">{log.ngay.split('-').reverse().join('-')}</span>
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* ẢNH BÁO CÁO ĐÃ GỬI BÁO GIÁ (góp ý #12) — Quản lý đính kèm ở cửa Bước 2 → 3; TP xem tại đây
+          để biết báo giá đã thực sự gửi CĐT trước khi duyệt cấp Phòng. */}
+      {parseAttachments(project.anhBaoCaoGuiBaoGia).length > 0 && (
+        <div className="space-y-1">
+          <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block">
+            Ảnh báo cáo đã gửi báo giá ({parseAttachments(project.anhBaoCaoGuiBaoGia).length}):
+          </span>
+          <ul className="space-y-1">
+            {parseAttachments(project.anhBaoCaoGuiBaoGia).map((name, i) => (
+              <li key={`${name}-${i}`} className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-dark-bg border border-slate-200/70 dark:border-slate-800 rounded-lg px-2 py-1">
+                <span className="flex-1 truncate" title={name}>🖼 {name}</span>
+                {/* TẢI ẢNH VỀ LÀM BẰNG CHỨNG (chị Trâm 18/08/2026: "khi c báo cáo mục tiêu c cần tải
+                    ảnh này về làm bằng chứng"). Ảnh thêm từ bản 18/08 có nội dung thật; ảnh khai từ
+                    trước chỉ có tên nên app nói rõ là không tải được, tránh bấm mà không hiểu vì sao. */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await taiAnhVe(project.id, name);
+                    if (!ok) {
+                      window.alert(`Ảnh "${name}" chỉ được khai TÊN từ trước (bản cũ của app chưa lưu nội dung tệp) nên không tải về được.
+
+Mở hồ sơ và dán lại ảnh để app lưu tệp thật, sau đó tải về bình thường.`);
+                    }
+                  }}
+                  className="shrink-0 text-brand-accent dark:text-brand-accent-300 hover:underline cursor-pointer"
+                  title={`Tải ảnh "${name}" về máy`}
+                >
+                  ⬇ Tải về
+                </button>
+              </li>
+            ))}
+          </ul>
+          {project.ghiChuGuiBaoGia && (
+            <p className="text-[10px] text-slate-500 dark:text-slate-400 italic">{project.ghiChuGuiBaoGia}</p>
+          )}
         </div>
       )}
 
@@ -634,7 +729,7 @@ export default function App() {
     return saved ? saved === 'dark' : true; // Default to dark mode as requested (do not default to light)
   });
 
-  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'PROJECTS' | 'KANBAN' | 'GANTT' | 'STAFF' | 'SYSTEM' | 'HISTORY' | 'CALENDAR' | 'DEPTLINKS'>('DASHBOARD');
+  const [activeTab, setActiveTab] = useState<'DASHBOARD' | 'PROJECTS' | 'KANBAN' | 'GANTT' | 'STAFF' | 'SYSTEM' | 'HISTORY' | 'CALENDAR' | 'DEPTLINKS' | 'TEMPLATES'>('DASHBOARD');
 
   // ===== Lịch cá nhân (việc riêng + nhắc trên chuông) — lưu localStorage theo máy/người dùng =====
   const [personalTasks, setPersonalTasks] = useState<PersonalTask[]>(() => {
@@ -775,6 +870,50 @@ export default function App() {
   // Nhập đủ 100% rồi bấm Lưu là hệ thống đi tiếp luôn sang bước đó, khỏi bắt kéo thẻ lại lần nữa.
   // null = bảng mở theo kiểu thông thường (không phải do bị chặn) → lưu xong đứng yên tại chỗ.
   const [phongInputChuyenBuoc, setPhongInputChuyenBuoc] = useState<number | null>(null);
+  // Hồ sơ đang bị chặn ở cửa Bước 2 → 3 vì chưa có ảnh báo cáo đã gửi báo giá (góp ý #12).
+  // Đính kèm ảnh trong hộp rồi lưu là thẻ tự đi tiếp sang Bước 3.
+  const [anhBaoCaoProject, setAnhBaoCaoProject] = useState<Project | null>(null);
+  // ===== NỚI CỬA BƯỚC 2 → 3 CHO QUẢN LÝ (chị Trâm chốt 18/08/2026 — góp ý #75) =====
+  // "Quản lý level 2 ko bị khóa phải nhập tiến độ cv của mình và mô tả cv con mới đc quăng bước 2 qua
+  //  bước 3... thì mở trường dự án lên cho quản lý + thông báo cần hoàn thành cv con + chụp ảnh màn
+  //  hình đã báo cáo, sau khi quản lý cập nhật đầy đủ và bấm lưu dự án thì tự động qua bước 3."
+  // Ghi lại mã hồ sơ Quản lý vừa kéo: lưu xong mà đã đủ điều kiện thì tự đưa thẻ sang Bước 3.
+  const [choQuaBuoc3, setChoQuaBuoc3] = useState<string | null>(null);
+  // ===== HỘP THOẠI XÁC NHẬN TRÌNH BƯỚC 3 — DÙNG HỘP CỦA APP (chị Trâm chốt 18/08/2026) =====
+  // "cái thông báo này của e ngộ quá, e hiện thông báo dạng ô vuông giữa màn hình, và định dạng mẫu
+  //  như cái thông báo kéo về hỏi có làm thay đổi tiến độ ko á e."
+  // Bản trước dùng window.confirm — hộp của TRÌNH DUYỆT nên hiện cả tên miền "…vercel.app cho biết",
+  // chữ và nút không theo app, đọc lên như trang lạ. Nay dùng hộp riêng giữa màn hình, cùng kiểu với
+  // hộp "kéo về Bước 1 — có thay đổi tiến độ không".
+  const [xacNhanQuaB3, setXacNhanQuaB3] = useState<Project | null>(null);
+  // ===== BẤM THÔNG BÁO "ĐƯỢC CHỌN LÀM QUẢN LÝ" LÀ VÀO THẲNG FORM CÔNG VIỆC MỚI (góp ý #87) =====
+  // Chị Trâm chốt 18/08/2026: "khi quản lý nhận đc thông báo đc chọn làm quản lý dự án A, lúc click vô
+  // e thẳng tới trường công việc mới + chọn đúng tên dự án đó sẵn cho họ tạo luôn, còn thao tác thủ
+  // công bấm nút tạo công việc sau đó chọn dự án vẫn giữ nguyên bình thường."
+  const [duAnChonSanChoCVMoi, setDuAnChonSanChoCVMoi] = useState<string | undefined>(undefined);
+  // Danh mục TEMPLATE MẪU dùng chung của phòng (góp ý #8) — đồng bộ cloud như các bảng khác.
+  // Kỳ & năm cho bảng thống kê ISO (góp ý #13). Kỳ 1 = tháng 4-7 · Kỳ 2 = 8-11 · Kỳ 3 = 12,1,2,3.
+  // Mặc định chọn đúng kỳ đang chạy theo tháng hiện tại (giờ Việt Nam).
+  const [kyISO, setKyISO] = useState<KyBaoCao>(() => {
+    const th = nowVN().getMonth() + 1;
+    return (th >= 4 && th <= 7) ? 1 : (th >= 8 && th <= 11) ? 2 : 3;
+  });
+  const [namISO, setNamISO] = useState<string>(() => namHienTaiVN());
+  const [templates, setTemplates] = useState<TenderTemplate[]>(() => {
+    if (typeof localStorage === 'undefined') return [];
+    try { const x = JSON.parse(localStorage.getItem('erp_templates') || '[]'); return Array.isArray(x) ? x : []; }
+    catch { return []; }
+  });
+  const lastRemoteTemplates = useRef<string | null>(null);
+  // ===== THÔNG BÁO NỘI BỘ CÓ LƯU LẠI (chị Trâm chốt 18/08/2026) =====
+  // Tin trên chuông chỉ giữ 30 tin/người nên thông báo cũ bị trôi mất. Danh sách này giữ NGUYÊN VĂN
+  // từng thông báo nội bộ đã gửi, đồng bộ cloud giống danh mục Template mẫu.
+  const [thongBaoNoiBo, setThongBaoNoiBo] = useState<ThongBaoNoiBo[]>(() => {
+    if (typeof localStorage === 'undefined') return [];
+    try { const x = JSON.parse(localStorage.getItem('erp_thongbao_noibo') || '[]'); return Array.isArray(x) ? x : []; }
+    catch { return []; }
+  });
+  const lastRemoteThongBao = useRef<string | null>(null);
   // Hộp xác nhận trước khi ghi nhận 1 LẦN GỬI CĐT (kéo bước 4 → 5). Chặn ghi nhầm khi TP
   // chỉ lỡ tay kéo qua kéo lại mà không thật sự gửi hồ sơ cho Chủ đầu tư.
   const [guiCDTConfirm, setGuiCDTConfirm] = useState<{ project: Project; lan: number } | null>(null);
@@ -806,14 +945,45 @@ export default function App() {
   // Expanded project accordion state
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
 
+  // Bề rộng VÙNG ĐANG THẤY của bảng Báo cáo tiến độ (khung cuộn ngang), tính bằng CSS px.
+  // Khay "xem nhanh hồ sơ" nằm trong một <td> nên mặc định giãn theo BỀ RỘNG CẢ BẢNG; phóng to chữ
+  // (Ctrl + lăn chuột) là bảng rộng gần gấp đôi vùng thấy → nửa khay lọt ra ngoài khung, phải cuộn
+  // ngang mới thấy và nhiều thông tin bị cắt (chị Trâm báo 18/08/2026). Đo số này rồi ghim khay theo nó.
+  const [khungCuonBang, setKhungCuonBang] = useState<HTMLDivElement | null>(null);
+  const [rongVungXemBang, setRongVungXemBang] = useState<number>(0);
+
+  useEffect(() => {
+    if (!khungCuonBang) return;
+    const doLai = () => setRongVungXemBang(khungCuonBang.clientWidth);
+    doLai();
+    // ResizeObserver bắt cả 3 trường hợp: đổi cỡ cửa sổ, thu/mở thanh điều hướng, và đổi cỡ chữ
+    // (zoom đặt trên <body> làm clientWidth theo CSS px thay đổi theo).
+    const ro = new ResizeObserver(doLai);
+    ro.observe(khungCuonBang);
+    return () => ro.disconnect();
+  }, [khungCuonBang]);
+
   // Staff personal workspace: which task has its result editor open (key: `${projectId}-${taskId}`)
   const [expandedStaffTaskId, setExpandedStaffTaskId] = useState<string | null>(null);
 
-  // Dashboard year filter (default: current year)
-  const [dashboardYear, setDashboardYear] = useState<string>(String(new Date().getFullYear()));
+  // Bộ lọc năm của Dashboard — mặc định NĂM HIỆN TẠI theo lịch Việt Nam (tự đổi khi qua năm mới,
+  // không phải sửa code). Trước đây lấy new Date().getFullYear() = năm theo giờ máy.
+  const [dashboardYear, setDashboardYear] = useState<string>(() => namHienTaiVN());
   // Lọc dự án/hồ sơ theo trạng thái hoàn thành (dùng cho "Danh sách dự án" & "Tổng hợp tình trạng").
-  // Mặc định ẩn bớt hồ sơ đã xong cho gọn.
-  const [projStatusFilter, setProjStatusFilter] = useState<'ACTIVE' | 'DONE' | 'ALL'>('ACTIVE');
+  // Mặc định TÙY VAI TRÒ — xem macDinhLocTrangThai (L1 & L4 thấy hết, L2/L3 chỉ việc đang làm).
+  const [projStatusFilter, setProjStatusFilter] = useState<'ACTIVE' | 'DONE' | 'ALL'>(
+    () => macDinhLocTrangThai(currentUser?.role)
+  );
+  // Đổi người đăng nhập (hoặc bấm xem thử L1/L2/L3/L4 trong Bản thử) → đặt lại bộ lọc về mặc
+  // định của vai trò MỚI. Bám theo ref để chỉ đặt lại khi VAI TRÒ đổi — nếu đặt lại theo mỗi
+  // lần render thì người dùng vừa bấm chọn "Đã xong" xong là bị nhảy về ngay.
+  const vaiTroDaApLocMacDinh = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const vaiTro = currentUser?.role ?? null;
+    if (vaiTroDaApLocMacDinh.current === vaiTro) return;
+    vaiTroDaApLocMacDinh.current = vaiTro;
+    setProjStatusFilter(macDinhLocTrangThai(vaiTro ?? undefined));
+  }, [currentUser?.role]);
 
   // Activity log search box
   const [logSearch, setLogSearch] = useState<string>('');
@@ -853,18 +1023,21 @@ export default function App() {
   // Notification banner state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Đồng hồ UTC hiển thị ở góc trang đăng nhập + giờ địa phương hiển thị trên header sau đăng nhập
-  const [utcTime, setUtcTime] = useState('');
-  const [localNow, setLocalNow] = useState(() => new Date());
+  // Đồng hồ hiển thị ở góc trang đăng nhập + ngày giờ trên header sau đăng nhập.
+  // CẢ HAI đều lấy GIỜ VIỆT NAM cố định (xem nowVN) — trước đây đồng hồ trang đăng nhập in giờ
+  // UTC nên lệch 7 tiếng, còn header thì lấy giờ máy nên máy cài sai múi giờ là hiện sai
+  // (chị Trâm báo 17/08/2026).
+  const [vnTime, setVnTime] = useState('');
+  const [localNow, setLocalNow] = useState(() => nowVN());
 
   useEffect(() => {
     const updateTime = () => {
-      const now = new Date();
-      const h = String(now.getUTCHours()).padStart(2, '0');
-      const m = String(now.getUTCMinutes()).padStart(2, '0');
-      const s = String(now.getUTCSeconds()).padStart(2, '0');
-      setUtcTime(`${h}:${m}:${s} UTC`);
-      setLocalNow(now);
+      const vn = nowVN();
+      const h = String(vn.getHours()).padStart(2, '0');
+      const m = String(vn.getMinutes()).padStart(2, '0');
+      const s = String(vn.getSeconds()).padStart(2, '0');
+      setVnTime(`${h}:${m}:${s}`);
+      setLocalNow(vn);
     };
     updateTime();
     const interval = setInterval(updateTime, 1000);
@@ -1125,7 +1298,19 @@ export default function App() {
       lastRemoteNotifs.current = JSON.stringify(sorted);
       setNotifs(sorted);
     }, baoLoiCloud);
-    return () => { unsubProjects(); unsubStaff(); unsubNotifs(); };
+    const unsubTemplates = subscribeCollection<TenderTemplate>('templates', (items, isEmpty) => {
+      if (isEmpty) { lastRemoteTemplates.current = '[]'; setTemplates([]); return; }
+      const sorted = [...items].sort((a, b) => a.id.localeCompare(b.id));
+      lastRemoteTemplates.current = JSON.stringify(sorted);
+      setTemplates(sorted);
+    }, baoLoiCloud);
+    const unsubThongBao = subscribeCollection<ThongBaoNoiBo>('announcements', (items, isEmpty) => {
+      if (isEmpty) { lastRemoteThongBao.current = '[]'; setThongBaoNoiBo([]); return; }
+      const sorted = [...items].sort((a, b) => a.id.localeCompare(b.id));
+      lastRemoteThongBao.current = JSON.stringify(sorted);
+      setThongBaoNoiBo(sorted);
+    }, baoLoiCloud);
+    return () => { unsubProjects(); unsubStaff(); unsubNotifs(); unsubTemplates(); unsubThongBao(); };
   }, [fbAuthed]);
 
   // Đồng bộ thông báo lên cloud (chỉ sau snapshot đầu, tránh ghi đè)
@@ -1138,6 +1323,28 @@ export default function App() {
       pushCollection('notifications', sorted).catch(err => console.error('[Firebase] Lỗi đồng bộ thông báo:', err));
     }
   }, [notifs]);
+
+  // Đồng bộ danh mục Template mẫu lên cloud (chỉ sau snapshot đầu, tránh ghi đè)
+  useEffect(() => {
+    localStorage.setItem('erp_templates', JSON.stringify(templates));
+    const sorted = [...templates].sort((a, b) => a.id.localeCompare(b.id));
+    const serialized = JSON.stringify(sorted);
+    if (lastRemoteTemplates.current !== null && serialized !== lastRemoteTemplates.current) {
+      lastRemoteTemplates.current = serialized;
+      pushCollection('templates', sorted).catch(err => console.error('[Firebase] Lỗi đồng bộ template mẫu:', err));
+    }
+  }, [templates]);
+
+  // Đồng bộ danh sách thông báo nội bộ đã lưu lên cloud (chỉ sau snapshot đầu, tránh ghi đè)
+  useEffect(() => {
+    localStorage.setItem('erp_thongbao_noibo', JSON.stringify(thongBaoNoiBo));
+    const sorted = [...thongBaoNoiBo].sort((a, b) => a.id.localeCompare(b.id));
+    const serialized = JSON.stringify(sorted);
+    if (lastRemoteThongBao.current !== null && serialized !== lastRemoteThongBao.current) {
+      lastRemoteThongBao.current = serialized;
+      pushCollection('announcements', sorted).catch(err => console.error('[Firebase] Lỗi đồng bộ thông báo nội bộ:', err));
+    }
+  }, [thongBaoNoiBo]);
 
   // Gửi thông báo tới danh sách nhân sự (bỏ qua chính mình); giữ tối đa 30 thông báo/người.
   // CHỐNG TRÙNG: cùng người nhận + cùng nội dung + cùng hồ sơ → chỉ giữ 1 thông báo
@@ -1154,7 +1361,13 @@ export default function App() {
     return s && (s.role || chucVuToRole(s.chucVu));
   };
 
-  const pushNotify = (targetIds: (string | undefined)[], text: string, projId?: string, luonBao = false) => {
+  // ===== TIN HỆ THỐNG KHÔNG ĐƯỢC MANG TÊN NGƯỜI (chị Trâm báo 17/08/2026, kèm ảnh) =====
+  // Tin nhắc hạn do BỘ ĐẾM THỜI GIAN tự bắn, không phải ai thao tác. Trước đây pushNotify gán
+  // actorId = người đang đăng nhập cho MỌI tin, nên chuông hiện ảnh + tên của người tình cờ đang
+  // mở app lúc đồng hồ chạy tới mốc nhắc — đọc lên y như "người đó giao/làm việc con này", trong
+  // khi họ hoàn toàn không liên quan tới việc con đó. Truyền laTinHeThong = true để BỎ TRỐNG
+  // actorId; NotificationFeed thấy trống thì hiện biểu tượng chuông + nhãn "Hệ thống nhắc".
+  const pushNotify = (targetIds: (string | undefined)[], text: string, projId?: string, luonBao = false, laTinHeThong = false) => {
     let ids = Array.from(new Set(targetIds.filter(Boolean) as string[])).filter(id => id !== currentUser?.staffId);
     if (!luonBao && projId) {
       const hoSo = projects.find(x => x.id === projId);
@@ -1169,7 +1382,10 @@ export default function App() {
         .filter(tid => !prev.some(n => n.targetId === tid && n.text === text && n.projId === projId))
         // actorId gán TẠI ĐÂY (không phải ở từng chỗ gọi): mọi tin do pushNotify bắn ra đều là
         // hệ quả của việc người đang đăng nhập vừa làm, nên lấy luôn — khỏi sửa hàng chục chỗ gọi.
-        .map((tid, i) => ({ id: `N${Date.now()}-${i}-${tid}`, targetId: tid, text, projId, ngay: now, actorId: currentUser?.staffId }));
+        .map((tid, i) => ({
+          id: `N${Date.now()}-${i}-${tid}`, targetId: tid, text, projId, ngay: now,
+          actorId: laTinHeThong ? undefined : currentUser?.staffId,
+        }));
       if (items.length === 0) return prev;
       const merged = [...prev, ...items];
       const byTarget: Record<string, AppNotification[]> = {};
@@ -1180,13 +1396,16 @@ export default function App() {
 
   // Tự nhắc CHÍNH MÌNH (khác pushNotify — pushNotify loại trừ bản thân). Dùng cho Lịch cá nhân:
   // đẩy tin lên chuông + popup thông báo trình duyệt (nếu đã được cấp quyền).
-  const notifySelf = (text: string) => {
+  // projId: hồ sơ liên quan — có thì bấm vào tin mở đúng hồ sơ đó (tin nhắc hạn việc con cần cái
+  // này, trước đây để trống nên bấm vào không đi đâu). Tin tự nhắc luôn KHÔNG có actorId → chuông
+  // hiện "Hệ thống nhắc".
+  const notifySelf = (text: string, projId?: string) => {
     const id = currentUser?.staffId;
     if (!id) return;
     const now = new Date().toISOString();
     setNotifs(prev => {
       if (prev.some(n => n.targetId === id && n.text === text)) return prev;
-      const merged = [...prev, { id: `N${Date.now()}-self`, targetId: id, text, ngay: now } as AppNotification];
+      const merged = [...prev, { id: `N${Date.now()}-self`, targetId: id, text, projId, ngay: now } as AppNotification];
       const byTarget: Record<string, AppNotification[]> = {};
       merged.forEach(n => { (byTarget[n.targetId] = byTarget[n.targetId] || []).push(n); });
       return Object.values(byTarget).flatMap(list => [...list].sort((a, b) => a.ngay.localeCompare(b.ngay)).slice(-30));
@@ -1286,18 +1505,36 @@ export default function App() {
           if (t.subtasks?.length) return;              // chỉ nhắc việc lá (việc thực làm)
           const han = taskDeadlineISO(t, hanGoi);
           if (!han) return;
+          // Mốc 0h của NGÀY hạn — dùng để đặt hai mốc nhắc (08h ngày trước hạn · 13h30 ngày hạn).
           const hanMs = new Date(`${han}T00:00:00`).getTime();
           if (isNaN(hanMs)) return;
+          // Giờ hạn thật của việc con (góp ý #20): có nhập giờ thì nhắc & ghi đúng giờ đó,
+          // bỏ trống thì giữ nguyên cách cũ — hết ngày, tức "phải xong trước 23:59".
+          // ===== VIỆC LẺ NỬA NGÀY THÌ HẠN LÀ 12:00 TRƯA (chị Trâm hỏi 18/08/2026) =====
+          // "em xem hạn thông báo của nhân sự khi họ nhận đc tiến độ có lẻ 0.5 ngày em tính như thế nào".
+          // LỆCH THẬT em tìm ra: ô "Giờ hạn" (`gioHan`) đã BỎ ở mục #24 khi chuyển sang bước nửa ngày,
+          // nên `t.gioHan` nay luôn trống → chỗ nhắc hạn này rơi về mốc 23:59 cho MỌI việc, kể cả việc
+          // 3,5 ngày mà hạn thật là 12:00 trưa. Trong khi màn tác vụ của nhân sự (taskHanText) lại hiện
+          // đúng "21-08-2026 12:00" → hai chỗ nói hai giờ khác nhau cho cùng một việc.
+          // Nay dùng CHUNG luật với màn tác vụ: việc lẻ nửa ngày → 12:00, việc tròn ngày → hết ngày.
+          const gioHanChuan = chuanHoaGio(t.gioHan) || (laNuaNgayViec(t) ? '12:00' : undefined);
+          const gioHanChu = gioHanChuan || '23:59';
           const nguoiNhan = Array.from(new Set(
             [t.assignedTo, ...(t.assignedStaffIds || [])].filter(Boolean) as string[]
           ));
           if (!nguoiNhan.length) return;
           const moc1 = hanMs - DAY + 8 * 3600000;        // 08h00 ngày trước hạn
-          const moc2 = hanMs + 13.5 * 3600000;           // 13h30 ngày hết hạn
+          // Mốc nhắc trong NGÀY HẠN: mặc định 13h30. Việc con có giờ hạn sớm hơn (vd hạn 10:00)
+          // thì nhắc TRƯỚC 2 tiếng, chứ 13h30 mới nhắc thì đã trễ mất rồi (góp ý #20).
+          const mocGioHan = gioHanChuan ? mocHanViec(han, gioHanChuan) : NaN;
+          const moc2 = gioHanChuan
+            ? Math.min(hanMs + 13.5 * 3600000, Math.max(hanMs, mocGioHan - 2 * 3600000))
+            : hanMs + 13.5 * 3600000;
           const hanVN = han.split('-').reverse().join('-');
           const nhan = (text: string) => {
-            if (nguoiNhan.includes(currentUser.staffId)) notifySelf(text);
-            pushNotify(nguoiNhan, text, p.id);
+            // laTinHeThong = true: nhắc hạn là tin của HỆ THỐNG, không gán tên người đang mở app.
+            if (nguoiNhan.includes(currentUser.staffId)) notifySelf(text, p.id);
+            pushNotify(nguoiNhan, text, p.id, false, true);
           };
           // DÙNG CHUNG MỘT BIỂU TƯỢNG ⏰ cho mọi tin nhắc hạn (chị Trâm chốt 29/07/2026):
           // trước đây mốc 1 dùng ⏰ còn mốc 2 dùng ⚠, hai tin cùng loại mà nhìn như hai hệ thống
@@ -1305,9 +1542,9 @@ export default function App() {
           // Bỏ chữ "còn nửa ngày": hạn tính tới HẾT NGÀY nên đúng ngày hạn vẫn còn giờ làm,
           // nói "nửa ngày" là tự đặt ra một mốc không có trong quy định.
           if (now >= moc1 && now < moc2) {
-            nhan(`⏰ Còn 1 ngày: việc "${t.name}" (${p.hangMuc} — ${p.tenDuAn}) tới hạn ngày ${hanVN}.`);
+            nhan(`⏰ Còn 1 ngày: việc "${t.name}" (${p.hangMuc} — ${p.tenDuAn}) tới hạn ngày ${hanVN}${gioHanChuan ? ` lúc ${gioHanChuan}` : ''}.`);
           } else if (now >= moc2 && now < hanMs + 2 * DAY) {
-            nhan(`⏰ Đến hạn hôm nay: việc "${t.name}" (${p.hangMuc} — ${p.tenDuAn}) phải xong trước 23:59 ngày ${hanVN}.`);
+            nhan(`⏰ Đến hạn hôm nay: việc "${t.name}" (${p.hangMuc} — ${p.tenDuAn}) phải xong trước ${gioHanChu} ngày ${hanVN}.`);
           }
         });
         walk(p.tasks);
@@ -1481,7 +1718,7 @@ export default function App() {
     if (!currentUser) return;
     if (currentUser.role === 'VIEWER' && !VIEWER_TABS.includes(activeTab)) {
       setActiveTab('DASHBOARD');
-    } else if (currentUser.role === 'STAFF' && !['DASHBOARD', 'HISTORY', 'CALENDAR'].includes(activeTab)) {
+    } else if (currentUser.role === 'STAFF' && !['DASHBOARD', 'HISTORY', 'CALENDAR', 'TEMPLATES'].includes(activeTab)) {
       setActiveTab('DASHBOARD');
     } else if (currentUser.role === 'MANAGER' && activeTab === 'SYSTEM') {
       setActiveTab('DASHBOARD');
@@ -1676,10 +1913,53 @@ export default function App() {
       savedProject.kanbanStep = 2;
     }
 
+    // ===== QUẢN LÝ LƯU XONG THÌ TỰ SANG BƯỚC 3 (chị Trâm chốt 18/08/2026 — góp ý #75) =====
+    // Chỉ chạy cho ĐÚNG hồ sơ Quản lý vừa kéo Bước 2 → 3 (cờ choQuaBuoc3), nên các lần lưu khác
+    // không bị hỏi thêm câu nào.
+    //
+    // XÁC NHẬN 2 LẦN đúng như chị Trâm yêu cầu: lần 1 là bấm "Lưu Hồ Sơ", lần 2 là câu hỏi lại ở
+    // đây ("chắc chắn lưu chỉnh sửa"). Bấm Huỷ thì VẪN LƯU phần vừa sửa, chỉ là thẻ chưa sang bước
+    // — không để công sức nhập liệu bị mất.
+    if (choQuaBuoc3 === savedProject.id && (savedProject.kanbanStep || 1) === 2) {
+      const conThieu: string[] = [];
+      if ((savedProject.tienDoBoPhan || 0) < 100) {
+        conThieu.push(`tiến độ công việc con mới ${savedProject.tienDoBoPhan || 0}% (cần đủ 100%)`);
+      }
+      if (ANH_BAO_CAO_BAT_BUOC && !(savedProject.anhBaoCaoGuiBaoGia || '').trim()) {
+        conThieu.push('chưa có ảnh báo cáo đã gửi báo giá');
+      }
+      if (conThieu.length > 0) {
+        // Chưa đủ thì cứ lưu phần đã sửa, giữ cờ để lần lưu sau còn tự đẩy bước.
+        triggerToast(`Đã lưu. Hồ sơ chưa sang Bước 3 vì còn thiếu: ${conThieu.join(' · ')}.`);
+      } else {
+        // Đủ điều kiện → LƯU trước, rồi mở hộp thoại của app để xác nhận lần 2 (chị Trâm yêu cầu
+        // xác nhận 2 lần: bấm Lưu + xác nhận ở hộp). Bấm Đồng ý mới đẩy thẻ sang Bước 3.
+        setXacNhanQuaB3(savedProject);
+      }
+    }
+
     // ===== Thông báo chuông 🔔 =====
     const label = savedProject.loaiBanGhi === 'DU_AN'
       ? `dự án "${savedProject.tenDuAn}"`
       : `công việc "${savedProject.hangMuc} — ${savedProject.tenDuAn}"`;
+    // ===== BÁO TRƯỞNG PHÒNG NGAY KHI CÓ VIỆC CẦN DUYỆT (chị Trâm chốt 17/08/2026) =====
+    // "Level 1 chưa được bật thông báo popup khi có thay đổi trên app." Nguyên nhân: hồ sơ Quản lý
+    // vừa lập chỉ CHẠY VÀO DANH SÁCH "Chờ Trưởng phòng xử lý" trong chuông, mà danh sách đó là ô
+    // tính sẵn — không sinh tin, nên không có popup nào bắn ra. Nay mỗi lần Quản lý lập/sửa kế
+    // hoạch mà hồ sơ đang chờ duyệt thì bắn tin thẳng cho Trưởng phòng → chuông đỏ + popup trình
+    // duyệt (nếu đã cấp quyền) hiện đè lên ứng dụng đang mở.
+    const idsTruongPhong = staff
+      .filter(x => (x.role || chucVuToRole(x.chucVu)) === 'BOOD' && !x.daNghi)
+      .map(x => x.id);
+    if (savedProject.loaiBanGhi !== 'DU_AN' && currentUser?.role !== 'BOOD' && hoSoChoTPDuyet(savedProject)) {
+      pushNotify(
+        idsTruongPhong,
+        `📝 ${currentUser?.name || 'Quản lý'} vừa ${exists ? 'cập nhật' : 'lập'} kế hoạch ${label} — đang chờ Trưởng phòng kiểm tra & duyệt để hồ sơ lên Kanban.`,
+        savedProject.id,
+        true,
+      );
+    }
+
     if (!exists) {
       // Quản lý (chính + phụ) được chọn phụ trách khi khởi tạo
       pushNotify(allManagerIds(savedProject), `Bạn được chọn làm Quản lý cho ${label}.`, savedProject.id);
@@ -1723,6 +2003,15 @@ export default function App() {
         const baoThayDoi = (list?: ProjectTask[]) => (list || []).forEach(t => {
           const truoc = spCu[t.id];
           const sau = t.staffProgress ?? (t.isCompleted ? 100 : 0);
+          // ===== CHỈ BÁO VIỆC LÁ, KHÔNG BÁO VIỆC CẤP 1 ĐÃ CHIA (chị Trâm báo 18/08/2026) =====
+          // "sao nhân viên lại đc nhận thông báo này" — kèm ảnh 2 tin TRÙNG cùng lúc 16:33:
+          // một tin cho việc cấp 1 "Nghiên cứu hồ sơ thầu & Thiết kế sơ bộ" và một tin cho phần
+          // cấp 2 "... — Trần Đức Mạnh".
+          // Nguyên nhân: việc cấp 1 đã chia vẫn giữ đủ `assignedStaffIds` của mọi người tham gia
+          // (để RBAC không cắt tầm nhìn — xem datNguoiLam), nên vòng quét báo CẢ HAI cấp cho cùng
+          // một người. Nay bỏ qua việc đã chia, chỉ báo phần việc người ta THỰC LÀM — đúng luật
+          // chị Trâm đã chốt ở mục #73d cho màn tác vụ ("chỉ hiển thị 1 công việc con cấp 2 thôi").
+          if ((t.subtasks || []).length > 0) { baoThayDoi(t.subtasks); return; }
           if (truoc && truoc.sp !== sau) {
             const nguoiNhan = Array.from(new Set(
               [t.assignedTo, ...(t.assignedStaffIds || [])].filter(Boolean) as string[]
@@ -1734,9 +2023,10 @@ export default function App() {
                 savedProject.id);
             }
           }
-          baoThayDoi(t.subtasks);
+          // (Việc đã chia đã được đệ quy ở nhánh trên — tới đây chắc chắn là việc lá, không đệ quy nữa.)
         });
         baoThayDoi(savedProject.tasks);
+
       }
     }
 
@@ -1799,6 +2089,53 @@ export default function App() {
       const theoHangMuc = (a.hangMuc || '').localeCompare(b.hangMuc || '');
       return theoHangMuc !== 0 ? theoHangMuc : (a.id || '').localeCompare(b.id || '');
     });
+      // ===== BÁO CHO NHÂN SỰ MỚI TIẾP NHẬN VIỆC (chị Trâm chốt 18/08/2026) =====
+    // ⚠ PHẢI ĐẶT NGOÀI chuỗi if/else-if của phần thông báo: bản đầu em để trong nhánh
+    // `else if (old)`, mà Trưởng phòng lưu hồ sơ thường rơi vào nhánh `approvedNow ||
+    // reapprovedNow` phía trên → tin tiếp nhận việc KHÔNG BAO GIỜ bắn. Nay chạy cho mọi lần lưu
+    // một hồ sơ đã tồn tại, nên đổi người giữa chừng là người mới nhận được tin ngay.
+      // "thêm cơ chế thông báo cho nhân sự mới tiếp nhận công việc, lúc đầu cv này của nhân sự
+      //  khác, sau chuyển qua cho nhân sự này, thì trên tag cv có hiện nhưng thiếu chuông thông báo."
+      //
+      // Trước đây app chỉ báo "Bạn được giao …" lúc Trưởng phòng DUYỆT KẾ HOẠCH (cấp hồ sơ). Việc
+      // đổi người giữa chừng — Quản lý mở form, bấm ô "Người thực hiện" chọn người khác — không sinh
+      // tin nào: việc lặng lẽ xuất hiện trong danh sách của người mới, họ không biết mà làm.
+      //
+      // Chỉ xét VIỆC LÁ (việc thực làm) để không báo trùng cho việc cấp 1 đã chia — cùng luật với
+      // mục #100. Phân biệt 2 tình huống cho câu chữ đúng việc:
+      //   · việc đã có từ trước, nay thêm người  → "vừa được tiếp nhận" (chuyển việc);
+      //   · việc vừa được tạo trong lần lưu này  → "vừa được giao việc mới".
+      {
+        const nguoiCu: Record<string, string[]> = {};
+        const gomNguoiCu = (list?: ProjectTask[]) => (list || []).forEach(t => {
+          if ((t.subtasks || []).length > 0) { gomNguoiCu(t.subtasks); return; }
+          nguoiCu[t.id] = Array.from(new Set(
+            [t.assignedTo, ...(t.assignedStaffIds || [])].filter(Boolean) as string[]
+          ));
+        });
+        gomNguoiCu(old.tasks);
+
+        const baoTiepNhan = (list?: ProjectTask[]) => (list || []).forEach(t => {
+          if ((t.subtasks || []).length > 0) { baoTiepNhan(t.subtasks); return; }
+          const truoc = nguoiCu[t.id];
+          const sau = Array.from(new Set(
+            [t.assignedTo, ...(t.assignedStaffIds || [])].filter(Boolean) as string[]
+          ));
+          const laViecMoi = truoc === undefined;
+          const nguoiMoi = sau.filter(id => (laViecMoi || !truoc.includes(id)) && id !== currentUser?.staffId);
+          // Ai vừa giao — nói rõ cấp cho người nhận biết ai đụng vào việc của mình.
+          const aiGiao = currentUser?.role === 'BOOD' ? 'Trưởng phòng'
+            : currentUser?.role === 'MANAGER' ? 'Quản lý' : (currentUser?.name || 'Người phụ trách');
+          if (nguoiMoi.length === 0) return;
+          const han = taskHanText(t, savedProject.ngayHoanThanhDuKienHienTai || savedProject.ngayHoanThanhDuKienGoc);
+          pushNotify(nguoiMoi, laViecMoi
+            ? `📌 ${aiGiao} vừa giao bạn việc mới: "${t.name}" (${label})${han ? ` — hạn ${han}` : ''}.`
+            : `🔄 ${aiGiao} vừa chuyển việc "${t.name}" (${label}) sang cho bạn${han ? ` — hạn ${han}` : ''}.`,
+            savedProject.id);
+        });
+        baoTiepNhan(savedProject.tasks);
+      }
+
     setProjects(updated);
     setShowForm(false);
     setEditingProject(undefined);
@@ -1817,13 +2154,6 @@ export default function App() {
         const target = projects.find(p => p.id === id);
         const updated = projects.filter(p => p.id !== id);
         setProjects(updated);
-        // Xoá NGAY trên cloud, không chờ effect debounce đẩy cả mảng (xem note
-        // deleteDocsFromCollection trong lib/firebase.ts) — tránh bị đẩy trượt
-        // ghi đè lại bản ghi vừa xoá.
-        deleteDocsFromCollection('projects', [id]).catch(err => {
-          console.error('[Firebase] Lỗi xoá hồ sơ trên cloud:', err);
-          triggerToast(`Xoá cục bộ xong nhưng chưa xoá được trên cloud: ${err?.message || 'lỗi kết nối'}. Vui lòng thử lại.`);
-        });
         triggerToast(`Đã xóa hồ sơ: "${name}"`);
         logAction('Xóa hồ sơ thầu', `Xóa vĩnh viễn hồ sơ dự án thầu: "${name}" (ID: ${id})`, undefined, getProjectParticipants(target));
       },
@@ -1847,13 +2177,6 @@ export default function App() {
       onConfirm: () => {
         const removeIds = new Set([parent.id, ...children.map(c => c.id)]);
         setProjects(projects.filter(p => !removeIds.has(p.id)));
-        // Xoá NGAY trên cloud (kể cả gói thầu con) — không chờ effect debounce
-        // đẩy cả mảng, tránh bị đẩy trượt ghi đè lại (xem note trong lib/firebase.ts,
-        // đúng góp ý "xóa dự án còn kẹt 1 gói thầu... xóa xong sẽ quay lại như cũ").
-        deleteDocsFromCollection('projects', [...removeIds]).catch(err => {
-          console.error('[Firebase] Lỗi xoá dự án trên cloud:', err);
-          triggerToast(`Xoá cục bộ xong nhưng chưa xoá được trên cloud: ${err?.message || 'lỗi kết nối'}. Vui lòng thử lại.`);
-        });
         triggerToast(`Đã xóa dự án "${parent.tenDuAn}"${children.length > 0 ? ` cùng ${children.length} công việc con` : ''}.`);
         logAction('Xóa dự án', `Xóa dự án "${parent.tenDuAn}" (${parent.projectId})${children.length > 0 ? ` kèm ${children.length} công việc con` : ''}.`);
       },
@@ -1924,7 +2247,7 @@ export default function App() {
       const m = (p.projectId || '').match(/(20\d{2})/);
       if (m) years.add(m[1]);
     });
-    years.add(String(new Date().getFullYear()));
+    years.add(namHienTaiVN()); // năm hiện tại luôn có trong danh sách, kể cả chưa có hồ sơ nào
     return Array.from(years).sort().reverse();
   }, [projects]);
 
@@ -1935,6 +2258,7 @@ export default function App() {
     }
     setFormMode('ADD_WORK');
     setEditingProject(undefined);
+    setDuAnChonSanChoCVMoi(undefined);   // bấm tay thì KHÔNG chọn sẵn — giữ nguyên cách làm cũ
     setShowForm(true);
   };
 
@@ -1949,12 +2273,15 @@ export default function App() {
   //   Nhân viên chưa được gán quản lý → chỉ Trưởng phòng thấy.
   // - Nhân viên (L3): chỉ xem chính mình.
   const kpiStaff = useMemo(() => {
-    // LOẠI tài khoản Khách - chỉ xem (Level 4) khỏi mọi danh sách nhân sự (chị Trâm chốt 27/07/2026):
-    // khách mời là người ngoài được mời vào theo dõi tiến độ, KHÔNG phải nhân sự Phòng Đấu thầu —
-    // không nhận việc, không có KPI, nên không được đếm vào quân số phòng.
+    // LOẠI tài khoản Ban giám đốc (Level 4) khỏi DANH SÁCH NHÂN SỰ ĐƯỢC ĐẾM (chị Trâm chốt 27/07/2026):
+    // BGĐ không nhận việc, không có KPI, nên không tính vào quân số Phòng Đấu thầu.
+    // ⚠ Đây chỉ là chuyện "được đếm là nhân sự phòng" — từ 18/08/2026 BGĐ VẪN xem và thêm/xoá tài
+    // khoản như Trưởng phòng (xem quanLyDuocNhanSu).
     const nhanSuPhong = activeStaff.filter(s => (s.role || chucVuToRole(s.chucVu)) !== 'VIEWER');
     if (!currentUser) return nhanSuPhong;
-    if (currentUser.role === 'BOOD') return nhanSuPhong;
+    // L1 và L4 (Ban giám đốc) thấy TOÀN BỘ danh sách — xem quanLyDuocNhanSu.
+    // Trước đây L4 rơi vào nhánh dưới nên bị lọc còn 0 người (chị Trâm báo 18/08/2026).
+    if (quanLyDuocNhanSu(currentUser.role)) return nhanSuPhong;
     return nhanSuPhong.filter(s => {
       if (s.id === currentUser.staffId) return true;              // luôn thấy chính mình
       if (currentUser.role !== 'MANAGER') return false;            // L3 chỉ thấy mình
@@ -2061,7 +2388,59 @@ export default function App() {
   // Tách 2 cấp: Dự án cha (DU_AN) và Công việc/gói thầu con (CONG_VIEC).
   // Chỉ công việc con mới lên Kanban / danh sách tiến độ; dự án cha chỉ để đăng ký & làm cha.
   const parentProjects = useMemo(() => rbacProjects.filter(p => p.loaiBanGhi === 'DU_AN'), [rbacProjects]);
+  // ===== THÔNG TIN MẪU CỦA MỖI DỰ ÁN (chị Trâm nhắc 18/08/2026) =====
+  // Hồ sơ DỰ ÁN CHA thường chỉ khai tên + Chủ đầu tư + địa chỉ; còn quốc tịch CĐT, KCN, tỉnh/thành,
+  // loại công trình, hình thức xây dựng, diện tích, hồ sơ phát thầu, hình thức đấu thầu... lại nằm ở
+  // GÓI THẦU CON. Nên khi "lấy thông tin từ dự án cũ" mà chỉ đọc dự án cha thì phần lớn ô vẫn trống.
+  // Ở đây gộp sẵn: lấy dự án cha làm gốc, ô nào trống thì lấy của gói thầu con MỚI NHẤT.
+  // ===== THƯ VIỆN TÊN VIỆC CON (chị Trâm — góp ý #62, 18/08/2026) =====
+  // Đếm lại tên việc con của TẤT CẢ hồ sơ, sắp theo số lần xuất hiện. Truyền xuống bảng phân rã để
+  // khi bấm "Thêm việc con" là xổ danh sách tên thường gặp cho chọn (2 tên đầu thành nút bấm nhanh).
+  const thuVienTenViecCon = useMemo(() => dungThuVienTenViecCon(projects), [projects]);
+
+  const mauThongTinTheoDuAn = useMemo(() => {
+    const out: Record<string, Partial<Project>> = {};
+    parentProjects.forEach(cha => {
+      const con = projects
+        .filter(p => p.duAnChaId === cha.id && p.loaiBanGhi !== 'DU_AN')
+        .sort((a, b) => (b.ngayBatDau || '').localeCompare(a.ngayBatDau || ''))[0];
+      if (!con) return;
+      const gop: Partial<Project> = {};
+      const lay = <K extends keyof Project>(k: K) => {
+        const vCha = cha[k];
+        const coGiaTri = vCha !== undefined && vCha !== null && vCha !== '' && vCha !== 0;
+        if (!coGiaTri && con[k] !== undefined) gop[k] = con[k];
+      };
+      ([
+        'chuDauTu', 'diaChi', 'quocTich', 'khuCongNghiep', 'tinhThanh', 'loaiCongTrinh',
+        'hinhThucXayDung', 'giaiDoanDuAn', 'dienTichDat', 'mucUuTien', 'hoSoPhatThau',
+        'hinhThucDauThau', 'tinhTrangDuAn', 'moTa', 'quanLyId', 'quanLyIdsPhu',
+      ] as (keyof Project)[]).forEach(lay);
+      out[cha.id] = gop;
+    });
+    return out;
+  }, [parentProjects, projects]);
   const workItems = useMemo(() => rbacProjects.filter(p => p.loaiBanGhi !== 'DU_AN'), [rbacProjects]);
+  // ===== DANH SÁCH NĂM CHO BẢNG THỐNG KÊ (chị Trâm chốt 18/08/2026) =====
+  // "Cho luôn cái xổ xuống để năm nào chọn năm đó; năm nay 2026, qua năm sau phải có 2027."
+  // Danh sách = 2026 → ĐÚNG NĂM HIỆN TẠI, KHÔNG cộng thêm năm sau (chị Trâm nhắc 18/08/2026:
+  // "chưa tới 2027 mà sao lại hiện rồi"). Sang 01/01/2027 thì 2027 tự có, không phải sửa code.
+  // Cộng thêm mọi năm đang có trong dữ liệu để hồ sơ cũ (hoặc hồ sơ đã lên lịch sang năm) vẫn xuất được.
+  const dsNamISO = useMemo(() => {
+    const nay = parseInt(namHienTaiVN(), 10);
+    const nam = new Set<number>();
+    for (let n = 2026; n <= nay; n++) nam.add(n);
+    workItems.forEach(p => {
+      const tuNgay = parseInt((p.ngayBatDau || '').slice(0, 4), 10);
+      if (Number.isFinite(tuNgay) && tuNgay >= 2000 && tuNgay <= 2100) nam.add(tuNgay);
+      (p.guiCDTLogs || []).forEach(g => {
+        const y = parseInt((g.ngay || '').slice(0, 4), 10);
+        if (Number.isFinite(y) && y >= 2000 && y <= 2100) nam.add(y);
+      });
+    });
+    return [...nam].sort((a, b) => b - a);
+  }, [workItems]);
+
   // Một CÔNG VIỆC coi là ĐÃ XONG khi hoàn thành đúng/trễ hạn hoặc đã có kết quả trúng/rớt.
   const isWorkDone = (p: Project) =>
     p.trangThai === 'HOAN_THANH_DUNG_HAN' || p.trangThai === 'HOAN_THANH_TRE_HAN' ||
@@ -2076,10 +2455,18 @@ export default function App() {
     projStatusFilter === 'ALL' ? list : list.filter(x => (projStatusFilter === 'DONE' ? doneOf(x) : !doneOf(x)));
   // Công việc CHỜ TRƯỞNG PHÒNG DUYỆT: bộ phận đã làm xong (100%) nhưng Phòng chưa chốt (<100%),
   // và chưa có kết quả cuối (chưa trúng/rớt). Hiển thị trên chuông để TP vào nhập tiến độ Phòng.
+  //
+  // ===== PHẢI ĐÃ SANG BƯỚC 3 MỚI GỌI TP DUYỆT (chị Trâm báo 17/08/2026 — góp ý #23) =====
+  // "Xong việc con nhưng Quản lý chưa kéo hồ sơ từ Bước 2 sang Bước 3 thì TP chưa được nhận thông
+  //  báo phê duyệt." Trước đây chỉ xét tiến độ Bộ phận = 100%, nên hồ sơ còn đứng ở Bước 2 (Quản lý
+  // chưa trình, chưa đính kèm ảnh báo cáo đã gửi báo giá) đã nhảy vào chuông của Trưởng phòng —
+  // TP duyệt sớm là bỏ qua đúng cái cửa mà quy trình đặt ra. Nay bắt buộc thẻ đã ở Bước 3 trở lên:
+  // hành động TRÌNH của Quản lý mới là thứ gọi Trưởng phòng vào việc, không phải con số 100%.
   const tpPendingItems = useMemo(() => workItems.filter(p =>
     (p.tienDoBoPhan || 0) >= 100 &&
     (p.tienDoPhong || 0) < 100 &&
     (p.soNgayDuKien || 0) > 0 &&
+    deriveKanbanStep(p) >= KANBAN_L1_ONLY_FROM &&
     p.tinhTrangDuAn !== 'Đã trúng thầu' && p.tinhTrangDuAn !== 'Rớt thầu'
   ), [workItems]);
   // Công việc CHỜ TP DUYỆT: Quản lý vừa tạo (tpDaDuyet=false) hoặc chưa có thời hạn.
@@ -2323,8 +2710,32 @@ export default function App() {
     const p = projects.find(x => x.id === projId);
     if (p) setProjStatusFilter(isWorkDone(p) ? 'DONE' : 'ACTIVE');
     setActiveTab('PROJECTS');
+    // ĐANG MỞ FORM SỬA thì phải đóng, nếu không form che kín danh sách và người dùng tưởng
+    // bấm thông báo không có tác dụng gì (chị Trâm báo 17/08/2026 — góp ý #1).
+    setShowForm(false);
     setExpandedProjectId(projId);
+    // Ghi nhớ hồ sơ cần cuộn tới. Không cuộn ngay tại đây được vì hàng của hồ sơ mới CHƯA render
+    // (bộ lọc trạng thái vừa đổi) — để effect bên dưới cuộn sau khi danh sách đã dựng lại.
+    hoSoCanCuonToi.current = projId;
   };
+
+  // ===== CUỘN TỚI HỒ SƠ VỪA MỞ TỪ CHUÔNG / KANBAN / DASHBOARD =====
+  // Chị Trâm báo 17/08/2026 (góp ý #1): "bấm vào tin thứ 1 xem xong, bấm qua tin thứ 2 thì không
+  // tự chuyển phân rã, vẫn còn kẹt ở màn hình dự án 1".
+  // Nguyên nhân: expandedProjectId ĐÃ đổi đúng sang hồ sơ 2, nhưng trang không tự cuộn nên mắt
+  // vẫn đang ở vùng của hồ sơ 1 — trông y như không có gì xảy ra.
+  const hoSoCanCuonToi = useRef<string | null>(null);
+  useEffect(() => {
+    const projId = hoSoCanCuonToi.current;
+    if (!projId || activeTab !== 'PROJECTS' || showForm) return;
+    hoSoCanCuonToi.current = null;
+    // Chờ 1 nhịp cho danh sách render xong hàng của hồ sơ mới rồi mới cuộn.
+    const hen = setTimeout(() => {
+      const hang = document.getElementById(`hang-ho-so-${projId}`);
+      hang?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 0);
+    return () => clearTimeout(hen);
+  }, [activeTab, showForm, expandedProjectId, projStatusFilter]);
 
   // Tìm task theo id trong cây công việc (phục vụ kiểm tra điều kiện hoàn thành)
   const findTaskInTree = (list: ProjectTask[], taskId: string): ProjectTask | undefined => {
@@ -2419,14 +2830,47 @@ export default function App() {
   };
 
   const handleUpdateTasks = (projId: string, updatedTasks: ProjectTask[]) => {
-    // Kế hoạch chưa được Trưởng phòng duyệt: chặn mọi cập nhật việc con từ panel tác vụ cá nhân
-    // (chị Trâm chốt 27/07/2026). Nút đã khóa sẵn bên MyTasksPanel — đây là chốt chặn cuối cùng
-    // để không lọt qua đường khác. Việc SỬA KẾ HOẠCH của Quản lý/TP đi qua form hồ sơ, không qua đây.
+    // ===== HỒ SƠ ĐANG CHỜ TRƯỞNG PHÒNG DUYỆT =====
+    // Chị Trâm chốt 17/08/2026 (góp ý #2 — "Quản lý lỡ bấm Lưu dự án thì không thấy và không sửa
+    // được những gì mình vừa tạo"):
+    //   · Quản lý phụ trách hồ sơ VẪN ĐƯỢC xem + SỬA KẾ HOẠCH việc con của chính mình
+    //     (tên việc, tỉ trọng, người giao, ngày bắt đầu, số ngày, kế hoạch chi tiết, thêm/bớt việc).
+    //   · Nhưng KHÔNG được CẬP NHẬT TIẾN ĐỘ (%, đánh dấu hoàn thành, nhập kết quả) — vì TP còn
+    //     có thể duyệt lại đổi người/đổi hạn/đổi tỉ trọng, làm sớm là công cốc.
+    //
+    // TRƯỚC ĐÂY chặn SẠCH mọi cập nhật, nên Quản lý bị kẹt luôn cả việc sửa kế hoạch của mình.
     // Trưởng phòng KHÔNG bị khóa này — chính họ là người duyệt.
     const hoSoDangSua = projects.find(p => p.id === projId);
     if (hoSoDangSua && hoSoChoTPDuyet(hoSoDangSua) && currentUser?.role !== 'BOOD') {
-      triggerToast('⏳ Kế hoạch đang chờ Trưởng phòng duyệt — chưa cập nhật công việc con được. Duyệt xong bạn sẽ nhận thông báo.');
-      return;
+      // Gom cây việc con thành map theo id để so từng việc trước/sau.
+      const trai = (list: ProjectTask[], out: Record<string, ProjectTask> = {}) => {
+        list.forEach(t => { out[t.id] = t; if (t.subtasks?.length) trai(t.subtasks, out); });
+        return out;
+      };
+      const truoc = trai(hoSoDangSua.tasks || []);
+      const sau = trai(updatedTasks);
+      // Các trường thuộc TIẾN ĐỘ / KẾT QUẢ — sửa mấy trường này thì vẫn bị chặn.
+      const truongTienDo: (keyof ProjectTask)[] = [
+        'isCompleted', 'completedAt', 'staffProgress', 'managerProgress',
+        'ketQuaCongViec', 'taiLieuDinhKem', 'kpi', 'overdueReason',
+      ];
+      const doiTienDo = Object.keys(sau).some(id => {
+        const a = truoc[id], b = sau[id];
+        if (!a) return false; // việc MỚI thêm là sửa kế hoạch, không phải cập nhật tiến độ
+        return truongTienDo.some(k => (a[k] ?? null) !== (b[k] ?? null));
+      });
+      // Chỉ Quản lý ĐANG PHỤ TRÁCH hồ sơ mới được sửa kế hoạch của hồ sơ đó.
+      const laQuanLyHoSoNay = currentUser?.role === 'MANAGER'
+        && isProjectManager(hoSoDangSua, currentUser.staffId);
+
+      if (doiTienDo) {
+        triggerToast('⏳ Kế hoạch đang chờ Trưởng phòng duyệt — chưa cập nhật TIẾN ĐỘ được. Duyệt xong bạn sẽ nhận thông báo. (Vẫn sửa được kế hoạch việc con.)');
+        return;
+      }
+      if (!laQuanLyHoSoNay) {
+        triggerToast('⏳ Kế hoạch đang chờ Trưởng phòng duyệt — chỉ Quản lý phụ trách hồ sơ này mới sửa được kế hoạch lúc này.');
+        return;
+      }
     }
     // Tổng hợp lại NGƯỜI THỰC HIỆN từ người được giao các việc con — đổi người trong kế hoạch
     // là nhân sự mới thấy được công việc ngay (RBAC lọc theo thucHienId/thucHienIds)
@@ -2545,15 +2989,67 @@ export default function App() {
     // Chặn cả Trưởng phòng: nếu TP kéo tay thì cờ chờ-duyệt vẫn còn, hồ sơ sang Bước 2 mà nhân viên
     // vẫn bị khoá việc con — mâu thuẫn. TP muốn duyệt thì mở hồ sơ bấm "Lưu Hồ Sơ".
     if (toStep > fromStep && hoSoChoTPDuyet(target)) {
-      triggerToast(currentUser.role === 'BOOD'
-        ? 'Hồ sơ đang chờ duyệt kế hoạch. Mở hồ sơ và bấm "Lưu Hồ Sơ" để duyệt — hồ sơ sẽ tự sang Bước 2.'
-        : 'Hồ sơ đang chờ Trưởng phòng duyệt kế hoạch. Vui lòng phân bổ lại công việc con rồi trình duyệt; duyệt xong hồ sơ tự sang Bước 2.');
+      // ===== TP KÉO THẺ LÀ TỰ MỞ HỒ SƠ RA SOÁT (chị Trâm chốt 18/08/2026) =====
+      // "Thay vì bấm lưu hồ sơ, Trâm có thể kéo bước 1 qua bước 2; trước khi hiện qua bước 2 thì hiện
+      //  bảng box lên cho xem lại, điền đầy đủ xong bấm lưu hoặc xác nhận là xong" ·
+      // "Chứ đừng khóa cứng là bấm chạy qua báo cáo tiến độ rồi mới đc qua bước 2 nhé em".
+      //
+      // Trước đây chỉ hiện một câu nhắc rồi chặn, Trưởng phòng phải tự đi sang tab Báo Cáo Tiến Độ,
+      // tìm lại hồ sơ, bấm ✏️ — thao tác vòng vo. Nay kéo thẻ là MỞ LUÔN form hồ sơ đó để soát;
+      // bấm "Lưu Hồ Sơ" là cờ chờ-duyệt được xoá và hồ sơ TỰ sang Bước 2 (xem reapprovedNow trong
+      // handleSaveProject) — không cần kéo lại thẻ.
+      //
+      // Vẫn KHÔNG cho kéo tay qua bước 2 mà bỏ qua bước soát: nếu chỉ đổi bước mà cờ chờ-duyệt còn
+      // nguyên thì nhân viên vẫn bị khoá việc con, hồ sơ sang bước 2 nhưng không ai làm được gì.
+      if (currentUser.role === 'BOOD') {
+        setFormMode('EDIT_ALL');
+        setEditingProject(target);
+        setShowForm(true);
+        triggerToast('Mở hồ sơ để Trưởng phòng soát lại kế hoạch — soát xong bấm "Lưu Hồ Sơ" là hồ sơ tự sang Bước 2.');
+        return;
+      }
+      triggerToast('Hồ sơ đang chờ Trưởng phòng duyệt kế hoạch. Vui lòng phân bổ lại công việc con rồi trình duyệt; duyệt xong hồ sơ tự sang Bước 2.');
+      return;
+    }
+
+    // ===== QUẢN LÝ KÉO BƯỚC 2 → 3: KHÔNG CHẶN CỨNG, MỞ HỒ SƠ CHO SỬA (góp ý #75) =====
+    // Chị Trâm chốt 18/08/2026: "cái này nới lỏng cho quản lý level 2 ... mà lúc đó cv con cấp 1 còn
+    // kẹt là do quản lý hoặc nhân sự thực hiện, thì mở trường dự án lên cho quản lý + thông báo cần
+    // hoàn thành cv con + chụp ảnh màn hình đã báo cáo."
+    //
+    // Trước đây gặp 2 cửa chặn liên tiếp (tiến độ Bộ phận 100% và ảnh báo cáo đã gửi báo giá) — mỗi
+    // cửa chỉ hiện một câu nhắc rồi dừng, Quản lý phải tự mò xem thiếu gì và đi tìm đúng chỗ để sửa.
+    // Nay kéo thẻ là mở luôn form hồ sơ, nói rõ thiếu cái gì; cập nhật đủ rồi bấm "Lưu Hồ Sơ" là hồ
+    // sơ tự sang Bước 3 (xem nhánh choQuaBuoc3 trong handleSaveProject) — vẫn phải đủ điều kiện,
+    // chỉ là không bắt kéo lại thẻ và không bắt đi tìm.
+    // ÁP CHO CẢ TRƯỞNG PHÒNG (L1) — chị Trâm báo 18/08/2026: "sao quản lý nắm từ b2 qua b3 còn bị kẹt
+    // thông báo mà ko tự chuyển đi qua trường cập nhật kqua và hình ảnh e" (lúc đó chị đang đăng nhập
+    // Level 1). Bản đầu em chỉ nới cho MANAGER nên L1 vẫn gặp câu chặn cứng — vô lý vì L1 quyền cao
+    // hơn. Nay cả L1 và L2 kéo 2 → 3 mà còn thiếu đều được mở form để cập nhật cho xong.
+    const thieuAnhBaoCao = !(target.anhBaoCaoGuiBaoGia || '').trim();
+    if (
+      (currentUser.role === 'MANAGER' || currentUser.role === 'BOOD') && fromStep === 2 && toStep === 3 &&
+      ((target.tienDoBoPhan || 0) < 100 || (ANH_BAO_CAO_BAT_BUOC && thieuAnhBaoCao))
+    ) {
+      const thieu: string[] = [];
+      if ((target.tienDoBoPhan || 0) < 100) {
+        thieu.push(`tiến độ công việc con mới ${target.tienDoBoPhan || 0}% (cần đủ 100%)`);
+      }
+      if (ANH_BAO_CAO_BAT_BUOC && thieuAnhBaoCao) {
+        thieu.push('chưa có ảnh báo cáo đã gửi báo giá');
+      }
+      setChoQuaBuoc3(target.id);
+      setFormMode('EDIT_ALL');
+      setEditingProject(target);
+      setShowForm(true);
+      triggerToast(`Còn thiếu: ${thieu.join(' · ')}. Cập nhật xong bấm "Lưu Hồ Sơ" là hồ sơ tự sang Bước 3.`);
       return;
     }
 
     // ===== CHỐT CỬA TIẾN ĐỘ BỘ PHẬN =====
     // Rời bước 2 để trình Phòng duyệt thì công việc con phải xong 100% (xem hằng số ở đầu file).
     // Chặn cả Quản lý lẫn Trưởng phòng — không ai kéo tay qua được.
+    // (Quản lý kéo 2 → 3 đã được nhánh nới cửa ở trên xử lý trước, không rơi xuống đây.)
     if (
       toStep === fromStep + 1 &&
       CHOT_TIEN_DO_BO_PHAN_KHI_ROI_BUOC.includes(fromStep) &&
@@ -2562,6 +3058,20 @@ export default function App() {
       const tenBuocToi = KANBAN_STEPS.find(s => s.id === toStep)?.title || `Bước ${toStep}`;
       triggerToast(`Không thể chuyển sang bước ${toStep} (${tenBuocToi}): tiến độ Bộ phận hiện đạt ${target.tienDoBoPhan || 0}%. Cần hoàn thành 100% công việc con trước khi trình Phòng duyệt.`);
       return;
+    }
+
+    // ===== CỬA ẢNH BÁO CÁO ĐÃ GỬI BÁO GIÁ: BƯỚC 2 → BƯỚC 3 (chị Trâm — góp ý #12) =====
+    // "Khi Quản lý kéo từ Bước 2 qua Bước 3, yêu cầu nhập hình ảnh báo cáo đã gửi báo giá mới cho qua."
+    // Chặn cả Quản lý lẫn Trưởng phòng — cửa của quy trình, không phải nhắc nhở. Chưa có ảnh thì mở
+    // luôn hộp đính kèm và NHỚ hồ sơ đang chờ: lưu ảnh xong hệ thống tự đưa thẻ sang Bước 3.
+    if (fromStep === 2 && toStep === 3 && thieuAnhBaoCao) {
+      if (ANH_BAO_CAO_BAT_BUOC) {
+        setAnhBaoCaoProject(target);
+        triggerToast('Cần đính kèm ẢNH BÁO CÁO ĐÃ GỬI BÁO GIÁ trước khi trình Phòng duyệt (Bước 3).');
+        return;
+      }
+      // CHỈ NHẮC (xem ANH_BAO_CAO_BAT_BUOC): cho thẻ đi tiếp, không bắt đính kèm mới cho qua.
+      triggerToast('Đã chuyển sang Bước 3. NHẮC: hồ sơ này chưa có ảnh báo cáo đã gửi báo giá — bổ sung trong hồ sơ khi có.');
     }
 
     // ===== CHỐT CỬA TIẾN ĐỘ PHÒNG (quy trình công ty) =====
@@ -2587,7 +3097,7 @@ export default function App() {
     // XÁC NHẬN trước khi ghi nhận 1 lần gửi CĐT — tránh TP lỡ tay kéo qua kéo lại làm số lần
     // gửi tăng sai. Chỉ hỏi khi thực sự đi 4 → 5 (đường sinh ra bản ghi gửi CĐT).
     if (toStep === 5 && fromStep === 4 && !daXacNhanGuiCDT) {
-      setGuiCDTConfirm({ project: target, lan: (target.guiCDTLogs?.length || 0) + 1 });
+      setGuiCDTConfirm({ project: target, lan: lanGuiKeTiep(target) });
       return;
     }
 
@@ -2626,7 +3136,7 @@ export default function App() {
           taiLieuKetQuaPhong: p.taiLieuKetQuaPhong,
           nguoiGui: currentUser?.name || '',
         }];
-        step5AutoMsg += ` Đã ghi nhận GỬI CĐT LẦN ${lanGuiCDT}.`;
+        step5AutoMsg += ` Đã ghi nhận GỬI CĐT LẦN ${soLanGuiTruocApp(p) + lanGuiCDT}.`;
       } else if (fromStep >= 5 && toStep < 5) {
         // Kéo lùi về trước bước 5: hồ sơ coi như chưa gửi → bỏ mốc tự chốt, trở lại đang thực hiện
         dongGoi = { ngayHoanThanhThucTe: undefined, trangThai: 'DANG_THUC_HIEN' };
@@ -2960,6 +3470,7 @@ export default function App() {
     delayLogs: Array.isArray(p?.delayLogs) ? p.delayLogs : [],
     comments: Array.isArray(p?.comments) ? p.comments : [],
     guiCDTLogs: Array.isArray(p?.guiCDTLogs) ? p.guiCDTLogs : [],
+    soLanGuiCDTTruocApp: Number.isFinite(Number(p?.soLanGuiCDTTruocApp)) ? Number(p.soLanGuiCDTTruocApp) : undefined,
     cdtDieuChinh: Array.isArray(p?.cdtDieuChinh) ? p.cdtDieuChinh : [],
     quanLyIdsPhu: Array.isArray(p?.quanLyIdsPhu) ? p.quanLyIdsPhu : [],
     thucHienIds: Array.isArray(p?.thucHienIds) ? p.thucHienIds : [],
@@ -3023,6 +3534,35 @@ export default function App() {
   };
 
   // Export to Excel (chronological by Project_ID, with strict RBAC limits to prevent data leaks)
+  // ===== XUẤT BẢNG THỐNG KÊ DỰ ÁN ĐẤU THẦU (hồ sơ ISO) — chị Trâm, góp ý #13 =====
+  // Đúng mẫu sheet 3 của file mục tiêu ISO: 3 tầng tiêu đề, mỗi tháng của kỳ 6 cột con, nhóm
+  // "Phân tích thầu", dòng TỔNG HỢP. Chi tiết cách dựng ở utils/bangThongKeISO.ts.
+  // Phạm vi: TOÀN BỘ hồ sơ trong quyền xem của người xuất (không theo bộ lọc đang bật trên màn hình,
+  // vì đây là hồ sơ ISO của cả kỳ — lọc màn hình chỉ để xem nhanh).
+  const handleXuatBangThongKeISO = () => {
+    const ky = kyISO;
+    const nam = parseInt(namISO, 10) || Number(namHienTaiVN());
+    const { html, soHoSo, soDong } = dungBangThongKeISO(workItems, ky, nam, currentUser?.name);
+    if (soHoSo === 0) {
+      triggerToast('Không có hồ sơ nào vào bảng thống kê (đã loại hạng mục Cải tạo / Báo giá phát sinh).');
+      return;
+    }
+    // Tải về dạng HTML-Excel để GIỮ ĐƯỢC ĐỊNH DẠNG (viền, nền tiêu đề, gộp ô, Times New Roman) —
+    // cùng cách với "Xuất Excel" và "Báo cáo Chiến lược" của app. Xem ghi chú ở utils/bangThongKeISO.ts.
+    const blob = new Blob(['﻿', html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = tenTepBangISO(ky, nam);
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    triggerToast(`Đã xuất bảng thống kê dự án — Kỳ ${ky}/${nam}: ${soHoSo} hồ sơ, ${soDong} dòng.`);
+    logAction('Xuất bảng thống kê dự án',
+      `Bảng thống kê dự án đấu thầu Kỳ ${ky} năm ${nam} (${soHoSo} hồ sơ, ${soDong} dòng) — loại hạng mục Cải tạo / Báo giá phát sinh`);
+  };
+
   const handleExportExcel = () => {
     const exportData = [...filteredProjects];
     // Sort chronologically by Project_ID
@@ -3061,7 +3601,7 @@ export default function App() {
           <tr><td class="k">Hệ thống phần mềm</td><td class="v">HP Cons BPM ERP Enterprise v1.5</td></tr>
           <tr><td class="k">Ngày giờ trích xuất</td><td class="v">${fmtDateTimeVN(new Date())} (Giờ địa phương GMT+7)</td></tr>
           <tr><td class="k">Nhân sự xuất báo cáo</td><td class="v">${currentUser?.name || 'Hệ thống'}</td></tr>
-          <tr><td class="k">Phân quyền bảo mật</td><td class="v">Level ${currentUser?.role === 'BOOD' ? '1 (Trưởng phòng)' : currentUser?.role === 'MANAGER' ? '2 (Quản lý)' : currentUser?.role === 'VIEWER' ? '4 (Khách - chỉ xem)' : '3 (Chuyên viên Chuyên môn)'}</td></tr>
+          <tr><td class="k">Phân quyền bảo mật</td><td class="v">Level ${currentUser?.role === 'BOOD' ? '1 (Trưởng phòng / Phó phòng)' : currentUser?.role === 'MANAGER' ? '2 (Quản lý)' : currentUser?.role === 'VIEWER' ? '4 (Ban giám đốc - chỉ xem)' : '3 (Nhân viên)'}</td></tr>
           <tr><td class="k">Kiểm soát dữ liệu</td><td class="v" style="white-space: normal;">Tự động che dấu / thu gọn thông số phòng duyệt nhạy cảm theo quyền tài khoản đang đăng nhập.</td></tr>
         </table>
         <table>
@@ -3182,185 +3722,6 @@ export default function App() {
     logAction('Xuất báo cáo Excel', `Trích xuất dữ liệu thầu ra tệp Excel (${exportData.length} dự án thầu, phân quyền: ${currentUser?.role})`);
   };
 
-  // Export to Strategic Goals Report (Mẫu số 1 / Template 1 chuẩn Phòng Đấu thầu)
-  const handleExportStrategicReport = () => {
-    const exportData = [...filteredProjects];
-    exportData.sort((a, b) => a.projectId.localeCompare(b.projectId));
-
-    let html = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-      <head>
-        <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
-        <!--[if gte mso 9]>
-        <xml>
-          <x:ExcelWorkbook>
-            <x:ExcelWorksheets>
-              <x:ExcelWorksheet>
-                <x:Name>Strategic Goals Report</x:Name>
-                <x:WorksheetOptions>
-                  <x:DisplayGridlines/>
-                </x:WorksheetOptions>
-              </x:ExcelWorksheet>
-            </x:ExcelWorksheets>
-          </x:ExcelWorkbook>
-        </xml>
-        <![endif]-->
-        <style>
-          /* Arial cho toàn bộ file kết xuất (chị Trâm chốt 29/07/2026) */
-          body, table, td, th, div { font-family: Arial, Helvetica, sans-serif; }
-          body { margin: 20px; color: #1e293b; }
-          table { border-collapse: collapse; width: 100%; border: 2px solid #0f172a; }
-          th { background-color: #0f172a; color: #ffffff; font-weight: bold; border: 1px solid #475569; padding: 10px 6px; text-align: center; font-size: 11px; }
-          td { border: 1px solid #94a3b8; padding: 8px 6px; font-size: 11px; vertical-align: middle; }
-          .title-primary { font-size: 18px; font-weight: bold; color: #1e3a8a; text-align: center; padding: 15px 0 2px 0; text-transform: uppercase; }
-          .title-secondary { font-size: 12px; font-weight: bold; color: #475569; text-align: center; padding-bottom: 15px; }
-          .bold-text { font-weight: bold; color: #000000; }
-          .numeric { text-align: right; font-weight: bold; }
-          .center-text { text-align: center; }
-          .badge-completed { background-color: #d1fae5; color: #065f46; font-weight: bold; text-align: center; }
-          .badge-pending { background-color: #fef3c7; color: #92400e; font-weight: bold; text-align: center; }
-          .total-row { background-color: #f1f5f9; font-weight: bold; border-top: 2px solid #0f172a; border-bottom: 2px solid #0f172a; }
-          .header-meta { font-size: 11px; font-weight: bold; margin-bottom: 10px; }
-          /* Khối đầu trang dùng CHUNG một kiểu với các báo cáo khác (chị Trâm chốt 29/07/2026):
-             ô nhãn đậm nền xám nhạt, viền mảnh, mỗi mục nằm gọn một ô — không bọc chữ lung tung. */
-          .meta { width: 100%; font-size: 11px; margin-bottom: 15px; border: none; }
-          .meta td { border: 1px solid #e2e8f0; padding: 6px 10px; background-color: #f8fafc; vertical-align: middle; white-space: nowrap; font-size: 11px; }
-          .meta .k { font-weight: bold; color: #334155; }
-          .meta .v { color: #475569; font-weight: normal; }
-        </style>
-      </head>
-      <body>
-        <div class="title-primary">BẢNG THỐNG KÊ DỰ ÁN ĐẤU THẦU PHỤC VỤ BÁO CÁO MỤC TIÊU CHIẾN LƯỢC</div>
-        <div class="title-secondary">PHÒNG ĐẤU THẦU HP CONS &bull; TIỂU CHUẨN THỐNG KÊ QUY MÔ DỰ ÁN NĂM 2026</div>
-
-        <table class="meta">
-          <tr>
-            <td class="k">Người xem xét</td><td class="v">Hồ Hữu Phương (Phó TGĐ Kinh tế dự án)</td>
-            <td class="k">Người phụ trách</td><td class="v">Ngô Nữ Quỳnh Trâm (Trưởng phòng)</td>
-          </tr>
-          <tr>
-            <td class="k">Người lập báo cáo</td><td class="v">Phan Thành Quốc / Bùi Khắc Huy</td>
-            <td class="k">Ngày lập</td><td class="v">${fmtDateVN(new Date())}</td>
-          </tr>
-          <tr>
-            <td class="k">Kỳ báo cáo</td><td class="v">Toàn bộ mục tiêu năm 2026</td>
-            <td class="k">Bộ phận ứng dụng</td><td class="v">Đấu thầu thầu phụ &amp; Khối lượng BOQ</td>
-          </tr>
-        </table>
-
-        <table>
-          <thead>
-            <tr>
-              <th rowspan="2" style="width: 4%; background-color: #1e3a8a; color: #ffffff;">STT</th>
-              <th rowspan="2" style="width: 18%; background-color: #1e3a8a; color: #ffffff;">Tên Dự Án / Gói Thầu</th>
-              <th rowspan="2" style="width: 12%; background-color: #1e3a8a; color: #ffffff;">Chủ Đầu Tư</th>
-              <th rowspan="2" style="width: 8%; background-color: #1e3a8a; color: #ffffff;">Mã Dự Án</th>
-              <th rowspan="2" style="width: 8%; background-color: #1e3a8a; color: #ffffff;">Phân Rã Công Việc</th>
-              <th rowspan="2" style="width: 10%; background-color: #1e3a8a; color: #ffffff;">Hình Thức Báo Giá</th>
-              <th rowspan="2" style="width: 10%; background-color: #1e3a8a; color: #ffffff;">Hình Thức Đấu Thầu</th>
-              <th rowspan="2" style="width: 8%; background-color: #1e3a8a; color: #ffffff;">Hạn Thầu BLĐ</th>
-              <th rowspan="2" style="width: 8%; background-color: #1e3a8a; color: #ffffff;">Tiến Độ Thực Tế</th>
-              <th rowspan="2" style="width: 10%; background-color: #1e3a8a; color: #ffffff;">Giá Trị Báo Giá (KHĐ gần nhất)</th>
-              <th colspan="3" style="background-color: #1e3a8a; color: #ffffff;">Hồ Sơ Mời Thầu Thiết Kế Bởi</th>
-              <th rowspan="2" style="width: 10%; background-color: #1e3a8a; color: #ffffff;">Vị Trí Công Trình</th>
-              <th rowspan="2" style="width: 10%; background-color: #1e3a8a; color: #ffffff;">Tình Trạng Dự Án</th>
-            </tr>
-            <tr>
-              <th style="width: 6%; background-color: #1e3a8a; color: #ffffff;">HP Thiết Kế</th>
-              <th style="width: 6%; background-color: #1e3a8a; color: #ffffff;">CĐT Phát Thầu</th>
-              <th style="width: 6%; background-color: #1e3a8a; color: #ffffff;">Đơn Vị Khác</th>
-            </tr>
-          </thead>
-          <tbody>
-    `;
-
-    let countTrungThau = 0;
-    let countChoKq = 0;
-    let countRotThau = 0;
-
-    exportData.forEach((p, idx) => {
-      // Status counters
-      if (p.tinhTrangDuAn === 'Đã trúng thầu') countTrungThau++;
-      else if (p.tinhTrangDuAn === 'Rớt thầu') countRotThau++;
-      else countChoKq++;
-
-      const isStaff = currentUser?.role === 'STAFF';
-      const bpText = isStaff ? 'Bảo mật' : `${p.tienDoBoPhan}%`;
-      const pText = isStaff ? 'Bảo mật' : `${p.tienDoPhong}%`;
-
-      let actualProgressText = '';
-      if (p.ngayHoanThanhThucTe) {
-        actualProgressText = `H.Thành: ${fmtDateVN(p.ngayHoanThanhThucTe)}`;
-      } else {
-        actualProgressText = `Bộ phận: ${bpText} | Phòng: ${pText}`;
-      }
-
-      // Nguồn thiết kế hồ sơ mời thầu — 3 lựa chọn tách riêng
-      const isHpDesign = p.hoSoPhatThau === 'HP thiết kế';
-      const isCdtDesign = p.hoSoPhatThau === 'CĐT phát thầu';
-      const isOtherDesign = p.hoSoPhatThau === 'Đơn vị khác thiết kế';
-
-      // Check task breakdown sync state (checkmark if tasks are present)
-      const isSynced = p.tasks && p.tasks.length > 0;
-
-      html += `
-        <tr>
-          <td class="center-text">${idx + 1}</td>
-          <td class="bold-text">${p.tenDuAn}</td>
-          <td>${p.chuDauTu || 'Chưa cập nhật'}</td>
-          <td class="center-text">${p.projectId}</td>
-          <td class="center-text ${isSynced ? 'badge-completed' : 'badge-pending'}">${isSynced ? '✔ Đã phân rã' : '✘ Chưa đồng bộ'}</td>
-          <td class="center-text">${p.hangMuc}</td>
-          <td class="center-text">${p.hinhThucDauThau || 'Đấu thầu cạnh tranh'}</td>
-          <td class="center-text">${fmtDateVN(p.ngayHoanThanhDuKienGoc)}</td>
-          <td>${actualProgressText}</td>
-          <td class="numeric">${p.giaTriBaoGia ? p.giaTriBaoGia.toLocaleString('vi-VN') + ' đ' : ''}</td>
-          <td class="center-text" style="font-size: 14px; font-weight: bold; color: green;">${isHpDesign ? '✔' : ''}</td>
-          <td class="center-text" style="font-size: 14px; font-weight: bold; color: #475569;">${isCdtDesign ? '✔' : ''}</td>
-          <td class="center-text" style="font-size: 14px; font-weight: bold; color: #b45309;">${isOtherDesign ? '✔' : ''}</td>
-          <td>${p.diaChi || 'Chưa cập nhật'}</td>
-          <td class="bold-text center-text" style="color: ${p.tinhTrangDuAn === 'Đã trúng thầu' ? '#16a34a' : p.tinhTrangDuAn === 'Rớt thầu' ? '#dc2626' : '#2563eb'}">${p.tinhTrangDuAn || 'Đang triển khai'}</td>
-        </tr>
-      `;
-    });
-
-    // Summary row
-    html += `
-        <tr class="total-row">
-          <td colspan="6" style="text-align: right; padding-right: 15px;">TỔNG CỘNG THỐNG KÊ / CHỈ TIÊU CHIẾN LƯỢC:</td>
-          <td colspan="7"></td>
-          <td colspan="2" style="font-size: 10px; font-weight: bold; color: #1e3a8a;">
-            Trúng: ${countTrungThau} | Rớt: ${countRotThau} | Chờ KQ: ${countChoKq}
-          </td>
-        </tr>
-      </tbody>
-    </table>
-
-    <div style="margin-top: 30px; font-size: 11px; width: 100%;">
-      <table style="border: none; width: 100%;">
-        <tr style="border: none;">
-          <td style="border: none; text-align: center; width: 33%; font-weight: bold;">NGƯỜI XEM XÉT THẨM ĐỊNH<br/><span style="font-size: 9px; font-weight: normal; color: #64748b;">(Ký, ghi rõ họ tên)</span><br/><br/><br/><br/>Hồ Hữu Phương</td>
-          <td style="border: none; text-align: center; width: 33%; font-weight: bold;">NGƯỜI PHỤ TRÁCH ĐƠN VỊ<br/><span style="font-size: 9px; font-weight: normal; color: #64748b;">(Ký, ghi rõ họ tên)</span><br/><br/><br/><br/>Ngô Nữ Quỳnh Trâm</td>
-          <td style="border: none; text-align: center; width: 33%; font-weight: bold;">NGƯỜI LẬP BIỂU BÁO CÁO<br/><span style="font-size: 9px; font-weight: normal; color: #64748b;">(Ký, ghi rõ họ tên)</span><br/><br/><br/><br/>Hệ thống BPM v1.5</td>
-        </tr>
-      </table>
-    </div>
-  </body>
-  </html>
-    `;
-
-    const blob = new Blob([html], { type: 'application/vnd.ms-excel' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Bao_Cao_Muc_Tieu_Chien_Luoc_Nam_2026_${new Date().toISOString().split('T')[0]}.xls`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    triggerToast(`Đã xuất báo cáo Mục tiêu chiến lược thành công (${exportData.length} dự án)!`);
-    logAction('Xuất báo cáo Chiến lược', `Trích xuất biểu mẫu báo cáo mục tiêu chiến lược phòng đấu thầu ra Excel (${exportData.length} dự án thầu, phân quyền: ${currentUser?.role})`);
-  };
-
   const getStatusBadge = (status: Project['trangThai']) => {
     // Chấm tròn cùng màu chữ badge (bg-current) — Badge V1.1 §E4
     const dot = <span className="h-1.5 w-1.5 rounded-full bg-current" />;
@@ -3392,7 +3753,9 @@ export default function App() {
       localStorage.setItem('erp_staff', JSON.stringify(st));
       setStaff(st);
     };
-    // 3 hồ sơ NHÁP để nghiệm thu vòng "Xuất Excel → Phục hồi dữ liệu" (chị Trâm yêu cầu 28/07/2026).
+    // 9 hồ sơ NHÁP đi HẾT 7 bước quy trình (chị Trâm chốt 17/08/2026 — bộ 3 hồ sơ cũ "rất nháp,
+    // không có logic": cả 3 đều nằm đầu quy trình nên Kanban gần như trống, không thử được luồng).
+    // Nội dung từng trạng thái xem `duAnNhap()` trong src/data/sandboxData.ts.
     // Thêm vào danh sách đang có, KHÔNG ghi đè hồ sơ thật đang thử dở.
     const napDuAnNhap = () => {
       const nhap = duAnNhap();
@@ -3411,11 +3774,12 @@ export default function App() {
       setStaff(sandboxStaff());
       setNotifs([]);
     };
+    // Thang Level chị Trâm chốt 17/08/2026 — giữ khớp với app/api/roles/route.ts và AppLauncher.
     const nhomVaiTro: { key: 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER'; nhan: string }[] = [
-      { key: 'BOOD', nhan: 'Trưởng phòng / Ban giám đốc (Level 1)' },
+      { key: 'BOOD', nhan: 'Trưởng phòng / Phó phòng (Level 1)' },
       { key: 'MANAGER', nhan: 'Quản lý (Level 2)' },
-      { key: 'STAFF', nhan: 'Chuyên viên (Level 3)' },
-      { key: 'VIEWER', nhan: 'Khách - chỉ xem (Level 4)' },
+      { key: 'STAFF', nhan: 'Nhân viên (Level 3)' },
+      { key: 'VIEWER', nhan: 'Ban giám đốc — chỉ xem (Level 4)' },
     ];
     return (
       <div className="min-h-screen bg-dark-bg text-slate-100 font-sans p-6">
@@ -3463,7 +3827,7 @@ export default function App() {
               👥 Nạp lại danh sách nhân sự (không kèm hồ sơ)
             </button>
             <button type="button" onClick={napDuAnNhap} className="text-[11px] font-black bg-brand-warning hover:bg-brand-warning/80 text-slate-900 px-3 py-2 rounded-lg cursor-pointer">
-              🧪 Nạp 3 dự án NHÁP (thử xuất Excel &amp; phục hồi)
+              🧪 Nạp 9 hồ sơ NHÁP (đủ 7 bước quy trình)
             </button>
             <button type="button" onClick={xoaDuLieuThu} className="text-[11px] font-black bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg cursor-pointer">
               🧹 Xoá sạch dữ liệu bản thử
@@ -3523,15 +3887,17 @@ export default function App() {
 
         {/* Header containing HP CONS Logo with empty logo slot */}
         <header className="p-6 shrink-0 z-20">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
+          {/* Bỏ max-w-7xl (chặn theo rem, co lại khi zoom chữ) — xem ghi chú ở thẻ <main> */}
+          <div className="w-full flex items-center justify-between">
             <div className="flex items-center gap-3">
               <HpConsLogo className="h-10" light={true} />
             </div>
 
-            {/* Real-time UTC Monospace Clock Widget */}
+            {/* Đồng hồ chạy realtime — GIỜ VIỆT NAM (GMT+7), không phải giờ UTC và cũng không phải
+                giờ máy. Ghi rõ "GMT+7" để người xem biết chắc đang đọc giờ nào. */}
             <div className="flex items-center gap-2 px-3 py-1.5 bg-dark-card border border-slate-800 rounded-full text-xs font-mono font-bold tracking-wider text-slate-300">
               <span className="w-2 h-2 rounded-full bg-brand-danger animate-pulse" />
-              <span>{utcTime || "00:00:00 UTC"}</span>
+              <span>{vnTime || "00:00:00"} GMT+7</span>
             </div>
           </div>
         </header>
@@ -3675,10 +4041,10 @@ export default function App() {
           </span>
           <div className="flex items-center gap-1" role="group" aria-label="Xem thử theo cấp quyền">
             {([
-              { key: 'BOOD', nhan: 'L1', moTa: 'Trưởng phòng / Ban giám đốc' },
+              { key: 'BOOD', nhan: 'L1', moTa: 'Trưởng phòng / Phó phòng' },
               { key: 'MANAGER', nhan: 'L2', moTa: 'Quản lý' },
-              { key: 'STAFF', nhan: 'L3', moTa: 'Chuyên viên' },
-              { key: 'VIEWER', nhan: 'L4', moTa: 'Khách - chỉ xem' },
+              { key: 'STAFF', nhan: 'L3', moTa: 'Nhân viên' },
+              { key: 'VIEWER', nhan: 'L4', moTa: 'Ban giám đốc — chỉ xem' },
             ] as const).map(muc => {
               // Lấy người ĐẦU TIÊN còn làm việc ở level đó làm đại diện để vào xem
               // (chưa có ai thì lấy tài khoản mẫu — xem daiDienLevelBanThu)
@@ -3821,8 +4187,10 @@ export default function App() {
                     <span className="text-xs">Bảng Kanban</span>
                   </button>
 
-                  {/* Level 4 (Khách) không thấy Gantt — chỉ 4 mục: Liên kết phòng ban · Dashboard · Tiến độ · Kanban */}
-                  {currentUser.role !== 'VIEWER' && (<button
+                  {/* Level 4 (Ban giám đốc) XEM HẾT (chị Trâm chốt 17/08/2026) — mục nào có trong
+                      VIEWER_TABS thì hiện. Bám theo VIEWER_TABS để sidebar và bộ chặn tab ở
+                      useEffect không bao giờ lệch nhau. */}
+                  {(currentUser.role !== 'VIEWER' || VIEWER_TABS.includes('GANTT')) && (<button
                     id="btn-nav-gantt"
                     onClick={() => { setActiveTab('GANTT'); setShowForm(false); }}
                     className={`w-full h-11 px-4 font-bold transition-all rounded-lg flex items-center gap-3 text-left ${
@@ -3837,8 +4205,26 @@ export default function App() {
                 </>
               )}
 
-              {/* Tab: Lịch cá nhân + Nhật ký — mọi vai trò TRỪ Khách (Level 4 chỉ xem 4 mục) */}
-              {currentUser.role !== 'VIEWER' && (<>
+              {/* Tab: Lịch cá nhân + Nhật ký — mọi vai trò. Level 4 (Ban giám đốc) cũng xem được
+                  (chị Trâm chốt 17/08/2026: "cho xem hết, chỉ là không cho thao tác"). */}
+              {(currentUser.role !== 'VIEWER' || VIEWER_TABS.includes('CALENDAR')) && (<>
+              {/* THÔNG BÁO - TEMPLATE — ĐỨNG TRƯỚC LỊCH CÁ NHÂN (chị Trâm chốt 18/08/2026:
+                  "Template mẫu lên trc lịch cá nhân" + "nút này thay thành Thông báo - Template").
+                  Một mục gộp 2 việc dùng chung cả phòng: phát thông báo nội bộ và danh mục biểu mẫu.
+                  Mọi cấp đều vào được; biểu mẫu / thông báo nào chỉ dành cấp nào thì lọc bên trong. */}
+              <button
+                id="btn-nav-templates"
+                onClick={() => { setActiveTab('TEMPLATES'); setShowForm(false); }}
+                className={`w-full h-11 px-4 font-bold transition-all rounded-lg flex items-center gap-3 text-left ${
+                  activeTab === 'TEMPLATES' && !showForm
+                    ? 'bg-brand-accent text-white font-semibold shadow-sm'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Megaphone className="w-4 h-4 shrink-0" />
+                <span className="text-xs">Thông báo - Template</span>
+              </button>
+
               <button
                 id="btn-nav-calendar"
                 onClick={() => { setActiveTab('CALENDAR'); setShowForm(false); }}
@@ -3869,8 +4255,10 @@ export default function App() {
                 <span className="text-xs">Nhật Ký Hoạt Động</span>
               </button>
               </>)}
-              {/* Tab: Đội Ngũ — BOOD (đầy đủ) và MANAGER (tạo tài khoản Chuyên viên) */}
-              {(currentUser.role === 'BOOD' || currentUser.role === 'MANAGER') && (
+              {/* Tab: Đội Ngũ — BOOD (đầy đủ), MANAGER (tạo tài khoản Nhân viên),
+                  và Level 4 Ban giám đốc CHỈ XEM (mọi nút thêm/sửa/xóa đã bị tắt qua laKhachChiXem). */}
+              {(currentUser.role === 'BOOD' || currentUser.role === 'MANAGER'
+                || (currentUser.role === 'VIEWER' && VIEWER_TABS.includes('STAFF'))) && (
                 <button
                   id="btn-nav-staff"
                   onClick={() => { setActiveTab('STAFF'); setShowForm(false); }}
@@ -4162,10 +4550,29 @@ export default function App() {
                           staff={staff}
                           onOpen={(n) => {
                             setShowNotif(false);
-                            if (n.projId && currentUser.role === 'MANAGER') { moHoSo(n.projId); }
-                            // Nhân viên không có tab Hồ sơ → đưa về "KPI Cá Nhân" (tab DASHBOARD)
+                            // Nhân viên (L3) không có tab Hồ sơ → đưa về "KPI Cá Nhân" (tab DASHBOARD)
                             // nơi liệt kê tác vụ đang phụ trách, thay vì bấm vào tin mà không đi đâu.
-                            else if (currentUser.role === 'STAFF') { setActiveTab('DASHBOARD'); setShowForm(false); }
+                            if (currentUser.role === 'STAFF') { setActiveTab('DASHBOARD'); setShowForm(false); return; }
+                            // ===== TIN "ĐƯỢC CHỌN LÀM QUẢN LÝ CHO DỰ ÁN" → VÀO THẲNG FORM CÔNG VIỆC MỚI =====
+                            // (chị Trâm chốt 18/08/2026 — góp ý #87). Chỉ áp khi tin gắn với một bản ghi
+                            // DỰ ÁN: được giao quản lý một dự án thì việc tiếp theo là lập công việc cho
+                            // dự án đó, nên mở sẵn form và chọn sẵn đúng dự án. Tin gắn với CÔNG VIỆC thì
+                            // vẫn mở hồ sơ như cũ. Nút "CÔNG VIỆC MỚI" bấm tay không đổi gì.
+                            const hoSoCuaTin = n.projId ? projects.find(p => p.id === n.projId) : undefined;
+                            const laTinGiaoQuanLy = /được chọn làm Quản lý/i.test(n.text || '');
+                            if (laTinGiaoQuanLy && hoSoCuaTin?.loaiBanGhi === 'DU_AN'
+                                && (currentUser.role === 'MANAGER' || currentUser.role === 'BOOD')) {
+                              setDuAnChonSanChoCVMoi(hoSoCuaTin.id);
+                              setFormMode('ADD_WORK');
+                              setEditingProject(undefined);
+                              setShowForm(true);
+                              triggerToast(`Mở form Công việc mới — đã chọn sẵn dự án "${hoSoCuaTin.tenDuAn}".`);
+                              return;
+                            }
+                            // Còn lại (Quản lý L2, Ban giám đốc L4) đều có tab Hồ sơ → mở hồ sơ.
+                            // TRƯỚC ĐÂY chỉ xét đúng 'MANAGER', nên Ban giám đốc (L4) bấm thông báo
+                            // là không đi đâu cả — giờ L4 đã xem được tab Hồ sơ (chị Trâm chốt 17/08/2026).
+                            if (n.projId) moHoSo(n.projId);
                           }}
                         />
                       </div>
@@ -4392,7 +4799,7 @@ export default function App() {
                 </div>
                 <div className="text-left text-[10px] min-w-0 hidden md:block">
                   <span className="block text-slate-700 dark:text-slate-300 font-bold whitespace-nowrap">{currentUser.name}</span>
-                  <span className="block text-[9px] text-slate-500 uppercase tracking-wider whitespace-nowrap">Quyền: Level {currentUser.role === 'BOOD' ? '1 (Trưởng phòng)' : currentUser.role === 'MANAGER' ? '2 (Quản lý)' : currentUser.role === 'VIEWER' ? '4 (Khách - chỉ xem)' : '3 (Nhân viên)'}</span>
+                  <span className="block text-[9px] text-slate-500 uppercase tracking-wider whitespace-nowrap">Quyền: Level {currentUser.role === 'BOOD' ? '1 (Trưởng phòng)' : currentUser.role === 'MANAGER' ? '2 (Quản lý)' : currentUser.role === 'VIEWER' ? '4 (Ban giám đốc)' : '3 (Nhân viên)'}</span>
                 </div>
                 <button
                   onClick={handleLogout}
@@ -4408,7 +4815,12 @@ export default function App() {
         </div>
       </header>
 
-        <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6 overflow-y-auto" id="app-main-content">
+        {/* VÙNG LÀM VIỆC TRẢI HẾT BỀ RỘNG (chị Trâm báo 17/08/2026 — góp ý #10).
+            TRƯỚC ĐÂY có `max-w-7xl` = 80rem. Nút zoom chữ (A- / A+) đổi cỡ rem của trang, nên
+            80rem co lại theo: ở 85% chỉ còn ~1088px trong khi màn hình vẫn 1600px+ → càng zoom
+            nhỏ hai biên càng trống. Bỏ hẳn chặn theo rem, để vùng làm việc chiếm trọn bề rộng
+            còn lại sau sidebar; bảng Kanban/Gantt nhờ vậy cũng rộng thêm. */}
+        <main className="flex-grow w-full px-4 sm:px-6 lg:px-8 py-6 pb-24 md:pb-6 overflow-y-auto" id="app-main-content">
         
         {/* Render Form Drawer / Screen if visible */}
         {showForm ? (
@@ -4417,15 +4829,24 @@ export default function App() {
             animate={{ opacity: 1, y: 0 }}
             className="py-2"
           >
-            <ProjectForm 
+            <ProjectForm
+              /* ===== KHÔNG CÒN "KẸT" Ở HỒ SƠ TRƯỚC (chị Trâm báo 17/08/2026) =====
+                 Bấm hồ sơ 1 trong "Chờ Trưởng phòng xử lý" rồi bấm sang hồ sơ 2 thì form vẫn hiện
+                 dữ liệu hồ sơ 1: ProjectForm nạp toàn bộ ô nhập bằng useState(project?...) — chỉ
+                 chạy đúng MỘT LẦN lúc gắn vào cây. Đặt key theo id hồ sơ để React dựng lại form
+                 mới khi đổi hồ sơ, nạp lại đúng dữ liệu. */
+              key={editingProject?.id || formMode}
               project={editingProject}
               staffList={staff}
               nextProjectId={nextProjectId}
               onSave={handleSaveProject}
-              onCancel={() => { setShowForm(false); setEditingProject(undefined); }}
+              onCancel={() => { setShowForm(false); setEditingProject(undefined); setDuAnChonSanChoCVMoi(undefined); }}
               currentUserRole={currentUser?.role}
               formMode={formMode}
               projectsListForSelect={parentProjects}
+              thongTinMauTheoDuAn={mauThongTinTheoDuAn}
+              thuVienTenViecCon={thuVienTenViecCon}
+              duAnChonSan={duAnChonSanChoCVMoi}
               duAnChaInfo={duAnChaInfoById}
               // MÃ DỰ ÁN LÀ DUY NHẤT trong môi trường Phòng Đấu Thầu (chị Trâm chốt 26/07/2026):
               // đăng ký dự án mà mã đã tồn tại thì form báo lỗi, không cho lưu. Chỉ so mã của các
@@ -4830,14 +5251,50 @@ export default function App() {
                           Xuất Excel
                         </button>
 
-                        <button
-                          onClick={handleExportStrategicReport}
-                          className="px-3 py-2 bg-brand-accent hover:bg-brand-accent-hover text-white rounded-lg text-xs font-black transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-                          title="Xuất file báo cáo thống kê mục tiêu chiến lược năm 2026 chuẩn Mẫu số 1"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          📑 Báo cáo Chiến lược
-                        </button>
+                        {/* ĐÃ BỎ nút "📑 Báo cáo Chiến lược" (chị Trâm chốt 17/08/2026): bảng thống kê
+                            dự án bên dưới làm đúng mẫu của Phòng và thay hẳn báo cáo cũ, để hai nút
+                            cùng lúc thì người dùng không biết bấm cái nào. Hàm sinh báo cáo cũ cũng
+                            đã xoá — cần lấy lại thì xem `handleExportStrategicReport` trong commit 14eef6d. */}
+
+                        {/* BẢNG THỐNG KÊ DỰ ÁN ĐẤU THẦU (dùng làm hồ sơ ISO) — góp ý #13. Chọn kỳ + năm
+                            rồi xuất đúng mẫu sheet 3 của Phòng. Trưởng phòng xuất toàn phòng; Quản lý
+                            xuất được phần hồ sơ mình phụ trách (chị Trâm chốt 17/08/2026 — "quản lý
+                            được xuất báo cáo như TP"). */}
+                        {(currentUser?.role === 'BOOD' || currentUser?.role === 'MANAGER') && (
+                          <div className="flex items-center gap-1 border border-brand-success/40 rounded-lg px-1.5 py-1 bg-brand-success/5">
+                            <select
+                              value={kyISO}
+                              onChange={(e) => setKyISO(Number(e.target.value) as KyBaoCao)}
+                              title="Kỳ báo cáo ISO: Kỳ 1 = tháng 4-7 · Kỳ 2 = tháng 8-11 · Kỳ 3 = tháng 12,1,2,3"
+                              className="text-[11px] font-black bg-transparent text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
+                            >
+                              {/* Ô chọn của trình duyệt tự vẽ danh sách bằng nền TRẮNG, mà app đang
+                                  ở nền tối nên chữ trắng trên nền trắng = không đọc được (chị Trâm
+                                  báo 18/08/2026). Đặt màu chữ + nền thẳng vào từng <option>. */}
+                              <option value={1} className="bg-white text-slate-700 dark:bg-dark-card dark:text-slate-200">Kỳ 1</option>
+                              <option value={2} className="bg-white text-slate-700 dark:bg-dark-card dark:text-slate-200">Kỳ 2</option>
+                              <option value={3} className="bg-white text-slate-700 dark:bg-dark-card dark:text-slate-200">Kỳ 3</option>
+                            </select>
+                            <select
+                              value={namISO}
+                              onChange={(e) => setNamISO(e.target.value)}
+                              title="Năm báo cáo"
+                              className="text-[11px] font-black bg-transparent text-slate-700 dark:text-slate-200 focus:outline-none cursor-pointer"
+                            >
+                              {dsNamISO.map(n => (
+                                <option key={n} value={String(n)}>{n}</option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={handleXuatBangThongKeISO}
+                              className="px-2.5 py-1.5 bg-brand-success hover:bg-brand-success-hover text-white rounded-md text-xs font-black transition-all flex items-center gap-1 cursor-pointer"
+                              title="Xuất BẢNG THỐNG KÊ DỰ ÁN ĐẤU THẦU theo đúng mẫu của Phòng (dùng làm hồ sơ ISO — mục tiêu 1 & 3)"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              Bảng thống kê dự án
+                            </button>
+                          </div>
+                        )}
 
                         {/* SAO LƯU / KHÔI PHỤC nguyên trạng — chỉ Trưởng phòng. Khác "Xuất Excel"
                             và "Báo cáo Chiến lược" (đều là báo cáo, không giữ đủ dữ liệu). */}
@@ -5144,7 +5601,7 @@ export default function App() {
                       description="Không có dự án thầu nào phù hợp với điều kiện phân quyền và bộ lọc hiện tại."
                     />
                   ) : (
-                    <div className="md:overflow-x-auto">
+                    <div ref={setKhungCuonBang} className="md:overflow-x-auto">
                       {/* Mobile <768px: bảng reflow thành Card List (luật 9 — cùng DOM, không nhân đôi logic); md+: bảng đầy đủ như cũ */}
                       <table className="w-full text-left text-xs border-collapse block md:table">
                         <thead className="hidden md:table-header-group">
@@ -5157,13 +5614,26 @@ export default function App() {
                             <th className="p-3 font-bold w-48">Thời Hạn Đấu Thầu</th>
                             <th className="p-3 font-bold text-center w-28">Độ Trễ</th>
                             <th className="p-3 font-bold w-52 text-center">Tiến Độ Phòng/Ban</th>
-                            <th className="p-3 font-bold text-center w-[1%] whitespace-nowrap">Tình Hình Dự Án</th>
-                            <th className="p-3 font-bold text-center w-24">Thao Tác</th>
+                            {/* Hai cột này GHIM vào mép phải khi bảng cuộn ngang — xem ghi chú nenOGhim
+                                ở phần thân bảng. Nền bg-slate-900 trùng nền hàng tiêu đề để không hở. */}
+                            <th className="p-3 font-bold text-center w-[1%] whitespace-nowrap md:sticky md:right-24 md:z-20 bg-slate-900">Tình Hình Dự Án</th>
+                            <th className="p-3 font-bold text-center w-24 md:sticky md:right-0 md:z-20 bg-slate-900">Thao Tác</th>
                           </tr>
                         </thead>
                         <tbody className="block md:table-row-group divide-y divide-slate-100 dark:divide-slate-800 font-medium text-slate-600 dark:text-slate-300">
                           {applyStatusFilter(filteredProjects, isWorkDone).map((p) => {
                             const isExpanded = expandedProjectId === p.id;
+                            // ===== GHIM 2 CỘT PHẢI KHI BẢNG PHẢI CUỘN NGANG =====
+                            // Chị Trâm báo 17/08/2026: zoom vào là cột "Tình hình dự án" và "Thao tác"
+                            // bị đẩy ra ngoài khung, phải cuộn mới thấy nên tưởng mất thông tin.
+                            // Theo đúng chuẩn của Phòng: docs/design-system/10-data-display/tables.md
+                            // — "Cuộn ngang. CỐ ĐỊNH CỘT CHÍNH."
+                            // Ô ghim BẮT BUỘC có nền ĐỤC, nếu không nội dung các cột khác chạy xuyên qua
+                            // khi cuộn. Nền phải đổi theo trạng thái dòng, nếu không dòng đang mở rộng
+                            // sẽ bị hở 2 ô trắng ở mép phải.
+                            const nenOGhim = isExpanded
+                              ? 'md:bg-slate-50 dark:md:bg-dark-elevated'
+                              : 'md:bg-white dark:md:bg-dark-card';
                             const manager = staff.find(s => s.id === p.quanLyId);
                             const implementer = staff.find(s => s.id === p.thucHienId);
                             const totalOffsets = tongNgayDoiHan(p.delayLogs);
@@ -5173,7 +5643,10 @@ export default function App() {
 
                             return (
                               <React.Fragment key={p.id}>
-                                <tr 
+                                <tr
+                                  /* id để mở hồ sơ từ chuông/Kanban/Dashboard rồi CUỘN tới đúng hàng
+                                     — xem hoSoCanCuonToi trong moHoSo (chị Trâm báo góp ý #1). */
+                                  id={`hang-ho-so-${p.id}`}
                                   onClick={(e) => {
                                     const target = e.target as HTMLElement;
                                     if (target.closest('button') || target.closest('a') || target.closest('input') || target.closest('select')) {
@@ -5326,7 +5799,7 @@ export default function App() {
                                   </td>
 
                                   {/* Status badge - Min-content shrink optimized */}
-                                  <td className="col-start-2 row-start-2 block md:table-cell px-4 py-1.5 md:p-3 text-right self-center md:text-center md:self-auto md:w-[1%] whitespace-nowrap">
+                                  <td className={`col-start-2 row-start-2 block md:table-cell px-4 py-1.5 md:p-3 text-right self-center md:text-center md:self-auto md:w-[1%] whitespace-nowrap md:sticky md:right-24 md:z-10 ${nenOGhim}`}>
                                     <div className="inline-flex flex-col items-end md:items-center gap-1">
                                       {getStatusBadge(p.trangThai)}
                                       {/* HỒ SƠ ĐANG VƯỚNG GÌ — nói thẳng trên dòng, không bắt ai phải đoán.
@@ -5361,7 +5834,7 @@ export default function App() {
                                   </td>
 
                                   {/* Action Buttons — mobile: nổi góc phải trên (gọn thẻ); desktop: ô bảng bình thường */}
-                                  <td className="absolute top-1.5 right-2 z-20 md:static block md:table-cell px-0 py-0 md:p-3 text-left md:text-center">
+                                  <td className={`absolute top-1.5 right-2 z-20 md:sticky md:top-auto md:right-0 md:z-10 block md:table-cell px-0 py-0 md:p-3 text-left md:text-center ${nenOGhim}`}>
                                     <div className="flex items-center justify-end md:justify-center gap-1">
                                       {p.loaiBanGhi !== 'DU_AN' && currentUser.role !== 'STAFF' && currentUser.role !== 'VIEWER' && (
                                         <button
@@ -5396,7 +5869,15 @@ export default function App() {
                                 {/* Nested Accordion Drawer for Expanded notes, comments, and task checklist */}
                                 {isExpanded && (
                                   <tr key={`${p.id}-drawer`} className="block md:table-row bg-slate-50/60 dark:bg-dark-card/40 border-b border-slate-200/50 dark:border-slate-800/80">
-                                    <td colSpan={9} className="block md:table-cell p-4 md:p-6">
+                                    <td colSpan={9} className="block md:table-cell p-0">
+                                      {/* Ghim khay theo VÙNG ĐANG THẤY của bảng (xem rongVungXemBang):
+                                          sticky left-0 giữ khay ở mép trái khi cuộn ngang, width bằng
+                                          bề rộng vùng thấy để không thông tin nào lọt ra ngoài khung
+                                          lúc phóng to chữ. Mobile (<768px) không áp — td là block. */}
+                                      <div
+                                        className="drawer-vung-xem p-4 md:p-6"
+                                        style={rongVungXemBang ? ({ ['--rong-vung-xem' as string]: `${rongVungXemBang}px` } as React.CSSProperties) : undefined}
+                                      >
                                       <div className="space-y-4">
                                         {/* Drawer = chế độ XEM; mọi chỉnh sửa đi qua nút ✏️ (mở form có nút Lưu) */}
                                         <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 dark:text-slate-400 bg-slate-100/70 dark:bg-dark-elevated/40 border border-slate-200/60 dark:border-slate-800 rounded-lg px-3 py-2">
@@ -5623,6 +6104,7 @@ export default function App() {
                                           onChange={(updatedTasks) => handleUpdateTasks(p.id, updatedTasks)}
                                         />
                                       </div>
+                                      </div>
                                     </td>
                                   </tr>
                                 )}
@@ -5699,7 +6181,7 @@ export default function App() {
                       Danh sách tài khoản &amp; KPI ({kpiStaff.length} nhân sự)
                     </h3>
                   </div>
-                  {(currentUser?.role === 'BOOD' || currentUser?.role === 'MANAGER') ? (
+                  {(quanLyDuocNhanSu(currentUser?.role) || currentUser?.role === 'MANAGER') ? (
                     <button
                       onClick={() => setIsAddingStaff(true)}
                       className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white rounded-lg text-xs font-black flex items-center gap-1.5 shadow-md hover:scale-102 transition-all cursor-pointer whitespace-nowrap"
@@ -5708,8 +6190,11 @@ export default function App() {
                       {currentUser?.role === 'MANAGER' ? 'THÊM CHUYÊN VIÊN' : 'THÊM TÀI KHOẢN MỚI'}
                     </button>
                   ) : (
-                    <div className="text-[10px] text-brand-warning italic font-medium max-w-xs text-right bg-brand-warning/10 px-3 py-1.5 rounded-lg border border-brand-warning/20">
-                      🔒 Chỉ Trưởng phòng (Level 1) mới có quyền khởi tạo &amp; xóa tài khoản.
+                    /* Câu nhắc KHÔNG được đổ cho Trưởng phòng (chị Trâm 18/08/2026: "ghi vậy level1 bị
+                       chửi chết"). Nay chỉ còn cấp Nhân viên là không khởi tạo/xoá tài khoản, nên nói
+                       đúng cấp đang xem, không nêu tên cấp nào khác. */
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400 italic font-medium max-w-xs text-right bg-slate-100 dark:bg-dark-elevated px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
+                      Cấp của bạn xem danh sách và KPI; việc khởi tạo &amp; xoá tài khoản do cấp quản lý thực hiện.
                     </div>
                   )}
                 </div>
@@ -5733,9 +6218,9 @@ export default function App() {
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex items-center gap-3">
                               <div
-                                className={`relative group shrink-0 ${currentUser?.role === 'BOOD' ? 'cursor-pointer' : ''}`}
-                                onClick={() => { if (currentUser?.role === 'BOOD') setEditingStaff(member); }}
-                                title={currentUser?.role === 'BOOD' ? 'Nhấp để thay đổi ảnh đại diện' : undefined}
+                                className={`relative group shrink-0 ${quanLyDuocNhanSu(currentUser?.role) ? 'cursor-pointer' : ''}`}
+                                onClick={() => { if (quanLyDuocNhanSu(currentUser?.role)) setEditingStaff(member); }}
+                                title={quanLyDuocNhanSu(currentUser?.role) ? 'Nhấp để thay đổi ảnh đại diện' : undefined}
                               >
                                 {isAvatarUrl(member.avatar) ? (
                                   <img
@@ -5748,7 +6233,7 @@ export default function App() {
                                     {getInitials(member.hoTen)}
                                   </div>
                                 )}
-                                {currentUser?.role === 'BOOD' && (
+                                {quanLyDuocNhanSu(currentUser?.role) && (
                                 <div className="absolute inset-0 bg-black/45 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                   <Camera className="w-3.5 h-3.5 text-white" />
                                 </div>
@@ -5847,7 +6332,7 @@ export default function App() {
                         {/* Edit & Delete Actions */}
                         <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-between items-center gap-2">
                           <div>
-                            {currentUser?.role === 'BOOD' && currentUser?.staffId !== member.id && (
+                            {quanLyDuocNhanSu(currentUser?.role) && currentUser?.staffId !== member.id && (
                               deletingStaffId === member.id ? (
                                 <div className="flex items-center gap-1">
                                   <button
@@ -5878,7 +6363,7 @@ export default function App() {
                           
                           {/* Đổi ảnh / chỉnh sửa hồ sơ nhân sự: CHỈ Trưởng phòng.
                               Quản lý (L2) chỉ được THÊM chuyên viên mới (nút ở đầu trang). */}
-                          {currentUser?.role === 'BOOD' && (
+                          {quanLyDuocNhanSu(currentUser?.role) && (
                           <div className="flex items-center gap-1.5">
                             <button
                               onClick={() => setEditingStaff(member)}
@@ -5999,6 +6484,108 @@ export default function App() {
             )}
 
             {/* 6.5 LỊCH CÁ NHÂN — việc riêng + nhắc hạn trên chuông */}
+            {/* ===== THÔNG BÁO - TEMPLATE — mục riêng (chị Trâm chốt 18/08/2026) =====
+                Gộp 2 việc dùng chung cả phòng vào một chỗ: (1) phát thông báo nội bộ — chọn được
+                TOÀN PHÒNG, TỪNG NGƯỜI, hoặc THEO CẤP (L1/L2/L3/L4); (2) danh mục biểu mẫu mẫu. */}
+            {activeTab === 'TEMPLATES' && (
+              <div className="space-y-4">
+                {/* Ai cũng vào được khung này: L1/L2 GỬI được, các cấp khác ĐỌC LẠI tin đã nhận.
+                    Tin gửi đi được lưu vào `thongBaoNoiBo` (đồng bộ cloud) chứ không chỉ nằm trên
+                    chuông — chuông chỉ giữ 30 tin/người nên tin cũ sẽ trôi mất (chị Trâm 18/08). */}
+                <ThongBaoNoiBoPanel
+                  nhanSu={staff.filter(s => !s.daNghi && s.id !== currentUser.staffId)}
+                  vaiTroCua={(s) => vaiTroCuaNhanSu(s.id)}
+                  danhSach={thongBaoNoiBo}
+                  coQuyenGui={currentUser.role === 'BOOD' || currentUser.role === 'MANAGER'}
+                  staffIdDangXem={currentUser.staffId}
+                  onGui={(ids, noiDung, kieuNhan, capNhan) => {
+                    // luonBao = true: tin nội bộ không bị bộ lọc "hồ sơ từ bước 3 trở đi" chặn.
+                    pushNotify(ids, `📣 Thông báo nội bộ: ${noiDung}`, undefined, true);
+                    setThongBaoNoiBo(prev => [{
+                      id: `TB${Date.now()}`,
+                      noiDung,
+                      nguoiGui: currentUser?.name,
+                      nguoiGuiId: currentUser?.staffId,
+                      ngay: new Date().toISOString(),
+                      targetIds: ids,
+                      kieuNhan,
+                      capNhan: kieuNhan === 'theoCap' && capNhan.length > 0 ? capNhan : undefined,
+                    }, ...prev]);
+                    triggerToast(`Đã gửi thông báo nội bộ tới ${ids.length} người — tin đã được lưu lại.`);
+                    logAction('Gửi thông báo nội bộ', `${ids.length} người nhận · nội dung: ${noiDung}`);
+                  }}
+                  onXoa={(id) => {
+                    const bi = thongBaoNoiBo.find(t => t.id === id);
+                    if (!bi) return;
+                    if (!window.confirm('Xoá thông báo này khỏi danh sách đã lưu? Tin đã nằm trên chuông của người nhận thì không thu hồi được.')) return;
+                    setThongBaoNoiBo(prev => prev.filter(t => t.id !== id));
+                    logAction('Xoá thông báo nội bộ đã lưu', bi.noiDung.slice(0, 120));
+                  }}
+                />
+                <TemplateMauPanel
+                  templates={templates}
+                  vaiTro={currentUser.role}
+                  canEdit={currentUser.role === 'BOOD' || currentUser.role === 'MANAGER'}
+                  onAdd={(ten, link, ghiChu, levels) => {
+                    const moi: TenderTemplate = {
+                      id: `TPL${Date.now()}`,
+                      ten,
+                      link,
+                      ghiChu: ghiChu || undefined,
+                      levels: levels.length > 0 ? levels : undefined,
+                      nguoiThem: currentUser?.name,
+                      ngay: new Date().toISOString(),
+                    };
+                    setTemplates(prev => [moi, ...prev]);
+                    // ===== BÁO CHO ĐÚNG CẤP ĐƯỢC CHỌN (chị Trâm chốt 18/08/2026) =====
+                    // "khi thêm template mới thì báo cho những người đc chọn thông báo nhé e."
+                    // Không tick cấp nào = mọi cấp đều thấy → báo cho cả phòng. Tick cấp nào thì chỉ
+                    // người thuộc cấp đó nhận tin, khớp đúng luật "cấp được thấy" của biểu mẫu.
+                    // luonBao = true: tin biểu mẫu không liên quan bước hồ sơ nên không để bộ lọc
+                    // "hồ sơ từ bước 3 trở đi chỉ Trưởng phòng" chặn (xem pushNotify).
+                    const nguoiNhanMau = staff
+                      .filter(s => !s.daNghi && (levels.length === 0 || levels.includes(vaiTroCuaNhanSu(s.id) as typeof levels[number])))
+                      .map(s => s.id);
+                    if (nguoiNhanMau.length > 0) {
+                      pushNotify(nguoiNhanMau, `📄 Biểu mẫu mới: "${ten}" — xem ở mục "Thông báo - Template".`, undefined, true);
+                    }
+                    triggerToast(`Đã thêm biểu mẫu "${ten}" vào danh mục dùng chung${nguoiNhanMau.length ? ` và báo cho ${nguoiNhanMau.length} người` : ''}.`);
+                    logAction('Thêm template mẫu', `${ten} · ${link}${levels.length ? ` · chỉ ${levels.join(', ')}` : ' · mọi cấp'} · đã báo ${nguoiNhanMau.length} người`);
+                  }}
+                  onUpdate={(id, thayDoi) => {
+                    const bi = templates.find(t => t.id === id);
+                    setTemplates(prev => prev.map(t => t.id === id ? { ...t, ...thayDoi } : t));
+                    // Chỉ còn MỘT nút xoá → chỉ còn một loại thông báo: phục hồi từ thùng rác
+                    // (chị Trâm chốt 18/08/2026: "2 cái này có khác nhau j đâu, làm 1 nút thôi").
+                    if (bi && thayDoi.daXoa === false) {
+                      triggerToast(`Đã phục hồi biểu mẫu "${bi.ten}" từ thùng rác.`);
+                      logAction('Phục hồi biểu mẫu', `${bi.ten} · ${bi.link}`);
+                    }
+                  }}
+                  /* Nút 🗑 nay chỉ BỎ VÀO THÙNG RÁC — chị Trâm lỡ xoá 2 biểu mẫu và không lấy lại
+                     được (18/08/2026). Dữ liệu vẫn còn, phục hồi bằng nút ↩ trong thùng rác. */
+                  onDelete={(id) => {
+                    const bi = templates.find(t => t.id === id);
+                    setTemplates(prev => prev.map(t => t.id === id
+                      ? { ...t, daXoa: true, ngayXoa: new Date().toISOString(), nguoiXoa: currentUser?.name }
+                      : t));
+                    if (bi) {
+                      triggerToast(`Đã bỏ "${bi.ten}" vào thùng rác — mở mục Thùng rác biểu mẫu để phục hồi.`);
+                      logAction('Bỏ biểu mẫu vào thùng rác', `${bi.ten} · ${bi.link}`);
+                    }
+                  }}
+                  onXoaVinhVien={(id) => {
+                    const bi = templates.find(t => t.id === id);
+                    setTemplates(prev => prev.filter(t => t.id !== id));
+                    if (bi) {
+                      triggerToast(`Đã xoá vĩnh viễn biểu mẫu "${bi.ten}".`);
+                      logAction('Xoá vĩnh viễn biểu mẫu', `${bi.ten} · ${bi.link}`);
+                    }
+                  }}
+                />
+              </div>
+            )}
+
             {activeTab === 'CALENDAR' && (() => {
               const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
               const todayStr = ymd(new Date());
@@ -6086,6 +6673,11 @@ export default function App() {
 
               return (
               <div className="space-y-4">
+                {/* Khung "Thông báo nội bộ" và "Template mẫu" ĐÃ CHUYỂN sang mục riêng
+                    "Thông báo - Template" trên thanh tác vụ (chị Trâm chốt 18/08/2026) — để trong
+                    Lịch cá nhân thì không ai tìm thấy. Xem khối activeTab === 'TEMPLATES'. */}
+
+
                 <div className="bg-white dark:bg-dark-card rounded-xl border border-slate-200/60 dark:border-slate-800 shadow-sm overflow-hidden">
                   {/* Thanh tiêu đề + điều hướng tháng (kiểu Google Calendar) */}
                   <div className="flex flex-wrap items-center justify-between gap-3 p-4 border-b border-slate-100 dark:border-slate-800">
@@ -6361,7 +6953,8 @@ export default function App() {
 
       {/* Modern Compact Footer */}
       <footer className="bg-white dark:bg-dark-card border-t border-slate-200/50 dark:border-slate-800/80 py-4 text-center text-[11px] text-slate-400 dark:text-slate-500 select-none shrink-0" id="app-footer">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-center gap-2">
+        {/* Bỏ max-w-7xl (chặn theo rem, co lại khi zoom chữ) — xem ghi chú ở thẻ <main> */}
+        <div className="w-full px-4 flex flex-col sm:flex-row items-center justify-center gap-2">
           <span>
             Hệ thống Quản lý và Cập nhật Tiến độ Tích hợp Phòng Đấu thầu • ERP BPM Software
           </span>
@@ -6467,6 +7060,7 @@ export default function App() {
           staff={staff}
           isBOOD={currentUser?.role === 'BOOD'}
           doiTienDo={pullBackDoiTienDo}
+          thuVienTenViecCon={thuVienTenViecCon}
           onCancel={() => setPullBackDelayProject(null)}
           onApply={(tasks, delayDays, reason) => handlePullBackApply(pullBackDelayProject.id, tasks, delayDays, reason)}
         />
@@ -6474,6 +7068,108 @@ export default function App() {
 
       {/* Bảng nhập tiến độ & kết quả cấp Phòng — tự mở khi hồ sơ sang bước 4 (hoặc khi TP kéo
           sang bước 5 mà chưa đủ 100%). Đóng mà chưa đủ 100% thì gửi 1 tin lên chuông để TP nhớ. */}
+      {/* ===== HỘP XÁC NHẬN TRÌNH BƯỚC 3 (chị Trâm chốt 18/08/2026) =====
+          Thay cho window.confirm — hộp của trình duyệt hiện cả tên miền "…vercel.app cho biết",
+          chữ và nút không theo app nên đọc lên như trang lạ ("thông báo này của e ngộ quá").
+          Hộp này vuông, nằm giữa màn hình, cùng kiểu với hộp "kéo về Bước 1 — có đổi tiến độ không".
+          Đây là LẦN XÁC NHẬN THỨ 2 (lần 1 là bấm "Lưu Hồ Sơ") — chị Trâm yêu cầu xác nhận 2 lần.
+          Hồ sơ ĐÃ ĐƯỢC LƯU trước khi hộp này mở, nên bấm "Để sau" không mất công nhập liệu. */}
+      {xacNhanQuaB3 && (
+        <div className="fixed inset-0 z-[90] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-dark-card w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-brand-accent shrink-0" />
+              <h3 className="text-sm font-black uppercase tracking-wide text-slate-800 dark:text-slate-100">
+                Trình hồ sơ sang Bước 3?
+              </h3>
+            </div>
+
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-[12px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                Đã lưu chỉnh sửa của hồ sơ{' '}
+                <strong className="text-slate-800 dark:text-slate-100">
+                  “{xacNhanQuaB3.hangMuc} — {xacNhanQuaB3.tenDuAn}”
+                </strong>. Xác nhận trình sang <strong>Bước 3 — Duyệt hồ sơ thầu cấp phòng</strong> để
+                Trưởng phòng nhận hồ sơ và duyệt?
+              </p>
+
+              <div className="rounded-lg bg-slate-50 dark:bg-dark-bg border border-slate-200/70 dark:border-slate-800 px-3 py-2 space-y-1">
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="text-slate-500 dark:text-slate-400">Tiến độ Bộ phận</span>
+                  <strong className="text-brand-success">{xacNhanQuaB3.tienDoBoPhan || 0}%</strong>
+                </div>
+                <div className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="text-slate-500 dark:text-slate-400">Ảnh báo cáo đã gửi báo giá</span>
+                  {(xacNhanQuaB3.anhBaoCaoGuiBaoGia || '').trim() ? (
+                    <strong className="text-brand-success">Đã có</strong>
+                  ) : (
+                    <strong className="text-brand-warning">Chưa có</strong>
+                  )}
+                </div>
+              </div>
+
+              {/* CẢNH BÁO THIẾU ẢNH — chị Trâm 18/08/2026: "c ko thấy e cảnh báo là chưa có ảnh báo cáo".
+                  Ảnh nay chỉ NHẮC chứ không chặn (xem ANH_BAO_CAO_BAT_BUOC), nên phải nói rõ ở đây. */}
+              {!(xacNhanQuaB3.anhBaoCaoGuiBaoGia || '').trim() && (
+                <p className="text-[11px] font-bold text-brand-warning bg-brand-warning/10 border border-brand-warning/25 rounded-lg px-3 py-2">
+                  ⚠ Hồ sơ chưa có <strong>ảnh báo cáo đã gửi báo giá</strong>. Vẫn trình được, nhưng nên
+                  bổ sung ảnh ở mục “Tiến độ Bộ phận” trong hồ sơ để có bằng chứng đã gửi Chủ đầu tư.
+                </p>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const ten = xacNhanQuaB3.tenDuAn;
+                  setXacNhanQuaB3(null);
+                  setChoQuaBuoc3(null);
+                  triggerToast(`Đã lưu chỉnh sửa. Hồ sơ “${ten}” giữ ở Bước 2 — muốn trình duyệt thì kéo thẻ sang Bước 3 lần nữa.`);
+                }}
+                className="px-3 py-1.5 rounded-lg text-[11px] font-black text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-dark-elevated transition-colors"
+              >
+                Để sau
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const hoSo = xacNhanQuaB3;
+                  setProjects(prev => prev.map(p => (p.id === hoSo.id ? { ...p, kanbanStep: 3 } : p)));
+                  setXacNhanQuaB3(null);
+                  setChoQuaBuoc3(null);
+                  triggerToast(`Hồ sơ “${hoSo.tenDuAn}” đã sang Bước 3 — Trưởng phòng nhận được để duyệt.`);
+                  logAction('Chuyển bước Kanban', `Trình hồ sơ ${hoSo.projectId} - ${hoSo.tenDuAn} sang Bước 3 sau khi lưu chỉnh sửa (xác nhận 2 lần)`, undefined, getProjectParticipants(hoSo));
+                }}
+                className="px-3 py-1.5 rounded-lg text-[11px] font-black text-white bg-brand-accent hover:bg-brand-accent-hover transition-colors flex items-center gap-1.5"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Đồng ý — trình Bước 3
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hộp đính kèm ẢNH BÁO CÁO ĐÃ GỬI BÁO GIÁ ở cửa Bước 2 → 3 (góp ý #12) */}
+      {anhBaoCaoProject && (
+        <AnhBaoCaoModal
+          project={anhBaoCaoProject}
+          onClose={() => setAnhBaoCaoProject(null)}
+          onSave={(tepAnh, ghiChu) => {
+            const hoSo = anhBaoCaoProject;
+            setProjects(prev => prev.map(p => p.id === hoSo.id
+              ? { ...p, anhBaoCaoGuiBaoGia: tepAnh, ghiChuGuiBaoGia: ghiChu || undefined }
+              : p));
+            logAction('Đính kèm ảnh đã gửi báo giá',
+              `Hồ sơ "${hoSo.hangMuc} — ${hoSo.tenDuAn}": ${parseAttachments(tepAnh).length} ảnh báo cáo đã gửi báo giá${ghiChu ? ` · ${ghiChu}` : ''}`);
+            setAnhBaoCaoProject(null);
+            // Ảnh đã có → đưa thẻ sang Bước 3 luôn, không bắt người dùng kéo lại.
+            handleKanbanMove(hoSo.id, 2, 3);
+          }}
+        />
+      )}
+
       {phongInputProject && (
         <PhongProgressModal
           project={phongInputProject}
@@ -6507,7 +7203,7 @@ export default function App() {
                 <h3 className="text-sm font-black text-slate-800 dark:text-slate-100">Kéo về Bước 1 — mở vòng mới?</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
                   Hồ sơ <b className="text-slate-700 dark:text-slate-200">"{vongMoiAsk.hangMuc} — {vongMoiAsk.tenDuAn}"</b> đã gửi CĐT{' '}
-                  <b>{(vongMoiAsk.guiCDTLogs || []).length} lần</b>, đang ở <b>vòng {Math.max(1, vongMoiAsk.vongHienTai || 1)}</b>.
+                  <b>{tongSoLanGuiCDT(vongMoiAsk)} lần</b>, đang ở <b>vòng {Math.max(1, vongMoiAsk.vongHienTai || 1)}</b>.
                   Mở vòng mới thì việc con vòng cũ được <b>giữ nguyên (chỉ xem)</b> và Quản lý phải lập bộ việc con mới
                   chia đủ <b>100%</b> cho vòng này — tiến độ Bộ phận bắt đầu lại từ 0%.
                 </p>

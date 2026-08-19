@@ -4,7 +4,7 @@ import { ListTodo, CheckCircle, Search, Download } from 'lucide-react';
 import StaffTaskResultPanel from './StaffTaskResultPanel';
 import TextWithLinks from './TextWithLinks';
 import { updateTaskInTree } from '../utils/taskTree';
-import { fmtDateVN } from '../utils/dateVN';
+import { fmtDateVN, fmtHanViecVN, mocHanViec } from '../utils/dateVN';
 
 // Hạn nộp của một tác vụ: ngày bắt đầu + số ngày − 1 (ngày làm việc cuối, khớp sơ đồ Gantt).
 // Việc chưa đặt lịch riêng thì lấy hạn hiện tại của cả gói công việc (fallback).
@@ -13,11 +13,30 @@ export const taskDeadlineISO = (task: ProjectTask, projectDeadline?: string): st
   if (task.ngayBatDau && /^\d{4}-\d{2}-\d{2}/.test(task.ngayBatDau)) {
     const days = task.soNgay && task.soNgay > 0 ? task.soNgay : 3;
     const d = new Date(task.ngayBatDau);
-    d.setDate(d.getDate() + days - 1);
+    // NỬA NGÀY (chị Trâm chốt 17/08/2026): 3,5 ngày = làm hết nửa buổi sáng ngày thứ 4 → ngày hạn
+    // phải LÀM TRÒN LÊN, nếu không việc 3,5 ngày lại báo hạn trùng với việc 3 ngày.
+    d.setDate(d.getDate() + Math.ceil(days) - 1);
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   }
   return projectDeadline || '';
 };
+
+// ===== HẠN VIỆC CON TÍNH TỚI GIỜ (chị Trâm chốt 17/08/2026 — góp ý #20) =====
+// taskDeadlineISO ở trên trả về NGÀY hạn (giữ nguyên, nhiều chỗ đang dùng để xếp thứ tự & in báo
+// cáo). Hai hàm dưới thêm phần GIỜ:
+//   · taskHanMoc  — mốc hết hạn tính bằng ms để so "trễ hay chưa" cho đúng tới phút.
+//   · taskHanText — chuỗi hiển thị: có giờ thì "19-08-2026 14:00", không có thì "19-08-2026".
+// Việc con KHÔNG nhập giờ hạn → mốc là 23:59:59 của ngày hạn, tức y như cách tính cũ.
+// Việc lẻ NỬA NGÀY thì hạn là 12:00 TRƯA ngày cuối; việc tròn ngày thì hết ngày (23:59:59).
+export const laNuaNgayViec = (task: ProjectTask): boolean => {
+  const d = task.soNgay && task.soNgay > 0 ? task.soNgay : 3;
+  return d - Math.floor(d) >= 0.5;
+};
+export const taskHanMoc = (task: ProjectTask, projectDeadline?: string): number =>
+  mocHanViec(taskDeadlineISO(task, projectDeadline), laNuaNgayViec(task) ? '12:00' : undefined);
+export const taskHanText = (task: ProjectTask, projectDeadline?: string): string =>
+  fmtHanViecVN(taskDeadlineISO(task, projectDeadline), laNuaNgayViec(task) ? '12:00' : undefined);
+
 export const todayISO = (): string => {
   const n = new Date();
   return `${n.getFullYear()}-${pad2(n.getMonth() + 1)}-${pad2(n.getDate())}`;
@@ -119,11 +138,19 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
     const pTasks = p.tasks && p.tasks.length > 0 ? p.tasks : DEFAULT_PROJECT_TASKS;
     const walk = (list: ProjectTask[]) => {
       list.forEach(t => {
+        // ===== MỘT VIỆC CHỈ HIỆN MỘT DÒNG (chị Trâm chốt 18/08/2026) =====
+        // "bên màn hình hiển thị của ng giao việc thì e phải hiểu là chỉ hiển thị 1 công việc con
+        //  cấp 2 thôi nhé em."
+        // Việc cấp 1 đã chia cho nhiều người vẫn giữ ĐỦ `assignedStaffIds` (RBAC gom `thucHienIds`
+        // từ đó nên ai cũng thấy được hồ sơ). Hệ quả: mỗi người khớp CẢ việc cấp 1 LẪN phần cấp 2 của
+        // mình → danh sách tác vụ ra 2 dòng cho cùng một việc, tỉ trọng đọc lên cũng lệch (60% và 30%).
+        // Nay việc đã chia thì BỎ QUA dòng cấp 1, chỉ liệt kê phần cấp 2 — đúng cái người ta phải làm.
+        const daChia = !!(t.subtasks && t.subtasks.length > 0);
         const isMine = t.assignedTo === currentUserId || (t.assignedStaffIds || []).includes(currentUserId);
-        if (!personalOnly || isMine) {
+        if (!daChia && (!personalOnly || isMine)) {
           rows.push({ project: p, task: t });
         }
-        if (t.subtasks && t.subtasks.length > 0) walk(t.subtasks);
+        if (daChia) walk(t.subtasks!);
       });
     };
     walk(pTasks);
@@ -291,6 +318,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
           if (t.subtasks?.length) { walk(t.subtasks); return; }   // chỉ liệt kê việc lá (việc thực làm)
           stt += 1;
           const deadline = taskDeadlineISO(t, p.ngayHoanThanhDuKienHienTai);
+          const hanIn = taskHanText(t, p.ngayHoanThanhDuKienHienTai);   // kèm giờ nếu việc con có giờ hạn
           const st = statusOf(t, deadline);
           const nguoiLam = Array.from(new Set([t.assignedTo, ...(t.assignedStaffIds || [])].filter(Boolean) as string[]))
             .map(tenNhanSu).filter(Boolean).join(', ');
@@ -304,7 +332,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
               <td class="num">${t.vong || 1}</td>
               <td class="num">${t.weight || 0}%</td>
               <td class="num">${myProgress(t)}%</td>
-              <td class="num">${deadline ? fmtDateVN(deadline) : '—'}</td>
+              <td class="num">${deadline ? hanIn : '—'}</td>
               <td style="${st.style}">${st.text}</td>
               <td>${esc(t.ketQuaCongViec || '')}</td>
             </tr>
@@ -426,6 +454,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
 
     rows.forEach(({ project, task }, i) => {
       const deadline = taskDeadlineISO(task, project.ngayHoanThanhDuKienHienTai);
+      const hanIn = taskHanText(task, project.ngayHoanThanhDuKienHienTai);
       const st = statusOf(task, deadline);
       html += `
         <tr>
@@ -436,7 +465,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
           <td class="num">${task.vong || 1}</td>
           <td class="num">${task.weight || 0}%</td>
           <td class="num">${myProgress(task)}%</td>
-          <td class="num">${deadline ? fmtDateVN(deadline) : '—'}</td>
+          <td class="num">${deadline ? hanIn : '—'}</td>
           <td style="${st.style}">${st.text}</td>
           <td class="num">${task.completedAt ? fmtDateVN(task.completedAt) : '—'}</td>
           <td>${esc(task.ketQuaCongViec || '')}</td>
@@ -559,12 +588,15 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
                 ? '⏳ Kế hoạch đang chờ Trưởng phòng duyệt — việc hiện sẵn để bạn thu xếp, chưa cập nhật được. Trưởng phòng duyệt xong bạn sẽ nhận thông báo "bắt đầu thực hiện".'
                 : `🔒 Hồ sơ đã sang bước ${project.kanbanStep} — Trưởng phòng đang duyệt, không cập nhật công việc con được nữa. Cần sửa thì đề nghị Trưởng phòng kéo hồ sơ về bước trước.`;
               const blockReason = task.isCompleted ? null : (khoaBuoc ? lyDoKhoaBuoc : getCompletionBlockReason(task));
-              // Hạn nộp tác vụ + cảnh báo: đỏ = quá hạn, vàng = còn ≤3 ngày
+              // Hạn nộp tác vụ + cảnh báo: đỏ = quá hạn, vàng = còn ≤3 ngày.
+              // So theo MỐC MS (góp ý #20): việc con có giờ hạn thì quá 14:00 là trễ ngay trong ngày;
+              // không nhập giờ thì mốc là 23:59:59 nên vẫn "đúng hạn" trọn ngày như trước.
               const deadlineISO = taskDeadlineISO(task, project.ngayHoanThanhDuKienHienTai);
-              const tISO = todayISO();
-              const overdue = !!deadlineISO && !task.isCompleted && deadlineISO < tISO;
-              const daysLeft = deadlineISO ? Math.round((new Date(deadlineISO).getTime() - new Date(tISO).getTime()) / 86400000) : Infinity;
-              const dueSoon = !!deadlineISO && !task.isCompleted && !overdue && daysLeft <= 3;
+              const hanMoc = taskHanMoc(task, project.ngayHoanThanhDuKienHienTai);
+              const bayGio = Date.now();
+              const overdue = !isNaN(hanMoc) && !task.isCompleted && bayGio > hanMoc;
+              const daysLeft = !isNaN(hanMoc) ? Math.ceil((hanMoc - bayGio) / 86400000) : Infinity;
+              const dueSoon = !isNaN(hanMoc) && !task.isCompleted && !overdue && daysLeft <= 3;
               return (
                 <div key={rowKey} className="py-2">
                   <div className="flex items-center justify-between gap-4">
@@ -618,7 +650,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
                                     : 'Hạn nộp công việc'
                             }
                           >
-                            📅 Nộp trước: {fmtDateVN(deadlineISO)}
+                            📅 Nộp trước: {taskHanText(task, project.ngayHoanThanhDuKienHienTai)}
                             {overdue ? ' • QUÁ HẠN' : dueSoon ? ` • còn ${daysLeft}n` : ''}
                           </span>
                         )}
@@ -781,7 +813,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
                     <StaffTaskResultPanel
                       task={task}
                       isOverdue={overdue}
-                      deadlineText={deadlineISO ? fmtDateVN(deadlineISO) : undefined}
+                      deadlineText={deadlineISO ? taskHanText(task, project.ngayHoanThanhDuKienHienTai) : undefined}
                       onClose={() => setExpandedTaskKey(null)}
                       onSave={(patch) => {
                         const currentTasks = project.tasks && project.tasks.length > 0 ? project.tasks : DEFAULT_PROJECT_TASKS;

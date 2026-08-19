@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Project, Staff } from '../types';
 import { ChevronLeft, ChevronRight, Calendar, AlertCircle, ShieldAlert, CheckCircle2 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { fmtDateVN, tongNgayDoiHan } from '../utils/dateVN';
+import { fmtDateVN, tongNgayDoiHan, mocHetNgay, namHienTaiVN } from '../utils/dateVN';
 import DateInput from './DateInput';
 
 interface GanttChartProps {
@@ -16,21 +16,61 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
   const [fromDate, setFromDate] = useState<string>('');
   const [toDate, setToDate] = useState<string>('');
 
-  // Mặc định: chỉ hiện hồ sơ ĐANG CHẠY & ĐANG TRỄ (ẩn hồ sơ đã xong trong quá khứ).
-  // Khi đặt khoảng ngày (từ / đến) thì hiện MỌI hồ sơ có lịch giao với khoảng đó — kể cả đã xong.
+  // ===== LỌC NĂM + LỌC TRẠNG THÁI NGAY TRÊN GANTT (chị Trâm chốt 18/08/2026) =====
+  // "thêm nút sort năm và thêm nút sort dự án đã xong / đang làm / tất cả như ngoài báo cáo tiến độ."
+  // Trước đây Gantt CỨNG một luật: không đặt khoảng ngày thì chỉ hiện hồ sơ đang chạy & đang trễ,
+  // muốn xem hồ sơ đã xong phải đi đặt khoảng ngày — không có cách chọn trực tiếp.
+  const [namLoc, setNamLoc] = useState<string>(() => namHienTaiVN());
+  const [locTrangThai, setLocTrangThai] = useState<'ACTIVE' | 'DONE' | 'ALL'>('ACTIVE');
+
+  // Năm của một hồ sơ — CÙNG cách đọc với bảng Kanban: ưu tiên tiền tố mã dạng `YYYY.`, không có thì
+  // lấy năm của ngày bắt đầu; chặn năm vô lý (mã kiểu YYMMNN từng sinh ra "Năm 2600" — góp ý #14).
+  const namHopLe = (n: number) => n >= 2000 && n <= 2100;
+  const namCuaHoSo = (p: Project): string => {
+    const tuMa = (p.projectId || '').match(/^(\d{4})\./)?.[1];
+    if (tuMa && namHopLe(Number(tuMa))) return tuMa;
+    const d = new Date(p.ngayBatDau);
+    if (isNaN(d.getTime())) return '';
+    return namHopLe(d.getFullYear()) ? String(d.getFullYear()) : '';
+  };
+  const cacNam = useMemo(
+    () => [...new Set([namHienTaiVN(), ...allProjects.map(namCuaHoSo).filter(Boolean)])].sort().reverse(),
+    [allProjects],
+  );
+
+  // ĐÃ XONG tính theo ĐÚNG cách Gantt đang tô màu (xem xongPhanCuaPhong ở phần vẽ thanh):
+  // Bộ phận và Phòng đều 100% là xong phần của Phòng — chị Trâm chốt "tính đến tiến độ TP kiểm tra
+  // thôi", nên bộ lọc phải khớp với cái mắt nhìn thấy trên biểu đồ (thanh xanh lá = Đã xong).
+  const daXong = (p: Project): boolean =>
+    p.trangThai === 'HOAN_THANH_DUNG_HAN' || p.trangThai === 'HOAN_THANH_TRE_HAN' ||
+    p.tinhTrangDuAn === 'Đã trúng thầu' || p.tinhTrangDuAn === 'Rớt thầu' ||
+    ((p.tienDoBoPhan || 0) >= 100 && (p.tienDoPhong || 0) >= 100);
+
+  // Danh sách sau khi lọc NĂM (dùng để đếm số trên 3 nút trạng thái cho khớp năm đang chọn)
+  const theoNam = useMemo(
+    () => (namLoc === 'ALL' ? allProjects : allProjects.filter(p => namCuaHoSo(p) === namLoc)),
+    [allProjects, namLoc],
+  );
+  const demTrangThai = useMemo(() => {
+    const xong = theoNam.filter(daXong).length;
+    return { active: theoNam.length - xong, done: xong, all: theoNam.length };
+  }, [theoNam]);
+
   const projects = useMemo(() => {
+    let ds = locTrangThai === 'ALL'
+      ? theoNam
+      : theoNam.filter(p => (locTrangThai === 'DONE' ? daXong(p) : !daXong(p)));
     const hasRange = !!(fromDate || toDate);
-    if (!hasRange) {
-      return allProjects.filter(p => p.trangThai === 'DANG_THUC_HIEN' || p.trangThai === 'TRE_TIEN_DO');
-    }
+    if (!hasRange) return ds;
     const from = fromDate ? new Date(fromDate).getTime() : -Infinity;
     const to = toDate ? new Date(toDate).getTime() : Infinity;
-    return allProjects.filter(p => {
+    ds = ds.filter(p => {
       const s = new Date(p.ngayBatDau).getTime();
       const e = new Date(p.ngayHoanThanhThucTe || p.ngayHoanThanhDuKienHienTai || p.ngayHoanThanhDuKienGoc).getTime();
       return s <= to && e >= from; // lịch dự án giao với khoảng lọc
     });
-  }, [allProjects, fromDate, toDate]);
+    return ds;
+  }, [theoNam, locTrangThai, fromDate, toDate]);
 
   // Find the overall date range of all projects
   const dateBounds = useMemo(() => {
@@ -57,17 +97,23 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
     // Earliest start minus 2 days, latest end plus 5 days for buffer
     const minStart = new Date(Math.min(...startDates.map(d => d.getTime())));
     minStart.setDate(minStart.getDate() - 2);
+    // ===== LƯỚI BẮT ĐẦU TỪ THỨ HAI (chị Trâm chốt 18/08/2026) =====
+    // Trước đây cột "Tuần 1" bắt đầu từ ngày dự án sớm nhất nên rơi vào giữa tuần, và số tuần đếm
+    // từ 1 theo biểu đồ chứ không theo lịch năm. Nay kéo mốc đầu về THỨ HAI của tuần đó để cột tuần
+    // trùng tuần lịch, và số tuần lấy theo TUẦN TRONG NĂM (xem soTuanTrongNam).
+    minStart.setDate(minStart.getDate() - ((minStart.getDay() + 6) % 7));
 
     const maxEnd = new Date(Math.max(...endDates.map(d => d.getTime())));
     maxEnd.setDate(maxEnd.getDate() + 5);
 
     const diffTime = Math.abs(maxEnd.getTime() - minStart.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    let diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    diffDays = Math.ceil(diffDays / 7) * 7;   // tròn tuần để cột tuần cuối không bị cụt
 
     return {
       start: minStart,
       end: maxEnd,
-      totalDays: diffDays > 100 ? 100 : diffDays
+      totalDays: diffDays > 105 ? 105 : diffDays
     };
   }, [projects]);
 
@@ -94,14 +140,28 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
     return days[date.getDay()];
   };
 
+  /**
+   * Tuần thứ mấy TRONG NĂM (chuẩn ISO — tuần bắt đầu từ Thứ Hai), chị Trâm chốt 18/08/2026:
+   * "Tuần 1 thì tính từ đầu năm, chứ không phải tính từ tuần có dự án bắt đầu của app".
+   */
+  const soTuanTrongNam = (date: Date): number => {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    // Đưa về Thứ Năm của tuần đó — mốc quyết định tuần thuộc năm nào theo ISO 8601
+    d.setUTCDate(d.getUTCDate() + 4 - ((d.getUTCDay() + 6) % 7 + 1));
+    const dauNam = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d.getTime() - dauNam.getTime()) / 86400000) + 1) / 7);
+  };
+
   // Helper to calculate percentage positions
   const getPercentagePositions = (p: Project) => {
     const startOfAll = dateBounds.start.getTime();
     const totalDuration = dateBounds.totalDays * 24 * 60 * 60 * 1000;
 
+    // HẠN TÍNH TỚI HẾT NGÀY: mốc kết thúc là 00:00 ngày KẾ TIẾP, nếu không thanh sẽ dừng ở
+    // đầu ngày hạn và bỏ trống chính ô ngày đó (chị Trâm báo 17/08/2026 — xem mocHetNgay).
     const projStart = new Date(p.ngayBatDau).getTime();
-    const projEndGoc = new Date(p.ngayHoanThanhDuKienGoc).getTime();
-    const projEndHienTai = new Date(p.ngayHoanThanhDuKienHienTai).getTime();
+    const projEndGoc = mocHetNgay(p.ngayHoanThanhDuKienGoc);
+    const projEndHienTai = mocHetNgay(p.ngayHoanThanhDuKienHienTai);
 
     const left = ((projStart - startOfAll) / totalDuration) * 100;
     
@@ -118,7 +178,7 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
     // Actual completion position if available
     let actualWidth = 0;
     if (p.ngayHoanThanhThucTe) {
-      const actualEnd = new Date(p.ngayHoanThanhThucTe).getTime();
+      const actualEnd = mocHetNgay(p.ngayHoanThanhThucTe); // cũng tính tới hết ngày
       actualWidth = ((actualEnd - projStart) / totalDuration) * 100;
     }
 
@@ -150,8 +210,33 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
         
         {/* Scale buttons + bộ lọc ngày */}
         <div className="flex flex-wrap items-center gap-3">
+          {/* LỌC NĂM — cùng cách làm với bảng Kanban; năm hiện tại luôn có trong danh sách */}
+          <select
+            value={namLoc}
+            onChange={(e) => setNamLoc(e.target.value)}
+            title="Lọc hồ sơ trên biểu đồ theo năm"
+            className="text-[0.72rem] font-black bg-white dark:bg-dark-bg/50 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-accent cursor-pointer"
+          >
+            <option value="ALL">Tất cả năm</option>
+            {cacNam.map(n => <option key={n} value={n}>Năm {n}</option>)}
+          </select>
+
+          {/* LỌC TRẠNG THÁI — cùng bộ nút với tab Báo Cáo Tiến Độ (Đang làm / Đã xong / Tất cả) */}
+          <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-dark-elevated/60 p-0.5 rounded-lg">
+            {([['ACTIVE', 'Đang làm', demTrangThai.active], ['DONE', 'Đã xong', demTrangThai.done], ['ALL', 'Tất cả', demTrangThai.all]] as const).map(([k, nhan, n]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setLocTrangThai(k)}
+                className={`px-2.5 py-1 rounded-md text-[10px] font-black transition-colors whitespace-nowrap ${locTrangThai === k ? 'bg-white dark:bg-dark-card text-brand-accent dark:text-brand-accent-300 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+              >
+                {nhan} ({n})
+              </button>
+            ))}
+          </div>
+          {/* Không đặt biểu tượng lịch trang trí trong ô lọc: mỗi DateInput đã có nút lịch riêng
+              (góp ý #6) — thêm nữa là dòng lọc có 3 cuốn lịch (chị Trâm báo 17/08/2026). */}
           <div className="flex items-center gap-1.5 bg-white dark:bg-dark-bg/50 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1">
-            <Calendar className="w-3.5 h-3.5 text-brand-accent dark:text-brand-accent-300 shrink-0" />
             <DateInput
               value={fromDate}
               onChange={setFromDate}
@@ -196,7 +281,7 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
       <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-800 flex flex-wrap gap-4 text-[11px] bg-white dark:bg-dark-card text-slate-600 dark:text-slate-400">
         <div className="flex items-center gap-1.5">
           <div className="w-4 h-3 bg-brand-success rounded border border-brand-success-600"></div>
-          <span>Đã hoàn thành (Xanh lá)</span>
+          <span>Đã hoàn thành — Bộ phận &amp; Trưởng phòng đều 100% (Xanh lá)</span>
         </div>
         <div className="flex items-center gap-1.5">
           <div className="w-4 h-3 bg-brand-accent rounded border border-brand-accent-600"></div>
@@ -210,9 +295,20 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
           <div className="w-4 h-3 bg-brand-danger rounded border border-brand-danger"></div>
           <span>Quá hạn thầu (Đỏ)</span>
         </div>
+        {/* Chú giải phải nói đúng cách tô mới: 70% Bộ phận + 30% Phòng (chị Trâm 18/08/2026) */}
         <div className="flex items-center gap-1.5">
-          <div className="w-4 h-1.5 bg-brand-success rounded"></div>
-          <span>Phòng duyệt (% Dept)</span>
+          <span className="inline-flex h-3 w-10 rounded border border-slate-300 dark:border-slate-600 overflow-hidden">
+            <span className="h-full bg-brand-accent/70" style={{ width: '70%' }} />
+            <span className="h-full bg-brand-success/70" style={{ width: '30%' }} />
+          </span>
+          <span>Thanh chia <strong>70% Bộ phận</strong> + <strong>30% Phòng duyệt</strong></span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-4 h-1.5 bg-slate-500 dark:bg-slate-300 rounded"></div>
+          <span>Tổng tiến độ (70/30)</span>
+        </div>
+        <div className="flex items-center gap-1.5 text-slate-500 dark:text-slate-500">
+          <span>· Bộ lọc <strong>Đã xong</strong> = Bộ phận và Phòng đều 100% (đúng thanh xanh lá)</span>
         </div>
         <div className="flex items-center gap-1.5">
           <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-brand-danger/10 text-brand-danger border border-brand-danger/25">
@@ -237,15 +333,24 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
             <div className="flex-1 relative flex">
               {scale === 'day' ? (
                 dateList.map((date, idx) => {
-                  const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+                  // CHỈ TÔ CHỦ NHẬT (chị Trâm chốt 18/08/2026: "thứ 7 công ty vẫn làm").
+                  const laChuNhat = date.getDay() === 0;
                   return (
-                    <div 
-                      key={idx} 
+                    <div
+                      key={idx}
                       style={{ width: `${100 / dateBounds.totalDays}%` }}
-                      className={`text-center py-2 text-[10px] flex-shrink-0 border-r border-slate-100/50 flex flex-col justify-center ${isWeekend ? 'bg-brand-warning/10 text-brand-warning font-semibold' : 'text-slate-500'}`}
+                      className={`text-center py-2 text-[10px] flex-shrink-0 border-r border-slate-100/50 dark:border-slate-800 flex flex-col justify-center ${
+                        laChuNhat ? 'bg-brand-warning/10' : ''
+                      }`}
                     >
-                      <span className="scale-90">{getDayName(date)}</span>
-                      <span className="font-semibold text-slate-700">{formatDateLabel(date)}</span>
+                      {/* Chữ phải ĐỌC RÕ (chị Trâm báo 18/08/2026: mờ quá) — bỏ màu xám nhạt,
+                          dùng màu chữ chính và in đậm cho cả tên thứ lẫn ngày. */}
+                      <span className={`font-black ${laChuNhat ? 'text-brand-warning' : 'text-slate-600 dark:text-slate-300'}`}>
+                        {getDayName(date)}
+                      </span>
+                      <span className={`font-black ${laChuNhat ? 'text-brand-warning' : 'text-slate-700 dark:text-slate-100'}`}>
+                        {formatDateLabel(date)}
+                      </span>
                     </div>
                   );
                 })
@@ -254,13 +359,45 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
                 Array.from({ length: Math.ceil(dateBounds.totalDays / 7) }).map((_, idx) => {
                   const weekStart = new Date(dateBounds.start);
                   weekStart.setDate(weekStart.getDate() + idx * 7);
+                  // Ngày CUỐI của tuần (không vượt quá phạm vi biểu đồ)
+                  const weekEnd = new Date(weekStart);
+                  weekEnd.setDate(weekEnd.getDate() + 6);
+                  const gioiHan = new Date(dateBounds.start);
+                  gioiHan.setDate(gioiHan.getDate() + dateBounds.totalDays - 1);
+                  const cuoi = weekEnd > gioiHan ? gioiHan : weekEnd;
                   return (
-                    <div 
-                      key={idx} 
+                    <div
+                      key={idx}
                       style={{ width: `${100 / (dateBounds.totalDays / 7)}%` }}
-                      className="text-center py-3 text-xs text-slate-500 border-r border-slate-100 flex-shrink-0 font-medium"
+                      className="text-center py-2 border-r border-slate-100 dark:border-slate-800 flex-shrink-0 flex flex-col justify-center"
                     >
-                      Tuần {idx + 1} ({formatDateLabel(weekStart)})
+                      {/* Xem theo TUẦN vẫn phải thấy NGÀY THÁNG, và số tuần đếm THEO NĂM
+                          (chị Trâm chốt 18/08/2026). Bên dưới là từng ô ngày của tuần đó. */}
+                      <span className="text-xs font-black text-slate-700 dark:text-slate-100">
+                        Tuần {soTuanTrongNam(weekStart)}
+                      </span>
+                      <span className="text-[10px] font-black text-slate-600 dark:text-slate-300">
+                        {formatDateLabel(weekStart)} → {formatDateLabel(cuoi)}
+                      </span>
+                      <div className="flex mt-1 border-t border-slate-100 dark:border-slate-800 pt-1">
+                        {Array.from({ length: 7 }).map((_, i) => {
+                          const ngay = new Date(weekStart);
+                          ngay.setDate(ngay.getDate() + i);
+                          if (ngay > gioiHan) return <span key={i} className="flex-1" />;
+                          const laChuNhat = ngay.getDay() === 0;   // T7 công ty vẫn làm
+                          return (
+                            <span
+                              key={i}
+                              title={`${getDayName(ngay)} ${formatDateLabel(ngay)}`}
+                              className={`flex-1 text-[9px] font-black leading-tight ${
+                                laChuNhat ? 'text-brand-warning' : 'text-slate-500 dark:text-slate-400'
+                              }`}
+                            >
+                              {ngay.getDate()}
+                            </span>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })
@@ -304,6 +441,25 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
                     {/* Staff assigned & Progress levels */}
                     <div className="mt-3 pt-3 border-t border-slate-100/75 dark:border-slate-800 flex flex-col gap-1.5">
                       {/* Quản lý / Thực hiện: ẩn ở mobile (cột hẹp 1/3) — chỉ hiện từ sm trở lên */}
+                      {/* HẠN ĐƯA SANG ĐÂY (chị Trâm chốt 17/08/2026) — trước nằm trên thanh Gantt, gói
+                          thầu hạn ngắn là chữ biến mất. Ở cột trái thì lúc nào cũng đọc được. */}
+                      <div className="flex items-center gap-1.5 text-[10px] font-bold">
+                        <span className="text-slate-400 dark:text-slate-500">Hạn:</span>
+                        <span className={
+                          p.trangThai === 'TRE_TIEN_DO' ? 'text-brand-danger'
+                            : (p.trangThai === 'HOAN_THANH_DUNG_HAN' || p.trangThai === 'HOAN_THANH_TRE_HAN'
+                              || ((p.tienDoBoPhan || 0) >= 100 && (p.tienDoPhong || 0) >= 100)) ? 'text-brand-success'
+                              : 'text-slate-700 dark:text-slate-200'
+                        }>
+                          {fmtDateVN(p.ngayHoanThanhDuKienHienTai)}
+                        </span>
+                        {p.hanHenCDT && (
+                          <span className="text-brand-primary dark:text-brand-primary-300" title="Thời hạn đã hẹn với Chủ đầu tư">
+                            · Hẹn CĐT: {fmtDateVN(p.hanHenCDT)}
+                          </span>
+                        )}
+                      </div>
+
                       <div className="hidden sm:flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
                         <span>Quản lý: <strong className="dark:text-slate-300">{manager?.hoTen || 'N/A'}</strong>{(p.quanLyIdsPhu || []).length > 0 && <span className="text-brand-primary dark:text-brand-primary-300 font-bold"> +{(p.quanLyIdsPhu || []).length}</span>}</span>
                         <span>Thực hiện: <strong className="dark:text-slate-300" title={fullImplementerNames}>{implementerNames}</strong></span>
@@ -363,32 +519,46 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
                       {(() => {
                         const isNear = (() => {
                           if (p.trangThai !== 'DANG_THUC_HIEN') return false;
-                          const today = new Date();
-                          const deadline = new Date(p.ngayHoanThanhDuKienHienTai);
-                          const diffTime = deadline.getTime() - today.getTime();
+                          // Hạn tính tới HẾT ngày — dùng mocHetNgay cho khớp với cách vẽ thanh ở
+                          // getPercentagePositions, nếu không thì đúng NGÀY hết hạn lại bị coi là đã trễ.
+                          const deadline = mocHetNgay(p.ngayHoanThanhDuKienHienTai);
+                          if (isNaN(deadline)) return false;
+                          const diffTime = deadline - Date.now();
                           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                          return diffDays >= 0 && diffDays <= 5; // within 5 days
+                          return diffDays >= 0 && diffDays <= 5; // còn tối đa 5 ngày
                         })();
 
                         let borderClass = "border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-dark-card";
-                        let progressFillClass = "bg-brand-accent/20";
+                        // Dải Bộ phận tô ĐẬM để đọc được trên nền tối (bản cũ /20 gần như không thấy —
+                        // chị Trâm gọi là "đen thui", 18/08/2026).
+                        let fillBoPhan = "bg-brand-accent/70";
                         let textClass = "text-slate-700 dark:text-slate-200";
 
-                        if (p.trangThai === 'HOAN_THANH_DUNG_HAN' || p.trangThai === 'HOAN_THANH_TRE_HAN') {
+                        // ===== GANTT CHỈ TÍNH TỚI TIẾN ĐỘ TP KIỂM TRA (chị Trâm chốt 18/08/2026) =====
+                        // "từ bước 4 qua 5 là chuyện của BGĐ, ko còn liên quan đến phòng ban nữa em, nên
+                        //  em tô biểu đồ gant tính đến tiến độ TP ktra thôi nhé."
+                        // Nên với BIỂU ĐỒ GANTT: Bộ phận 100% + Phòng duyệt 100% = XONG phần của Phòng →
+                        // tô xanh lá, không chờ tới lúc gửi CĐT (bước 5) nữa.
+                        // ⚠ CỐ Ý KHÔNG đổi `trangThai` của hồ sơ: KPI đội ngũ, thống kê "đã xong" và cột
+                        // "gói thầu đã có kết quả" của bảng ISO đều đọc theo `trangThai`; đổi ở đó sẽ đếm
+                        // cả hồ sơ chưa gửi CĐT là xong, làm lệch báo cáo. Đây chỉ là CÁCH TÔ trên Gantt.
+                        const xongPhanCuaPhong = (p.tienDoBoPhan || 0) >= 100 && (p.tienDoPhong || 0) >= 100;
+
+                        if (p.trangThai === 'HOAN_THANH_DUNG_HAN' || p.trangThai === 'HOAN_THANH_TRE_HAN' || xongPhanCuaPhong) {
                           borderClass = "border-brand-success bg-brand-success/10";
-                          progressFillClass = "bg-brand-success/25";
+                          fillBoPhan = "bg-brand-success/70";
                           textClass = "text-brand-success-900 dark:text-brand-success-100 font-extrabold";
                         } else if (p.trangThai === 'TRE_TIEN_DO') {
                           borderClass = "border-brand-danger bg-brand-danger/10";
-                          progressFillClass = "bg-brand-danger/25";
+                          fillBoPhan = "bg-brand-danger/70";
                           textClass = "text-brand-danger font-extrabold";
                         } else if (isNear) {
                           borderClass = "border-brand-warning bg-brand-warning/10";
-                          progressFillClass = "bg-brand-warning/30";
+                          fillBoPhan = "bg-brand-warning/75";
                           textClass = "text-brand-warning font-extrabold";
                         } else {
                           borderClass = "border-brand-accent bg-brand-accent/10";
-                          progressFillClass = "bg-brand-accent/20";
+                          fillBoPhan = "bg-brand-accent/70";
                           textClass = "text-brand-accent-950 dark:text-brand-accent-100 font-bold";
                         }
 
@@ -396,24 +566,41 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
                           <div 
                             style={{ left: `${left}%`, width: `${widthHienTai}%` }}
                             className={`absolute top-5 h-8 border rounded-lg overflow-hidden flex flex-col justify-center p-1 ${borderClass} ${isCrit ? 'ring-1 ring-brand-danger/30' : ''}`}
+                            title={`${p.tenDuAn} · Hạn: ${fmtDateVN(p.ngayHoanThanhDuKienHienTai)} · Bộ phận ${p.tienDoBoPhan}% · Phòng ${p.tienDoPhong}%`}
                           >
-                            {/* Team Progress fill bar */}
-                            <div 
-                              style={{ width: `${p.tienDoBoPhan}%` }}
-                              className={`absolute left-0 top-0 bottom-0 ${progressFillClass} transition-all`}
+                            {/* ===== TÔ ĐÚNG TỈ LỆ 70% BỘ PHẬN + 30% PHÒNG (chị Trâm báo 18/08/2026) =====
+                                "sao bộ phận đc 100% rồi mà cái này còn đen thui chưa kẻ 70% như c phân bổ,
+                                 bộ phận 70% - phòng 30%".
+                                BẢN CŨ SAI 2 CHỖ: (a) tô theo `tienDoBoPhan` chiếm HẾT bề rộng thanh nên
+                                Bộ phận 100% mà Phòng chưa duyệt vẫn nhìn như xong cả gói, không thấy phần
+                                70/30 nào; (b) màu chỉ 20% độ đậm nên trên nền tối gần như không thấy.
+                                NAY tô đúng công thức app vẫn dùng để tính tiến độ:
+                                  · dải 1 = Bộ phận, tối đa 70% bề rộng (Bộ phận 100% → tô 70%);
+                                  · dải 2 = Phòng, bắt đầu từ mốc 70%, tối đa 30% còn lại;
+                                  · vạch mờ ở mốc 70% cho thấy ranh giới hai phần. */}
+                            <div
+                              style={{ width: `${Math.max(0, Math.min(100, p.tienDoBoPhan || 0)) * 0.7}%` }}
+                              className={`absolute left-0 top-0 bottom-0 ${fillBoPhan} transition-all`}
+                              title={`Bộ phận thực hiện ${p.tienDoBoPhan || 0}% (chiếm 70% tiến độ)`}
                             />
+                            <div
+                              style={{ left: '70%', width: `${Math.max(0, Math.min(100, p.tienDoPhong || 0)) * 0.3}%` }}
+                              className="absolute top-0 bottom-0 bg-brand-success/70 transition-all"
+                              title={`Trưởng phòng duyệt ${p.tienDoPhong || 0}% (chiếm 30% tiến độ)`}
+                            />
+                            <div className="absolute top-0 bottom-0 w-px bg-slate-400/50 dark:bg-slate-300/30" style={{ left: '70%' }} />
 
-                            {/* Visual labels on Gantt bar */}
-                            <div className="relative z-10 flex items-center justify-between px-1 text-[10px] font-semibold">
-                              <span className={`truncate max-w-[150px] ${textClass}`}>{p.tenDuAn}</span>
-                              <span className={textClass}>Hạn: {fmtDateVN(p.ngayHoanThanhDuKienHienTai)}</span>
-                            </div>
+                            {/* KHÔNG ĐẶT CHỮ TRÊN THANH (chị Trâm chốt 17/08/2026): gói thầu chỉ 1 ngày
+                                hoặc hạn ngắn thì thanh hẹp, chữ bị cắt mất hoặc chồng lên nhau, nhìn rất
+                                khó. Tên dự án và HẠN đã hiện ở cột trái; thanh chỉ còn 2 dải màu
+                                (Bộ phận + Phòng) cho dễ đọc. Rê chuột vào thanh vẫn xem được chi tiết. */}
 
-                            {/* Hierarchical overlay line for Dept Level progress (Green line in the middle) */}
-                            <div className="absolute bottom-1 left-1 right-1 h-1 bg-slate-200 dark:bg-dark-elevated rounded-full overflow-hidden">
+                            {/* Dải mỏng dưới đáy = TỔNG tiến độ (Bộ phận×70% + Phòng×30%) — đúng con số
+                                app dùng để tính, đọc nhanh cả gói đi tới đâu. */}
+                            <div className="absolute bottom-0.5 left-1 right-1 h-1 bg-slate-200/70 dark:bg-dark-elevated rounded-full overflow-hidden">
                               <div
-                                style={{ width: `${p.tienDoPhong}%` }}
-                                className="h-full bg-brand-success transition-all"
+                                style={{ width: `${(p.tienDoBoPhan || 0) * 0.7 + (p.tienDoPhong || 0) * 0.3}%` }}
+                                className="h-full bg-slate-500 dark:bg-slate-300 transition-all"
                               />
                             </div>
                           </div>

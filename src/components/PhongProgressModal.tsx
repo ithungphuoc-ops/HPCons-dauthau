@@ -6,6 +6,7 @@ import { useModalA11y } from '../utils/useModalA11y';
 import FileDropZone from './FileDropZone';
 import { AutoGrowTextarea } from './ui';
 import { parseAttachments, joinAttachments } from '../utils/attachments';
+import { tongSoLanGuiCDT } from '../utils/guiCDT';
 
 interface PhongProgressModalProps {
   project: Project;
@@ -63,11 +64,11 @@ export default function PhongProgressModal({ project, onSave, onClose }: PhongPr
             📁 <b className="text-slate-700 dark:text-slate-200">{project.tenDuAn}</b> — {project.hangMuc}
             <br />Hồ sơ đang ở <b>bước {project.kanbanStep || 1}</b>. Tiến độ Phòng phải đủ <b>100%</b> thì mới chuyển được sang
             {' '}{buocKeTiep}. Kết quả công việc <b>không bắt buộc</b> — nhập mô tả, đính kèm tệp, hoặc để trống.
-            {(project.guiCDTLogs || []).length > 0 && (
+            {tongSoLanGuiCDT(project) > 0 && (
               <>
-                <br />📤 Hồ sơ này đã gửi CĐT <b className="text-brand-accent dark:text-brand-accent-300">{(project.guiCDTLogs || []).length} lần</b>
+                <br />📤 Hồ sơ này đã gửi CĐT <b className="text-brand-accent dark:text-brand-accent-300">{tongSoLanGuiCDT(project)} lần</b>
                 {' '}(gần nhất {[...(project.guiCDTLogs || [])].sort((a, b) => b.lan - a.lan)[0].ngay.split('-').reverse().join('-')}).
-                {' '}Số liệu nhập ở đây là của <b>vòng gửi lần {(project.guiCDTLogs || []).length + 1}</b>.
+                {' '}Số liệu nhập ở đây là của <b>vòng gửi lần {tongSoLanGuiCDT(project) + 1}</b>.
               </>
             )}
           </div>

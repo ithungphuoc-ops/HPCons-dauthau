@@ -29,6 +29,7 @@ sai dữ liệu — không có thông báo lỗi nào cả.
 | 2 | Đã tắt cờ dev & demo | `grep -nE "NEXT_PUBLIC_(DEV|DEMO|FIREBASE_CONFIG)" .env.local` | không có, hoặc đều `=0` |
 | 3 | TypeScript sạch | `npm run lint` | không lỗi |
 | 4 | Build sạch | `npm run build` | không lỗi |
+| 5 | **Đã mở quyền Firestore cho 3 collection mới** | Firebase Console → Firestore → Rules | có `templates`, `announcements`, `anhDinhKem` — xem mục 1c ngay dưới |
 
 **Vì sao mục 1 dễ sai:** web config của Firebase nằm **cứng trong `src/lib/firebase.ts`**, không đọc
 từ `.env`. Mỗi lần thử trên một project Firebase khác (project test) là phải sửa thẳng vào file đó,
@@ -41,6 +42,57 @@ dữ liệu thật vẫn nằm ở `hpcons-dauthau` — cả phòng mở app ra 
   `dauthau.hpcore.vn`**, App Tổng chỉ trỏ link tới. Lý do ở mục 1 (cookie phiên).
 - Vì vậy IT **không test được SSO trên máy cá nhân** (kể cả `localhost`) — chỉ chạy được "Bản thử"
   ở mục 3. Đăng nhập thật không được trên máy IT là **đúng thiết kế**, không phải lỗi.
+
+## 1c. VIỆC NHỜ IT LÀM — MỞ QUYỀN FIRESTORE CHO 3 COLLECTION MỚI
+
+> **Chị Trâm chốt 18/08/2026**: giữ cách lưu ảnh/biểu mẫu/thông báo trong Firestore và **nhờ IT mở
+> quyền một lần cho xong**. Phần này viết sẵn để gửi thẳng cho IT, chị Trâm không phải giải thích lại.
+
+**Việc cần làm: KHÔNG sửa code, chỉ thêm 3 collection vào Firestore Rules** của project
+`hpcons-dauthau` (Firebase Console → Firestore Database → tab **Rules** → Publish).
+
+| Collection | App dùng để làm gì | Không mở quyền thì bị gì |
+|---|---|---|
+| `templates` | Danh mục **Template mẫu đấu thầu** (mục "Thông báo - Template") | Thêm/xoá biểu mẫu báo lỗi quyền |
+| `announcements` | **Thông báo nội bộ được lưu lại** để tra cứu (chuông chỉ giữ 30 tin/người nên tin cũ trôi mất) | Gửi được nhưng không lưu lại được |
+| `anhDinhKem` | **Nội dung ảnh** "đã gửi báo giá" để tải về làm bằng chứng báo cáo mục tiêu | Dán ảnh chỉ lưu tạm trên máy người dán, **máy khác không xem được** |
+
+### Cách thêm
+
+Điều kiện quyền của 3 collection này **để y hệt collection `notifications` đang dùng** (cùng nhóm
+người dùng, cùng cách xác thực). Nếu `notifications` đang là `allow read, write: if request.auth != null;`
+thì thêm đúng 3 khối sau vào trong `match /databases/{database}/documents { ... }`:
+
+```
+    // Danh mục biểu mẫu dùng chung của Phòng Đấu Thầu
+    match /templates/{id} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Thông báo nội bộ được lưu lại để tra cứu
+    match /announcements/{id} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Nội dung ảnh đính kèm (ảnh đã gửi báo giá) — mỗi ảnh một document, chỉ đọc khi bấm Tải về
+    match /anhDinhKem/{id} {
+      allow read, write: if request.auth != null;
+    }
+```
+
+⚠ **Đừng chép nguyên câu điều kiện ở trên nếu `notifications` của mình đang dùng điều kiện khác** —
+lấy đúng điều kiện đang có của `notifications` để 3 mục này cùng mức bảo mật, không nới rộng hơn.
+
+### Ba điều nói trước cho IT khỏi thắc mắc
+
+1. **Không cần bật Firebase Storage.** Ảnh được **nén ngay trong trình duyệt** (tối đa 1600px cạnh
+   dài, JPEG ~0,72) nên ảnh chụp màn hình Zalo còn khoảng 100–300KB, nằm dưới hạn 1MB/document.
+2. **Không làm nặng phần đồng bộ.** Ảnh KHÔNG nằm trong hồ sơ mà ở collection riêng `anhDinhKem`,
+   mỗi ảnh một document, và **chỉ được đọc đúng lúc người dùng bấm "Tải về"** — mở danh sách hồ sơ
+   không tải ảnh. Đây là chủ ý để giữ đúng việc giảm chi phí đọc/ghi Firestore (mục 38).
+3. **Chưa mở quyền thì app vẫn dùng được**, không đứng: ảnh được ghi tạm trên máy đang dùng và tải
+   về được ngay, kèm câu nhắc trên giao diện là máy khác chưa xem được. Mở quyền xong là ảnh mới
+   đồng bộ cho cả phòng (ảnh đã dán trước đó vẫn nằm ở máy cũ, cần dán lại nếu muốn chia sẻ).
 
 ## 2. Yêu cầu môi trường
 
