@@ -2127,7 +2127,14 @@ export default function App() {
             [t.assignedTo, ...(t.assignedStaffIds || [])].filter(Boolean) as string[]
           ));
         });
-        gomNguoiCu(old.tasks);
+        // old.tasks?. — hồ sơ MỚI (old chưa tồn tại) coi như "chưa ai nhận việc nào" (mảng rỗng),
+        // KHÔNG bỏ qua cả khối: mọi việc trong hồ sơ mới đều phải báo "giao việc mới" cho người
+        // được gán — chỉ bỏ so sánh với người CŨ (không có gì để so). Trước đây gọi thẳng
+        // `old.tasks` không có `?.` — hồ sơ mới `old` là `undefined` nên vỡ ngay
+        // `Cannot read properties of undefined (reading 'tasks')`, chặn đứng toàn bộ hàm lưu
+        // GIỮA ĐƯỜNG (chưa tới `setProjects`/`setShowForm(false)`) → hồ sơ không hiện lên Kanban
+        // dù người dùng đã bấm Lưu (phát hiện 20/08/2026, Sếp báo "lưu xong thẻ không hiện").
+        gomNguoiCu(old?.tasks);
 
         const baoTiepNhan = (list?: ProjectTask[]) => (list || []).forEach(t => {
           if ((t.subtasks || []).length > 0) { baoTiepNhan(t.subtasks); return; }
