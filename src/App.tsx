@@ -66,7 +66,7 @@ import {
   CalendarDays,
   X,
   MoreHorizontal
-, FileSpreadsheet, Megaphone, ShieldCheck } from 'lucide-react';
+, FileSpreadsheet, Megaphone, ShieldCheck, Gift } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import CdtRevisionModal from './components/CdtRevisionModal';
 import PullBackDelayModal from './components/PullBackDelayModal';
@@ -4713,6 +4713,24 @@ export default function App() {
                   )}
                 </div>
               )}
+
+              {/* Quà của tôi — mở tab mới sang app UrBox điểm thưởng (quacuatoi.hpcore.vn) */}
+              <div className="relative shrink-0">
+                <a
+                  href="https://quacuatoi.hpcore.vn"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Quà của tôi"
+                  aria-label="Quà của tôi"
+                  className="relative p-2 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center text-slate-500 dark:text-slate-300 hover:text-brand-warning dark:hover:text-brand-warning bg-slate-100 dark:bg-dark-elevated/80 border border-slate-200 dark:border-slate-700 rounded-xl transition-colors cursor-pointer"
+                >
+                  <Gift className="w-4 h-4" />
+                  {/* Số điểm tạm để 0 — chưa nối UrBox thật, xem hpcons-quacuatoi/openspec */}
+                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 flex items-center justify-center text-[9px] font-black text-white bg-brand-danger rounded-full">
+                    0
+                  </span>
+                </a>
+              </div>
 
               {/* Theme Toggle Switch (Thanh gạt) — mobile đồng bộ chiều cao 44px với các nút khác */}
               <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-dark-elevated border border-slate-200 dark:border-slate-700 px-2.5 md:px-2 py-1 min-h-[44px] md:min-h-0 rounded-xl shrink-0">
