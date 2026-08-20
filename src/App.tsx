@@ -4714,24 +4714,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Quà của tôi — mở tab mới sang app UrBox điểm thưởng (quacuatoi.hpcore.vn) */}
-              <div className="relative shrink-0">
-                <a
-                  href="https://quacuatoi.hpcore.vn"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Quà của tôi"
-                  aria-label="Quà của tôi"
-                  className="relative p-2 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center text-slate-500 dark:text-slate-300 hover:text-brand-warning dark:hover:text-brand-warning bg-slate-100 dark:bg-dark-elevated/80 border border-slate-200 dark:border-slate-700 rounded-xl transition-colors cursor-pointer"
-                >
-                  <Gift className="w-4 h-4" />
-                  {/* Số điểm tạm để 0 — chưa nối UrBox thật, xem hpcons-quacuatoi/openspec */}
-                  <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 flex items-center justify-center text-[9px] font-black text-white bg-brand-danger rounded-full">
-                    0
-                  </span>
-                </a>
-              </div>
-
               {/* Theme Toggle Switch (Thanh gạt) — mobile đồng bộ chiều cao 44px với các nút khác */}
               <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-dark-elevated border border-slate-200 dark:border-slate-700 px-2.5 md:px-2 py-1 min-h-[44px] md:min-h-0 rounded-xl shrink-0">
                 <Sun className="w-3.5 h-3.5 text-brand-warning dark:text-slate-400" />
@@ -4811,6 +4793,23 @@ export default function App() {
                   <span className="hidden md:inline">CÔNG VIỆC MỚI</span>
                 </button>
               )}
+
+              {/* Quà của tôi — mở tab mới sang app UrBox điểm thưởng (quacuatoi.hpcore.vn).
+                  Sếp phản hồi 20/08/2026 "nhỏ quá, muốn to và dễ thấy, cộng thêm điểm của tôi nữa"
+                  → nâng lên pill cùng cấp kích thước/độ nổi bật với DỰ ÁN MỚI / CÔNG VIỆC MỚI,
+                  chỉ đổi màu vàng cam để phân biệt (không phải nút tạo dữ liệu). */}
+              <a
+                href="https://quacuatoi.hpcore.vn"
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Quà của tôi — điểm thưởng UrBox"
+                aria-label="Quà của tôi"
+                className="text-[11px] bg-brand-warning hover:bg-brand-warning/85 text-slate-900 font-black px-2 md:px-3 py-1.5 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 rounded-lg flex items-center justify-center gap-1 transition-all shadow-md hover:shadow-lg cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
+              >
+                <Gift className="w-4 h-4 shrink-0" />
+                {/* Số điểm tạm để 0 — chưa nối UrBox thật, xem hpcons-quacuatoi/openspec */}
+                <span className="hidden md:inline">0 điểm</span>
+              </a>
               </div>
 
               {/* User Avatar & Session block */}
