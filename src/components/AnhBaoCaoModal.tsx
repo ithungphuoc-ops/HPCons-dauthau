@@ -6,6 +6,7 @@ import { useModalA11y } from '../utils/useModalA11y';
 import FileDropZone from './FileDropZone';
 import { AutoGrowTextarea } from './ui';
 import { parseAttachments, joinAttachments } from '../utils/attachments';
+import { luuAnh, taiAnhVe, CAU_NHAC_CHUA_MO_QUYEN } from '../utils/anhDinhKem';
 
 // ===== ẢNH BÁO CÁO ĐÃ GỬI BÁO GIÁ (chị Trâm — góp ý #12) =====
 // "Thêm trường hình ảnh báo cáo đã gửi báo giá đi cho quản lý; khi Quản lý kéo từ Bước 2 qua Bước 3
@@ -14,27 +15,32 @@ import { parseAttachments, joinAttachments } from '../utils/attachments';
 // Hộp này bật lên ĐÚNG LÚC kéo thẻ 2 → 3 khi hồ sơ chưa có ảnh: đính kèm xong bấm lưu là thẻ tự
 // sang Bước 3, không phải kéo lại (cùng cách làm với hộp nhập tiến độ Phòng ở cửa 3 → 4).
 //
-// ⚠ App CHỈ LƯU TÊN TỆP, không lưu nội dung tệp (xem utils/attachments.ts) — giống mọi ô đính kèm
-// khác trong app. Ảnh gốc vẫn nằm ở thư mục/OneDrive của phòng; ô này là bằng chứng đã gửi + chỗ
-// ghi lại gửi cho ai, gửi bằng đường nào.
+// ⚠ VÁ LỖI 20/08/2026 (Sếp báo: "chưa test được do app chặn đưa hình ảnh lên"): hộp này TRƯỚC ĐÂY
+// chỉ ghi TÊN tệp (`files.map(f => f.name)`), không hề gọi `luuAnh()` để lưu NỘI DUNG ảnh thật —
+// trong khi ô "Ảnh báo cáo" tương đương ở `ProjectForm.tsx` (góp ý #75) đã gọi đúng. Hậu quả: ảnh
+// đính vào ĐÚNG Ở HỘP NÀY xong bấm "Tải về" ở thẻ hồ sơ sẽ báo "chỉ khai TÊN, không tải về được" —
+// y hệt triệu chứng ảnh cũ trước bản 18/08, dù ảnh vừa mới đính. Nay gọi `luuAnh()` giống hệt
+// ProjectForm.tsx để nội dung ảnh thật sự được lưu (nén trong trình duyệt) và tải về được ngay.
 
 interface AnhBaoCaoModalProps {
   project: Project;
+  /** Vai trò người đang thao tác — ghi vào `nguoiThem` của ảnh lưu, khớp cách ProjectForm.tsx đang làm. */
+  currentUserRole?: string;
   /** Lưu danh sách tên tệp ảnh (nối bằng " | ") + ghi chú; xong thì thẻ đi tiếp sang Bước 3. */
   onSave: (tepAnh: string, ghiChu: string) => void;
   onClose: () => void;
 }
 
-export default function AnhBaoCaoModal({ project, onSave, onClose }: AnhBaoCaoModalProps) {
+export default function AnhBaoCaoModal({ project, currentUserRole, onSave, onClose }: AnhBaoCaoModalProps) {
   const [tep, setTep] = useState<string[]>(parseAttachments(project.anhBaoCaoGuiBaoGia));
   const [ghiChu, setGhiChu] = useState<string>(project.ghiChuGuiBaoGia || '');
+  const [vuaDan, setVuaDan] = useState(false);
+  const [loiAnh, setLoiAnh] = useState<string | null>(null);
   const boxRef = useModalA11y(onClose);
 
   // ===== DÁN ẢNH BẰNG Ctrl+V (chị Trâm chốt 17/08/2026) =====
-  // Chụp màn hình rồi Ctrl+V thẳng vào hộp này là ảnh được ghi nhận luôn, không phải lưu ra tệp
-  // rồi mới kéo-thả. Ảnh dán từ clipboard không có tên nên app tự đặt theo giờ dán.
-  // (App chỉ lưu TÊN tệp — xem ghi chú đầu file — nên đây là ghi nhận "đã có ảnh", đúng như kéo-thả.)
-  const [vuaDan, setVuaDan] = useState(false);
+  // Chụp màn hình rồi Ctrl+V thẳng vào hộp này là ảnh được lưu NỘI DUNG THẬT luôn (qua luuAnh),
+  // không phải lưu ra tệp rồi mới kéo-thả. Ảnh dán từ clipboard không có tên nên app tự đặt theo giờ dán.
   useEffect(() => {
     const dan = (e: ClipboardEvent) => {
       const items = Array.from(e.clipboardData?.items || []);
@@ -42,19 +48,28 @@ export default function AnhBaoCaoModal({ project, onSave, onClose }: AnhBaoCaoMo
       if (!anh.length) return;
       e.preventDefault();
       const gio = new Date();
-      const dau = `anh-da-gui-bao-gia-${gio.getFullYear()}${String(gio.getMonth() + 1).padStart(2, '0')}${String(gio.getDate()).padStart(2, '0')}`;
-      const ten = anh.map((it, i) => {
+      const hai = (n: number) => String(n).padStart(2, '0');
+      const dau = `anh-da-gui-bao-gia-${gio.getFullYear()}${hai(gio.getMonth() + 1)}${hai(gio.getDate())}`;
+      anh.forEach((it, i) => {
         const f = it.getAsFile();
-        if (f?.name && f.name !== 'image.png') return f.name;
-        return `${dau}-${String(gio.getHours()).padStart(2, '0')}${String(gio.getMinutes()).padStart(2, '0')}${String(gio.getSeconds()).padStart(2, '0')}${anh.length > 1 ? `-${i + 1}` : ''}.png`;
+        if (!f) return;
+        const ten = (f.name && f.name !== 'image.png')
+          ? f.name
+          : `${dau}-${hai(gio.getHours())}${hai(gio.getMinutes())}${hai(gio.getSeconds())}${anh.length > 1 ? `-${i + 1}` : ''}.png`;
+        const tepDatTen = new File([f], ten, { type: f.type });
+        luuAnh(project.id, tepDatTen, currentUserRole)
+          .then((kq) => {
+            setTep(prev => Array.from(new Set([...prev, ten])));
+            setVuaDan(true);
+            setLoiAnh(kq.luuTamTrenMay ? CAU_NHAC_CHUA_MO_QUYEN : null);
+            window.setTimeout(() => setVuaDan(false), 2500);
+          })
+          .catch((err) => setLoiAnh(String(err?.message || err)));
       });
-      setTep(prev => Array.from(new Set([...prev, ...ten])));
-      setVuaDan(true);
-      window.setTimeout(() => setVuaDan(false), 2500);
     };
     document.addEventListener('paste', dan);
     return () => document.removeEventListener('paste', dan);
-  }, []);
+  }, [project.id, currentUserRole]);
 
   const chuaDuTepAnh = tep.length === 0;
 
@@ -110,13 +125,33 @@ export default function AnhBaoCaoModal({ project, onSave, onClose }: AnhBaoCaoMo
               multiple
               maxSizeMB={25}
               oversizeHint="Ảnh quá lớn thì gửi ĐƯỜNG LINK trong ô ghi chú bên dưới."
-              onFiles={(files) => setTep(prev => Array.from(new Set([...prev, ...files.map(f => f.name)])))}
+              onFiles={(files) => {
+                setLoiAnh(null);
+                files.forEach(f => {
+                  luuAnh(project.id, f, currentUserRole)
+                    .then((kq) => {
+                      setTep(prev => Array.from(new Set([...prev, f.name])));
+                      if (kq.luuTamTrenMay) setLoiAnh(CAU_NHAC_CHUA_MO_QUYEN);
+                    })
+                    .catch((err) => setLoiAnh(String(err?.message || err)));
+                });
+              }}
             />
             {tep.length > 0 && (
               <ul className="space-y-1">
                 {tep.map(ten => (
                   <li key={ten} className="flex items-center justify-between gap-2 bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-300">
-                    <span className="truncate" title={ten}>🖼 {ten}</span>
+                    <span className="flex-1 truncate" title={ten}>🖼 {ten}</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const ok = await taiAnhVe(project.id, ten);
+                        if (!ok) setLoiAnh(`Ảnh "${ten}" chưa lưu được nội dung tệp nên không tải về được ngay — thử dán/kéo-thả lại.`);
+                      }}
+                      className="text-brand-accent dark:text-brand-accent-300 hover:underline shrink-0"
+                    >
+                      ⬇ Tải về
+                    </button>
                     <button
                       type="button"
                       onClick={() => setTep(prev => prev.filter(x => x !== ten))}
@@ -127,6 +162,9 @@ export default function AnhBaoCaoModal({ project, onSave, onClose }: AnhBaoCaoMo
                   </li>
                 ))}
               </ul>
+            )}
+            {loiAnh && (
+              <span className="text-[10px] font-bold text-brand-warning block">{loiAnh}</span>
             )}
             {chuaDuTepAnh && (
               <span className="text-[10px] font-bold text-brand-danger block">

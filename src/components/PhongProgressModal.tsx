@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { Project } from '../types';
 import { FileCheck, X, Save } from 'lucide-react';
@@ -7,9 +7,12 @@ import FileDropZone from './FileDropZone';
 import { AutoGrowTextarea } from './ui';
 import { parseAttachments, joinAttachments } from '../utils/attachments';
 import { tongSoLanGuiCDT } from '../utils/guiCDT';
+import { luuAnh, taiAnhVe, CAU_NHAC_CHUA_MO_QUYEN } from '../utils/anhDinhKem';
 
 interface PhongProgressModalProps {
   project: Project;
+  /** Vai trò người đang thao tác — ghi vào `nguoiThem` của ảnh lưu, khớp cách ProjectForm.tsx đang làm. */
+  currentUserRole?: string;
   /** Lưu tiến độ Phòng + kết quả công việc (mô tả và/hoặc tệp). */
   onSave: (tienDoPhong: number, ketQuaPhong: string, taiLieuKetQuaPhong?: string) => void;
   onClose: () => void;
@@ -21,11 +24,49 @@ interface PhongProgressModalProps {
 // Quy tắc (chị Trâm chốt 25/07/2026, dời cửa chốt về 3 → 4 ngày 27/07/2026):
 //   - Tiến độ Phòng phải đủ 100% thì hồ sơ mới rời được bước 3 để trình BLĐ.
 //   - Kết quả công việc KHÔNG bắt buộc: nhập mô tả, hoặc đính kèm tệp, hoặc cả hai, hoặc bỏ trống.
-export default function PhongProgressModal({ project, onSave, onClose }: PhongProgressModalProps) {
+//
+// ⚠ NỚI THÊM 20/08/2026 (Sếp yêu cầu: "từ bước 3 qua bước 4, mình cũng cần đưa hình ảnh lên nữa"):
+// tệp đính kèm ở cửa này TRƯỚC ĐÂY chỉ ghi TÊN tệp (giống lỗi vừa vá ở AnhBaoCaoModal.tsx, cửa
+// Bước 2→3) — nay gọi `luuAnh()` để lưu NỘI DUNG ảnh thật (nén trong trình duyệt), có nút Tải về,
+// và hỗ trợ Ctrl+V dán ảnh chụp màn hình như cửa 2→3. Tệp không phải ảnh vẫn chỉ ghi tên như cũ.
+export default function PhongProgressModal({ project, currentUserRole, onSave, onClose }: PhongProgressModalProps) {
   const panelRef = useModalA11y(onClose);
   const [tienDo, setTienDo] = useState<number>(project.tienDoPhong || 0);
   const [ketQua, setKetQua] = useState<string>(project.ketQuaPhong || '');
   const [tepList, setTepList] = useState<string[]>(parseAttachments(project.taiLieuKetQuaPhong));
+  const [vuaDanAnh, setVuaDanAnh] = useState(false);
+  const [loiAnh, setLoiAnh] = useState<string | null>(null);
+
+  // DÁN ẢNH BẰNG Ctrl+V (cùng cách làm với AnhBaoCaoModal.tsx / ProjectForm.tsx) — chỉ bắt khi
+  // clipboard có ẢNH, nên dán chữ vào ô mô tả kết quả công việc không bị ảnh hưởng.
+  useEffect(() => {
+    const dan = (e: ClipboardEvent) => {
+      const anh = Array.from(e.clipboardData?.items || []).filter(i => i.type.startsWith('image/'));
+      if (!anh.length) return;
+      e.preventDefault();
+      const gio = new Date();
+      const hai = (n: number) => String(n).padStart(2, '0');
+      const dau = `ket-qua-phong-${gio.getFullYear()}${hai(gio.getMonth() + 1)}${hai(gio.getDate())}`;
+      anh.forEach((it, i) => {
+        const f = it.getAsFile();
+        if (!f) return;
+        const ten = (f.name && f.name !== 'image.png')
+          ? f.name
+          : `${dau}-${hai(gio.getHours())}${hai(gio.getMinutes())}${hai(gio.getSeconds())}${anh.length > 1 ? `-${i + 1}` : ''}.png`;
+        const tepDatTen = new File([f], ten, { type: f.type });
+        luuAnh(project.id, tepDatTen, currentUserRole)
+          .then((kq) => {
+            setTepList(prev => Array.from(new Set([...prev, ten])));
+            setVuaDanAnh(true);
+            setLoiAnh(kq.luuTamTrenMay ? CAU_NHAC_CHUA_MO_QUYEN : null);
+            window.setTimeout(() => setVuaDanAnh(false), 2500);
+          })
+          .catch((err) => setLoiAnh(String(err?.message || err)));
+      });
+    };
+    document.addEventListener('paste', dan);
+    return () => document.removeEventListener('paste', dan);
+  }, [project.id, currentUserRole]);
 
   // Hồ sơ còn ở bước 3 = TP đang đứng trước cửa 3 → 4; từ bước 4 trở đi là cửa 4 → 5.
   // Dùng để nói đúng bước kế tiếp trong lời nhắc, tránh nhắc "sang bước 5" khi hồ sơ mới ở bước 3.
@@ -121,16 +162,27 @@ export default function PhongProgressModal({ project, onSave, onClose }: PhongPr
             />
           </div>
 
-          {/* Kết quả công việc: tệp đính kèm (kéo-thả) */}
+          {/* Kết quả công việc: tệp/ảnh đính kèm (kéo-thả · bấm chọn · Ctrl+V dán ảnh chụp màn hình) */}
           <div className="space-y-1">
             <span className="block text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
-              Kết quả công việc — tệp <span className="normal-case font-medium">(kéo-thả vào ô dưới, không bắt buộc)</span>
+              Kết quả công việc — ảnh/tệp <span className="normal-case font-medium">(kéo-thả · Ctrl+V dán ảnh · không bắt buộc)</span>
             </span>
             {tepList.length > 0 && (
               <ul className="space-y-1 mb-1">
                 {tepList.map((name, i) => (
                   <li key={`${name}-${i}`} className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-dark-bg border border-slate-200/70 dark:border-slate-800 rounded-lg px-2 py-1">
                     <span className="flex-1 truncate" title={name}>📎 {name}</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const ok = await taiAnhVe(project.id, name);
+                        if (!ok) setLoiAnh(`Tệp "${name}" chỉ được khai TÊN từ trước (chưa lưu nội dung tệp) nên không tải về được. Đính lại tệp/ảnh để app lưu nội dung thật.`);
+                      }}
+                      className="shrink-0 text-brand-accent dark:text-brand-accent-300 hover:underline cursor-pointer"
+                      title={`Tải "${name}" về máy`}
+                    >
+                      ⬇ Tải về
+                    </button>
                     <button
                       type="button"
                       onClick={() => setTepList(prev => prev.filter((_, idx) => idx !== i))}
@@ -146,9 +198,26 @@ export default function PhongProgressModal({ project, onSave, onClose }: PhongPr
             <FileDropZone
               inputId={`file-kq-phong-modal-${project.id}`}
               multiple
-              label="📤 Đính kèm tệp kết quả công việc"
-              onFiles={(files) => setTepList(prev => Array.from(new Set([...prev, ...files.map(f => f.name)])))}
+              accept="image/*,.pdf"
+              label="📤 Kéo-thả · bấm để chọn · hoặc Ctrl+V dán ảnh vừa chụp"
+              onFiles={(files) => {
+                setLoiAnh(null);
+                files.forEach(f => {
+                  luuAnh(project.id, f, currentUserRole)
+                    .then((kq) => {
+                      setTepList(prev => Array.from(new Set([...prev, f.name])));
+                      if (kq.luuTamTrenMay) setLoiAnh(CAU_NHAC_CHUA_MO_QUYEN);
+                    })
+                    .catch((err) => setLoiAnh(String(err?.message || err)));
+                });
+              }}
             />
+            {vuaDanAnh && (
+              <p className="text-[10px] font-black text-brand-success">✓ Đã lưu ảnh dán từ clipboard — tải về được.</p>
+            )}
+            {loiAnh && (
+              <p className="text-[10px] font-bold text-brand-warning">{loiAnh}</p>
+            )}
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-1">

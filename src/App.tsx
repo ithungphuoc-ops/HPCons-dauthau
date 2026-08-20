@@ -606,14 +606,28 @@ Mở hồ sơ và dán lại ảnh để app lưu tệp thật, sau đó tải v
         </div>
       )}
 
-      {/* Tệp kết quả công việc cấp Phòng (nhập tại form) — ở đây chỉ liệt kê để xem */}
+      {/* Tệp/ảnh kết quả công việc cấp Phòng (nhập tại form hoặc hộp cửa Bước 3→4) — có nội dung
+          thật từ 20/08/2026 nên tải về được ngay (xem PhongProgressModal.tsx / ProjectForm.tsx). */}
       {parseAttachments(project.taiLieuKetQuaPhong).length > 0 && (
         <div className="space-y-1">
           <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400 block">Tệp kết quả công việc:</span>
           <ul className="space-y-1">
             {parseAttachments(project.taiLieuKetQuaPhong).map((name, i) => (
-              <li key={`${name}-${i}`} className="text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-dark-bg border border-slate-200/70 dark:border-slate-800 rounded-lg px-2 py-1 truncate" title={name}>
-                📎 {name}
+              <li key={`${name}-${i}`} className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-dark-bg border border-slate-200/70 dark:border-slate-800 rounded-lg px-2 py-1">
+                <span className="flex-1 truncate" title={name}>📎 {name}</span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const ok = await taiAnhVe(project.id, name);
+                    if (!ok) {
+                      window.alert(`Tệp "${name}" chỉ được khai TÊN từ trước (chưa lưu nội dung tệp) nên không tải về được.\n\nMở hồ sơ và đính lại tệp/ảnh để app lưu nội dung thật, sau đó tải về bình thường.`);
+                    }
+                  }}
+                  className="shrink-0 text-brand-accent dark:text-brand-accent-300 hover:underline cursor-pointer"
+                  title={`Tải "${name}" về máy`}
+                >
+                  ⬇ Tải về
+                </button>
               </li>
             ))}
           </ul>
@@ -7155,6 +7169,7 @@ export default function App() {
       {anhBaoCaoProject && (
         <AnhBaoCaoModal
           project={anhBaoCaoProject}
+          currentUserRole={currentUser?.role}
           onClose={() => setAnhBaoCaoProject(null)}
           onSave={(tepAnh, ghiChu) => {
             const hoSo = anhBaoCaoProject;
@@ -7173,6 +7188,7 @@ export default function App() {
       {phongInputProject && (
         <PhongProgressModal
           project={phongInputProject}
+          currentUserRole={currentUser?.role}
           onClose={() => {
             const p = phongInputProject;
             const hienTai = projects.find(x => x.id === p.id) || p;

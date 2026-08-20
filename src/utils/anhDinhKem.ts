@@ -26,6 +26,11 @@ const COLLECTION = 'anhDinhKem';
 const KHOA_LOCAL = 'erp_anh_dinh_kem';
 const HAN_BYTE = 900 * 1024;   // chừa chỗ cho phần bao của document (hạn thật là 1MB)
 
+/** Câu nhắc dùng chung mọi nơi gọi luuAnh() khi Firestore chưa mở quyền — tránh 3 nơi ghi 3 kiểu. */
+export const CAU_NHAC_CHUA_MO_QUYEN =
+  'Đã lưu ảnh trên máy này và tải về được ngay. Nhưng máy khác CHƯA xem được vì Firestore chưa mở '
+  + 'quyền cho mục ảnh đính kèm (collection "anhDinhKem") — nhờ IT mở quyền như các mục khác là xong.';
+
 /** Bản thử: không đọc/ghi Firestore, mọi thứ nằm trong localStorage của máy đang chạy. */
 const LA_BAN_THU =
   process.env.NODE_ENV !== 'production' && process.env.NEXT_PUBLIC_DEV_SANDBOX === '1';

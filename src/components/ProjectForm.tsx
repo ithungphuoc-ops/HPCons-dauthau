@@ -24,15 +24,7 @@ import { tongSoLanGuiCDT, nhanLanGui, soLanGuiTruocApp } from '../utils/guiCDT';
 import DateInput from './DateInput';
 import TextWithLinks from './TextWithLinks';
 import FileDropZone from './FileDropZone';
-import { luuAnh, taiAnhVe } from '../utils/anhDinhKem';
-
-// ===== CÂU NHẮC KHI FIRESTORE CHƯA MỞ QUYỀN CHO ẢNH (chị Trâm báo 18/08/2026) =====
-// Chị Trâm bấm thả ảnh và nhận đúng câu lỗi gốc của Firebase: "Missing or insufficient permissions."
-// — đọc lên không ai hiểu phải làm gì. App vẫn GHI TẠM ảnh trên máy đang dùng (xem utils/anhDinhKem)
-// nên chị tải về được ngay; câu này nói rõ việc còn thiếu để nhờ IT làm.
-const CAU_NHAC_CHUA_MO_QUYEN =
-  'Đã lưu ảnh trên máy này và tải về được ngay. Nhưng máy khác CHƯA xem được vì Firestore chưa mở '
-  + 'quyền cho mục ảnh đính kèm (collection "anhDinhKem") — nhờ IT mở quyền như các mục khác là xong.';
+import { luuAnh, taiAnhVe, CAU_NHAC_CHUA_MO_QUYEN } from '../utils/anhDinhKem';
 import { AutoGrowTextarea } from './ui';
 import { parseAttachments, joinAttachments } from '../utils/attachments';
 import { useModalA11y } from '../utils/useModalA11y';
@@ -1748,6 +1740,17 @@ export default function ProjectForm({
                     {taiLieuKetQuaPhong.map((name, i) => (
                       <li key={`${name}-${i}`} className="flex items-center gap-1.5 text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-white/70 dark:bg-dark-bg/70 border border-slate-200/70 dark:border-slate-800 rounded-lg px-2 py-1">
                         <span className="flex-1 truncate" title={name}>📎 {name}</span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const ok = await taiAnhVe(project?.id || 'moi', name);
+                            if (!ok) setLoiAnh(`Tệp "${name}" chỉ được khai TÊN từ trước (chưa lưu nội dung tệp) nên không tải về được. Đính lại tệp/ảnh để app lưu nội dung thật.`);
+                          }}
+                          className="shrink-0 text-brand-accent dark:text-brand-accent-300 hover:underline cursor-pointer"
+                          title={`Tải "${name}" về máy`}
+                        >
+                          ⬇ Tải về
+                        </button>
                         {currentUserRole === 'BOOD' && (
                           <button
                             type="button"
@@ -1766,9 +1769,19 @@ export default function ProjectForm({
                   <FileDropZone
                     inputId={`file-kq-phong-${project?.id || 'new'}`}
                     multiple
-                    label="📤 Đính kèm tệp kết quả công việc"
-                    onFiles={(files) => setTaiLieuKetQuaPhong(prev =>
-                      Array.from(new Set([...prev, ...files.map(f => f.name)])))}
+                    accept="image/*,.pdf"
+                    label="📤 Đính kèm ảnh/tệp kết quả công việc"
+                    onFiles={(files) => {
+                      setLoiAnh(null);
+                      files.forEach(f => {
+                        luuAnh(project?.id || 'moi', f, currentUserRole)
+                          .then((kq) => {
+                            setTaiLieuKetQuaPhong(prev => Array.from(new Set([...prev, f.name])));
+                            if (kq.luuTamTrenMay) setLoiAnh(CAU_NHAC_CHUA_MO_QUYEN);
+                          })
+                          .catch((err) => setLoiAnh(String(err?.message || err)));
+                      });
+                    }}
                   />
                 ) : taiLieuKetQuaPhong.length === 0 && (
                   <div className="p-2 bg-white/60 dark:bg-dark-bg/60 border border-slate-200/70 dark:border-slate-800 rounded-lg text-xs italic text-slate-400">
