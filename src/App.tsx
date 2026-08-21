@@ -17,6 +17,7 @@ import MyTasksPanel, { DEFAULT_PROJECT_TASKS, taskDeadlineISO, taskHanText, toda
 import StaffTaskResultPanel from './components/StaffTaskResultPanel';
 import SubtaskGantt, { DEFAULT_TASK_DAYS } from './components/SubtaskGantt';
 import { AppLauncher } from './components/AppLauncher';
+import GiftPopup from './components/GiftPopup';
 import TextWithLinks from './components/TextWithLinks';
 import { Badge, TimelineProgress, EmptyState, AutoGrowTextarea } from './components/ui';
 import { updateTaskInTree, calculateProjectProgress, getTaskProgress, progressOfRound, weightIssue, weightSumAllRounds, soVongCoViec, tasksOfRound } from './utils/taskTree';
@@ -786,6 +787,8 @@ export default function App() {
 
   // Lưới ứng dụng HPCons App Tổng — mở khi bấm logo ở đầu Sidebar (giống pkd_crm-next/Task Manager)
   const [appLauncherOpen, setAppLauncherOpen] = useState(false);
+  // Popup "Quà của tôi" (khung điện thoại nhúng iframe quacuatoi.hpcore.vn) — thay cho mở tab mới.
+  const [showGiftPopup, setShowGiftPopup] = useState(false);
 
   // Activity logging state & helper
   const [activityLogs, setActivityLogs] = useState<ActivityLog[]>(() => {
@@ -4351,6 +4354,13 @@ export default function App() {
           />
         )}
 
+        {showGiftPopup && (
+          <GiftPopup
+            onClose={() => setShowGiftPopup(false)}
+            onGoHome={() => setActiveTab('DASHBOARD')}
+          />
+        )}
+
         {/* ===== Bottom Navigation mobile <768px (06-mobile/layout.md + 08-navigation/bottom-navigation.md):
               tối đa 5 mục = 4 tab chính + "Thêm" (bottom sheet chứa tab còn lại); vùng chạm ≥44px (luật 10) ===== */}
         {(() => {
@@ -4794,14 +4804,14 @@ export default function App() {
                 </button>
               )}
 
-              {/* Quà của tôi — mở tab mới sang app UrBox điểm thưởng (quacuatoi.hpcore.vn).
+              {/* Quà của tôi — mở popup khung điện thoại nhúng iframe app UrBox điểm thưởng
+                  (quacuatoi.hpcore.vn) thay vì mở tab mới, đồng bộ trải nghiệm với hpcons-portal.
                   Sếp phản hồi 20/08/2026 "nhỏ quá, muốn to và dễ thấy, cộng thêm điểm của tôi nữa"
                   → nâng lên pill cùng cấp kích thước/độ nổi bật với DỰ ÁN MỚI / CÔNG VIỆC MỚI,
                   chỉ đổi màu vàng cam để phân biệt (không phải nút tạo dữ liệu). */}
-              <a
-                href="https://quacuatoi.hpcore.vn"
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => setShowGiftPopup(true)}
                 title="Quà của tôi — điểm thưởng UrBox"
                 aria-label="Quà của tôi"
                 className="text-[11px] bg-brand-warning hover:bg-brand-warning/85 text-slate-900 font-black px-2 md:px-3 py-1.5 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 rounded-lg flex items-center justify-center gap-1 transition-all shadow-md hover:shadow-lg cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
@@ -4809,7 +4819,7 @@ export default function App() {
                 <Gift className="w-4 h-4 shrink-0" />
                 {/* Số điểm tạm để 0 — chưa nối UrBox thật, xem hpcons-quacuatoi/openspec */}
                 <span className="hidden md:inline">0 điểm</span>
-              </a>
+              </button>
               </div>
 
               {/* User Avatar & Session block */}
