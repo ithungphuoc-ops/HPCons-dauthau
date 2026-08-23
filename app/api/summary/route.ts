@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
   const goiThau = all.filter((p) => p.loaiBanGhi === "CONG_VIEC");
 
   const dangThucHien = goiThau.filter((p) => p.trangThai === "DANG_THUC_HIEN").length;
-  const treTienDo = goiThau.filter((p) => p.trangThai === "TRE_TIEN_DO").length;
+  const treTienDoList = goiThau.filter((p) => p.trangThai === "TRE_TIEN_DO");
   const daTrungThau = goiThau.filter((p) => p.tinhTrangDuAn === "Đã trúng thầu").length;
   const rotThau = goiThau.filter((p) => p.tinhTrangDuAn === "Rớt thầu").length;
 
@@ -34,8 +34,14 @@ export async function GET(req: NextRequest) {
     ok: true,
     total: goiThau.length,
     dang_thuc_hien: dangThucHien,
-    tre_tien_do: treTienDo,
+    tre_tien_do: treTienDoList.length,
     da_trung_thau: daTrungThau,
     rot_thau: rotThau,
+    // Top 3 gói trễ tiến độ — hiện việc cụ thể ở mục "Cần chú ý" thay vì ví dụ giả.
+    tre_tien_do_list: treTienDoList.slice(0, 3).map((p) => ({
+      ten: p.tenDuAn,
+      chu_dau_tu: p.chuDauTu ?? "—",
+      han: p.ngayHoanThanhDuKienHienTai,
+    })),
   });
 }
