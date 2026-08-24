@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
     da_trung_thau: daTrungThau,
     rot_thau: rotThau,
     // Top 3 gói trễ tiến độ — hiện việc cụ thể ở mục "Cần chú ý" thay vì ví dụ giả.
-    tre_tien_do_list: treTienDoList.slice(0, 3).map((p) => ({
+    tre_tien_do_list: treTienDoList.slice(0, 8).map((p) => ({
       ten: p.tenDuAn,
       chu_dau_tu: p.chuDauTu ?? "—",
       han: p.ngayHoanThanhDuKienHienTai,
