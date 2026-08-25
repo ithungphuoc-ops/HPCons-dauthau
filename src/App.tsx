@@ -1002,6 +1002,30 @@ export default function App() {
     setProjStatusFilter(macDinhLocTrangThai(vaiTro ?? undefined));
   }, [currentUser?.role]);
 
+  // Góp ý chị Trâm (25/08/2026): gõ tìm kiếm mà đang đứng ở tab "Đang làm"/
+  // "Đã xong" thì kết quả có thể bị applyStatusFilter lọc mất (nếu dự án tìm
+  // được thuộc tab còn lại) — hiện "Không tìm thấy" dù tìm ra kết quả thật.
+  // Gom về ĐÚNG 1 chỗ (thay vì lặp lại ở từng ô tìm kiếm) — bắt đầu gõ thì tự
+  // chuyển sang "Tất cả", XOÁ HẾT từ khóa thì tự trả lại đúng tab trước đó
+  // (không "kẹt" ở Tất cả sau khi tìm xong — phát hiện lúc code review nội bộ).
+  const tabTruocKhiTimKiem = useRef<'ACTIVE' | 'DONE' | 'ALL'>(projStatusFilter);
+  const dangTimKiem = useRef(false);
+  useEffect(() => {
+    const coTuKhoa = searchQuery.trim() !== '';
+    if (coTuKhoa && !dangTimKiem.current) {
+      tabTruocKhiTimKiem.current = projStatusFilter;
+      setProjStatusFilter('ALL');
+    } else if (!coTuKhoa && dangTimKiem.current) {
+      setProjStatusFilter(tabTruocKhiTimKiem.current);
+    }
+    dangTimKiem.current = coTuKhoa;
+    // Cố ý CHỈ theo dõi searchQuery — projStatusFilter đọc qua ref lúc bắt đầu
+    // tìm kiếm, không phải dependency (nếu thêm vào sẽ tự kích hoạt lại ngay
+    // khi hiệu ứng này vừa gọi setProjStatusFilter('ALL'), ghi đè mất giá trị
+    // "trước khi tìm kiếm" vừa lưu).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
+
   // Activity log search box
   const [logSearch, setLogSearch] = useState<string>('');
 
@@ -2474,9 +2498,28 @@ export default function App() {
     const kids = projects.filter(p => p.duAnChaId === dp.id);
     return kids.length > 0 && kids.every(isWorkDone);
   };
-  // Áp bộ lọc trạng thái (ACTIVE = đang làm, DONE = đã xong, ALL = tất cả)
+  // Áp bộ lọc trạng thái (ACTIVE = đang làm, DONE = đã xong, ALL = tất cả).
+  // Góp ý CodeRabbit (review PR#1, 25/08/2026): còn từ khóa tìm kiếm thì LUÔN
+  // coi như đang ở "Tất cả" — kể cả khi người dùng bấm tay sang pill "Đang
+  // làm"/"Đã xong" NGAY TRONG LÚC đang tìm kiếm (effect chỉ ép "Tất cả" đúng
+  // 1 lần lúc BẮT ĐẦU gõ, không chặn bấm tay đổi lại sau đó) — nếu không, lại
+  // rơi vào đúng lỗi gốc: kết quả tìm được bị giấu vì không khớp tab đang chọn.
+  // Chuẩn hóa 1 LẦN (trim + lowercase) — dùng chung cho cả việc xét "có đang
+  // tìm kiếm không" lẫn việc so khớp chữ ở filteredProjects bên dưới, để từ
+  // khóa toàn khoảng trắng/khoảng trắng đầu-cuối không làm 2 nơi lệch nhau
+  // (góp ý CodeRabbit vòng 3).
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const effectiveStatusFilter = normalizedSearchQuery !== '' ? 'ALL' : projStatusFilter;
   const applyStatusFilter = <T,>(list: T[], doneOf: (x: T) => boolean) =>
-    projStatusFilter === 'ALL' ? list : list.filter(x => (projStatusFilter === 'DONE' ? doneOf(x) : !doneOf(x)));
+    effectiveStatusFilter === 'ALL' ? list : list.filter(x => (effectiveStatusFilter === 'DONE' ? doneOf(x) : !doneOf(x)));
+  // Đang tìm kiếm thì các pill lọc trạng thái phải KHÓA ở "Tất cả" — bấm tay
+  // đổi tab lúc này chỉ đổi mặt hiển thị của pill chứ không đổi được kết quả
+  // (applyStatusFilter đã ép ALL ở trên), gây lệch pill/kết quả (góp ý
+  // CodeRabbit vòng 3) — nên bỏ qua onChange luôn trong lúc đang tìm kiếm.
+  const handleProjStatusFilterChange = (v: 'ACTIVE' | 'DONE' | 'ALL') => {
+    if (normalizedSearchQuery !== '') return;
+    setProjStatusFilter(v);
+  };
   // Công việc CHỜ TRƯỞNG PHÒNG DUYỆT: bộ phận đã làm xong (100%) nhưng Phòng chưa chốt (<100%),
   // và chưa có kết quả cuối (chưa trúng/rớt). Hiển thị trên chuông để TP vào nhập tiến độ Phòng.
   //
@@ -2568,10 +2611,10 @@ export default function App() {
     };
 
     return workItems.filter(p => {
-      const matchSearch = p.tenDuAn.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          p.moTa.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          (p.projectId || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          anyTaskMatchesSearch(p.tasks || [], searchQuery);
+      const matchSearch = p.tenDuAn.toLowerCase().includes(normalizedSearchQuery) ||
+                          p.moTa.toLowerCase().includes(normalizedSearchQuery) ||
+                          (p.projectId || '').toLowerCase().includes(normalizedSearchQuery) ||
+                          anyTaskMatchesSearch(p.tasks || [], normalizedSearchQuery);
 
       const matchStatus = filterStatus === 'ALL' || p.trangThai === filterStatus;
       const matchCategory = filterCategory === 'ALL' || p.hangMuc === filterCategory;
@@ -2583,7 +2626,7 @@ export default function App() {
 
       return matchSearch && matchStatus && matchCategory && matchStaffMember;
     });
-  }, [workItems, searchQuery, filterStatus, filterCategory, filterStaff]);
+  }, [workItems, normalizedSearchQuery, filterStatus, filterCategory, filterStaff]);
 
   // Generate next sequential Project_ID (YYYY.NN)
   const nextProjectId = useMemo(() => {
@@ -4496,10 +4539,13 @@ export default function App() {
                 role="search"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  const q = new FormData(e.currentTarget).get('q');
-                  setSearchQuery(String(q ?? ''));
+                  const q = String(new FormData(e.currentTarget).get('q') ?? '');
+                  setSearchQuery(q);
                   setActiveTab('PROJECTS');
                   setShowForm(false);
+                  // Tự chuyển tab về "Tất cả" khi có từ khóa — xử lý tập trung ở
+                  // useEffect theo dõi searchQuery (gần khai báo projStatusFilter),
+                  // không lặp lại logic ở đây.
                 }}
                 className="hidden lg:block lg:w-48 xl:w-64 shrink-0"
               >
@@ -5041,7 +5087,7 @@ export default function App() {
                           TỔNG HỢP TÌNH TRẠNG CÁC HỒ SƠ ĐẤU THẦU
                         </h3>
                         {/* Nút lọc: ẩn bớt hồ sơ đã hoàn thành */}
-                        <StatusFilterPills value={projStatusFilter} onChange={setProjStatusFilter}
+                        <StatusFilterPills value={effectiveStatusFilter} onChange={handleProjStatusFilterChange}
                           counts={{ active: dashboardProjects.filter(x => !isWorkDone(x)).length, done: dashboardProjects.filter(isWorkDone).length, all: dashboardProjects.length }} />
                       </div>
 
@@ -5460,7 +5506,7 @@ export default function App() {
                         Danh sách Dự án ({applyStatusFilter(parentProjects, isParentDone).length}/{parentProjects.length})
                       </h3>
                       {/* Nút lọc trạng thái dự án */}
-                      <StatusFilterPills value={projStatusFilter} onChange={setProjStatusFilter}
+                      <StatusFilterPills value={effectiveStatusFilter} onChange={handleProjStatusFilterChange}
                         counts={{ active: parentProjects.filter(x => !isParentDone(x)).length, done: parentProjects.filter(isParentDone).length, all: parentProjects.length }} />
                     </div>
                     {applyStatusFilter(parentProjects, isParentDone).length === 0 ? (
@@ -5639,7 +5685,7 @@ export default function App() {
                       <ListTodo className="w-4 h-4 text-brand-accent dark:text-brand-accent-300" />
                       Danh sách Công việc ({applyStatusFilter(filteredProjects, isWorkDone).length}/{filteredProjects.length})
                     </h3>
-                    <StatusFilterPills value={projStatusFilter} onChange={setProjStatusFilter}
+                    <StatusFilterPills value={effectiveStatusFilter} onChange={handleProjStatusFilterChange}
                       counts={{ active: filteredProjects.filter(x => !isWorkDone(x)).length, done: filteredProjects.filter(isWorkDone).length, all: filteredProjects.length }} />
                   </div>
                   {applyStatusFilter(filteredProjects, isWorkDone).length === 0 ? (
