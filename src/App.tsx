@@ -2504,9 +2504,22 @@ export default function App() {
   // làm"/"Đã xong" NGAY TRONG LÚC đang tìm kiếm (effect chỉ ép "Tất cả" đúng
   // 1 lần lúc BẮT ĐẦU gõ, không chặn bấm tay đổi lại sau đó) — nếu không, lại
   // rơi vào đúng lỗi gốc: kết quả tìm được bị giấu vì không khớp tab đang chọn.
-  const effectiveStatusFilter = searchQuery.trim() !== '' ? 'ALL' : projStatusFilter;
+  // Chuẩn hóa 1 LẦN (trim + lowercase) — dùng chung cho cả việc xét "có đang
+  // tìm kiếm không" lẫn việc so khớp chữ ở filteredProjects bên dưới, để từ
+  // khóa toàn khoảng trắng/khoảng trắng đầu-cuối không làm 2 nơi lệch nhau
+  // (góp ý CodeRabbit vòng 3).
+  const normalizedSearchQuery = searchQuery.trim().toLowerCase();
+  const effectiveStatusFilter = normalizedSearchQuery !== '' ? 'ALL' : projStatusFilter;
   const applyStatusFilter = <T,>(list: T[], doneOf: (x: T) => boolean) =>
     effectiveStatusFilter === 'ALL' ? list : list.filter(x => (effectiveStatusFilter === 'DONE' ? doneOf(x) : !doneOf(x)));
+  // Đang tìm kiếm thì các pill lọc trạng thái phải KHÓA ở "Tất cả" — bấm tay
+  // đổi tab lúc này chỉ đổi mặt hiển thị của pill chứ không đổi được kết quả
+  // (applyStatusFilter đã ép ALL ở trên), gây lệch pill/kết quả (góp ý
+  // CodeRabbit vòng 3) — nên bỏ qua onChange luôn trong lúc đang tìm kiếm.
+  const handleProjStatusFilterChange = (v: 'ACTIVE' | 'DONE' | 'ALL') => {
+    if (normalizedSearchQuery !== '') return;
+    setProjStatusFilter(v);
+  };
   // Công việc CHỜ TRƯỞNG PHÒNG DUYỆT: bộ phận đã làm xong (100%) nhưng Phòng chưa chốt (<100%),
   // và chưa có kết quả cuối (chưa trúng/rớt). Hiển thị trên chuông để TP vào nhập tiến độ Phòng.
   //
@@ -2598,10 +2611,10 @@ export default function App() {
     };
 
     return workItems.filter(p => {
-      const matchSearch = p.tenDuAn.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          p.moTa.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          (p.projectId || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          anyTaskMatchesSearch(p.tasks || [], searchQuery);
+      const matchSearch = p.tenDuAn.toLowerCase().includes(normalizedSearchQuery) ||
+                          p.moTa.toLowerCase().includes(normalizedSearchQuery) ||
+                          (p.projectId || '').toLowerCase().includes(normalizedSearchQuery) ||
+                          anyTaskMatchesSearch(p.tasks || [], normalizedSearchQuery);
 
       const matchStatus = filterStatus === 'ALL' || p.trangThai === filterStatus;
       const matchCategory = filterCategory === 'ALL' || p.hangMuc === filterCategory;
@@ -2613,7 +2626,7 @@ export default function App() {
 
       return matchSearch && matchStatus && matchCategory && matchStaffMember;
     });
-  }, [workItems, searchQuery, filterStatus, filterCategory, filterStaff]);
+  }, [workItems, normalizedSearchQuery, filterStatus, filterCategory, filterStaff]);
 
   // Generate next sequential Project_ID (YYYY.NN)
   const nextProjectId = useMemo(() => {
@@ -5074,7 +5087,7 @@ export default function App() {
                           TỔNG HỢP TÌNH TRẠNG CÁC HỒ SƠ ĐẤU THẦU
                         </h3>
                         {/* Nút lọc: ẩn bớt hồ sơ đã hoàn thành */}
-                        <StatusFilterPills value={projStatusFilter} onChange={setProjStatusFilter}
+                        <StatusFilterPills value={effectiveStatusFilter} onChange={handleProjStatusFilterChange}
                           counts={{ active: dashboardProjects.filter(x => !isWorkDone(x)).length, done: dashboardProjects.filter(isWorkDone).length, all: dashboardProjects.length }} />
                       </div>
 
@@ -5493,7 +5506,7 @@ export default function App() {
                         Danh sách Dự án ({applyStatusFilter(parentProjects, isParentDone).length}/{parentProjects.length})
                       </h3>
                       {/* Nút lọc trạng thái dự án */}
-                      <StatusFilterPills value={projStatusFilter} onChange={setProjStatusFilter}
+                      <StatusFilterPills value={effectiveStatusFilter} onChange={handleProjStatusFilterChange}
                         counts={{ active: parentProjects.filter(x => !isParentDone(x)).length, done: parentProjects.filter(isParentDone).length, all: parentProjects.length }} />
                     </div>
                     {applyStatusFilter(parentProjects, isParentDone).length === 0 ? (
@@ -5672,7 +5685,7 @@ export default function App() {
                       <ListTodo className="w-4 h-4 text-brand-accent dark:text-brand-accent-300" />
                       Danh sách Công việc ({applyStatusFilter(filteredProjects, isWorkDone).length}/{filteredProjects.length})
                     </h3>
-                    <StatusFilterPills value={projStatusFilter} onChange={setProjStatusFilter}
+                    <StatusFilterPills value={effectiveStatusFilter} onChange={handleProjStatusFilterChange}
                       counts={{ active: filteredProjects.filter(x => !isWorkDone(x)).length, done: filteredProjects.filter(isWorkDone).length, all: filteredProjects.length }} />
                   </div>
                   {applyStatusFilter(filteredProjects, isWorkDone).length === 0 ? (
