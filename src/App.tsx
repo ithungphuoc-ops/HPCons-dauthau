@@ -691,6 +691,11 @@ export default function App() {
               const formattedNum = num < 10 ? `0${num}` : `${num}`;
               p.projectId = `2026.${formattedNum}`;
             }
+            // Chuẩn hóa Mã Project_ID về CHỮ HOA — cùng lý do với nhánh nạp từ Firestore
+            // (subscribeCollection('projects', ...) bên dưới): hồ sơ cũ lỡ lưu chữ thường vẫn
+            // còn nguyên trong localStorage (chị Trâm báo 25/08/2026, "viết hoa hết nhưng hiển
+            // thị lúc hoa lúc thường").
+            p.projectId = String(p.projectId).trim().toUpperCase();
             // Dữ liệu cũ (chưa có loaiBanGhi) → coi là công việc/gói thầu (vẫn lên Kanban)
             if (!p.loaiBanGhi) p.loaiBanGhi = 'CONG_VIEC';
             // Tách số ngày cũ thành 3 chặng (giữ nguyên tổng = hạn cũ): thực hiện + TP duyệt + Giám đốc duyệt
@@ -1314,7 +1319,13 @@ export default function App() {
         });
         return;
       }
-      const sorted = [...items].sort((a, b) => (a.projectId || '').localeCompare(b.projectId || ''));
+      // Chuẩn hóa Mã Project_ID về CHỮ HOA ngay khi nạp từ cloud (chị Trâm báo 25/08/2026: mã
+      // "viết hoa hết nhưng hiển thị lúc hoa lúc thường") — ô nhập trong ProjectForm chỉ HIỂN
+      // THỊ hoa bằng CSS, các hồ sơ cũ lỡ lưu chữ thường vẫn còn nguyên trên cloud. Chuẩn hóa ở
+      // ĐÚNG 1 điểm nạp dữ liệu này để mọi nơi hiển thị trong app luôn nhất quán, mà KHÔNG cần
+      // sửa lại dữ liệu gốc trên Firestore (an toàn, không đụng dữ liệu thật của Phòng).
+      const chuanHoa = items.map(p => ({ ...p, projectId: (p.projectId || '').trim().toUpperCase() }));
+      const sorted = chuanHoa.sort((a, b) => (a.projectId || '').localeCompare(b.projectId || ''));
       lastRemoteProjects.current = JSON.stringify(sorted);
       setProjects(sorted);
     }, baoLoiCloud);

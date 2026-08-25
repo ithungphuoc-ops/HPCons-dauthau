@@ -655,7 +655,11 @@ export default function ProjectForm({
       id: (formMode === 'EDIT_ALL' ? project?.id : undefined) || `P${Date.now()}`,
       loaiBanGhi,
       duAnChaId,
-      projectId,
+      // Ô nhập chỉ HIỂN THỊ hoa nhờ CSS "uppercase" (text-transform) — giá trị state gõ vào
+      // vẫn giữ nguyên chữ hoa/thường thật. Không chuẩn hóa ở đây thì lưu xuống theo đúng
+      // chữ người dùng gõ (có thể là chữ thường), rồi các nơi khác hiển thị lại {p.projectId}
+      // không có CSS này sẽ lộ ra "lúc hoa lúc thường" (chị Trâm báo 25/08/2026).
+      projectId: projectId.trim().toUpperCase(),
       tenDuAn,
       quanLyId,
       quanLyIdsPhu: quanLyIdsPhu.filter(id => id !== quanLyId),
