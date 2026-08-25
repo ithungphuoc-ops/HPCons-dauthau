@@ -1002,6 +1002,30 @@ export default function App() {
     setProjStatusFilter(macDinhLocTrangThai(vaiTro ?? undefined));
   }, [currentUser?.role]);
 
+  // Góp ý chị Trâm (25/08/2026): gõ tìm kiếm mà đang đứng ở tab "Đang làm"/
+  // "Đã xong" thì kết quả có thể bị applyStatusFilter lọc mất (nếu dự án tìm
+  // được thuộc tab còn lại) — hiện "Không tìm thấy" dù tìm ra kết quả thật.
+  // Gom về ĐÚNG 1 chỗ (thay vì lặp lại ở từng ô tìm kiếm) — bắt đầu gõ thì tự
+  // chuyển sang "Tất cả", XOÁ HẾT từ khóa thì tự trả lại đúng tab trước đó
+  // (không "kẹt" ở Tất cả sau khi tìm xong — phát hiện lúc code review nội bộ).
+  const tabTruocKhiTimKiem = useRef<'ACTIVE' | 'DONE' | 'ALL'>(projStatusFilter);
+  const dangTimKiem = useRef(false);
+  useEffect(() => {
+    const coTuKhoa = searchQuery.trim() !== '';
+    if (coTuKhoa && !dangTimKiem.current) {
+      tabTruocKhiTimKiem.current = projStatusFilter;
+      setProjStatusFilter('ALL');
+    } else if (!coTuKhoa && dangTimKiem.current) {
+      setProjStatusFilter(tabTruocKhiTimKiem.current);
+    }
+    dangTimKiem.current = coTuKhoa;
+    // Cố ý CHỈ theo dõi searchQuery — projStatusFilter đọc qua ref lúc bắt đầu
+    // tìm kiếm, không phải dependency (nếu thêm vào sẽ tự kích hoạt lại ngay
+    // khi hiệu ứng này vừa gọi setProjStatusFilter('ALL'), ghi đè mất giá trị
+    // "trước khi tìm kiếm" vừa lưu).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
+
   // Activity log search box
   const [logSearch, setLogSearch] = useState<string>('');
 
@@ -4500,11 +4524,9 @@ export default function App() {
                   setSearchQuery(q);
                   setActiveTab('PROJECTS');
                   setShowForm(false);
-                  // Góp ý chị Trâm (25/08/2026): tìm kiếm xong mà đang đứng ở tab
-                  // "Đang làm"/"Đã xong" thì kết quả bị lọc mất theo tab, tưởng app
-                  // lỗi không tìm ra — tự chuyển sang "Tất cả" để KHÔNG bị
-                  // `applyStatusFilter` giấu bớt kết quả đã tìm thấy.
-                  if (q.trim() !== '') setProjStatusFilter('ALL');
+                  // Tự chuyển tab về "Tất cả" khi có từ khóa — xử lý tập trung ở
+                  // useEffect theo dõi searchQuery (gần khai báo projStatusFilter),
+                  // không lặp lại logic ở đây.
                 }}
                 className="hidden lg:block lg:w-48 xl:w-64 shrink-0"
               >
@@ -5247,15 +5269,7 @@ export default function App() {
                         aria-label="Tìm kiếm hồ sơ thầu"
                         placeholder="Tìm kiếm theo Tên thầu, Mã dự án thầu, nội dung bóc BOQ..."
                         value={searchQuery}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setSearchQuery(value);
-                          // Cùng vá như ô tìm kiếm nhanh ở header (25/08/2026) — gõ
-                          // tìm kiếm mà đang ở tab "Đang làm"/"Đã xong" thì kết quả
-                          // bị applyStatusFilter lọc mất, tưởng app lỗi không ra kết
-                          // quả — tự chuyển sang "Tất cả" khi có từ khóa.
-                          if (value.trim() !== '') setProjStatusFilter('ALL');
-                        }}
+                        onChange={(e) => setSearchQuery(e.target.value)}
                         className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-medium focus:ring-brand-accent text-slate-800 dark:text-slate-100"
                       />
                     </div>
