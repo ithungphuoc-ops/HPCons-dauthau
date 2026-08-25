@@ -2498,9 +2498,15 @@ export default function App() {
     const kids = projects.filter(p => p.duAnChaId === dp.id);
     return kids.length > 0 && kids.every(isWorkDone);
   };
-  // Áp bộ lọc trạng thái (ACTIVE = đang làm, DONE = đã xong, ALL = tất cả)
+  // Áp bộ lọc trạng thái (ACTIVE = đang làm, DONE = đã xong, ALL = tất cả).
+  // Góp ý CodeRabbit (review PR#1, 25/08/2026): còn từ khóa tìm kiếm thì LUÔN
+  // coi như đang ở "Tất cả" — kể cả khi người dùng bấm tay sang pill "Đang
+  // làm"/"Đã xong" NGAY TRONG LÚC đang tìm kiếm (effect chỉ ép "Tất cả" đúng
+  // 1 lần lúc BẮT ĐẦU gõ, không chặn bấm tay đổi lại sau đó) — nếu không, lại
+  // rơi vào đúng lỗi gốc: kết quả tìm được bị giấu vì không khớp tab đang chọn.
+  const effectiveStatusFilter = searchQuery.trim() !== '' ? 'ALL' : projStatusFilter;
   const applyStatusFilter = <T,>(list: T[], doneOf: (x: T) => boolean) =>
-    projStatusFilter === 'ALL' ? list : list.filter(x => (projStatusFilter === 'DONE' ? doneOf(x) : !doneOf(x)));
+    effectiveStatusFilter === 'ALL' ? list : list.filter(x => (effectiveStatusFilter === 'DONE' ? doneOf(x) : !doneOf(x)));
   // Công việc CHỜ TRƯỞNG PHÒNG DUYỆT: bộ phận đã làm xong (100%) nhưng Phòng chưa chốt (<100%),
   // và chưa có kết quả cuối (chưa trúng/rớt). Hiển thị trên chuông để TP vào nhập tiến độ Phòng.
   //
