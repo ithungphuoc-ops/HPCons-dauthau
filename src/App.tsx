@@ -1325,7 +1325,7 @@ export default function App() {
       // đó (sync effect bên dưới) cũng sẽ đẩy ghi đè HÀNG LOẠT hồ sơ cũ lên Firestore chỉ vì lệch
       // chữ hoa/thường, kể cả hồ sơ người khác đang sửa (rủi ro mất dữ liệu). Chuẩn hóa CHỈ ở lớp
       // HIỂN THỊ (hàm maHienThi ở dưới) — không đụng vào giá trị thật trong state/lưu trữ.
-      const sorted = [...items].sort((a, b) => (a.projectId || '').localeCompare(b.projectId || ''));
+      const sorted = [...items].sort((a, b) => maHienThi(a.projectId).localeCompare(maHienThi(b.projectId)));
       lastRemoteProjects.current = JSON.stringify(sorted);
       setProjects(sorted);
     }, baoLoiCloud);
@@ -2087,13 +2087,13 @@ export default function App() {
       triggerToast(currentUser?.role === 'BOOD' && savedProject.loaiBanGhi !== 'DU_AN'
         ? `Đã duyệt & cập nhật công việc: "${savedProject.tenDuAn}"`
         : `Đã cập nhật gói thầu: "${savedProject.tenDuAn}"`);
-      logAction('Cập nhật gói thầu', `Cập nhật thông tin chi tiết gói thầu ${savedProject.projectId} - ${savedProject.tenDuAn}`, undefined, getProjectParticipants(savedProject));
+      logAction('Cập nhật gói thầu', `Cập nhật thông tin chi tiết gói thầu ${maHienThi(savedProject.projectId)} - ${savedProject.tenDuAn}`, undefined, getProjectParticipants(savedProject));
     } else {
       updated = [...projects, savedProject];
       triggerToast(savedProject.tpDaDuyet === false
         ? `Đã tạo công việc "${savedProject.tenDuAn}" — hệ thống đã báo Trưởng phòng vào duyệt (qua chuông 🔔).`
         : `Đã thêm mới gói thầu: "${savedProject.tenDuAn}"`);
-      logAction('Đăng ký thầu mới', `Đăng ký hồ sơ thầu mới mã ${savedProject.projectId} - ${savedProject.tenDuAn} (Hạn nộp: ${savedProject.ngayHoanThanhDuKienHienTai})${savedProject.tpDaDuyet === false ? ' — chờ Trưởng phòng duyệt' : ''}`, undefined, getProjectParticipants(savedProject));
+      logAction('Đăng ký thầu mới', `Đăng ký hồ sơ thầu mới mã ${maHienThi(savedProject.projectId)} - ${savedProject.tenDuAn} (Hạn nộp: ${savedProject.ngayHoanThanhDuKienHienTai})${savedProject.tpDaDuyet === false ? ' — chờ Trưởng phòng duyệt' : ''}`, undefined, getProjectParticipants(savedProject));
     }
     
     // ===== ĐỔI THÔNG TIN DỰ ÁN → CÁC CÔNG VIỆC CON TỰ CẬP NHẬT THEO =====
@@ -2118,6 +2118,16 @@ export default function App() {
         if (p.duAnChaId !== savedProject.id) return p;
         const patch: Partial<Project> = {};
         keThua.forEach(k => {
+          // 'projectId' so sánh KHÔNG PHÂN BIỆT hoa/thường (chỉ đổi Mã dự án cha THẬT SỰ, không
+          // phải mọi lần lưu) — ProjectForm giờ chuẩn hóa chữ hoa mỗi lần lưu (fix mã "lúc hoa
+          // lúc thường"), nên chỉ sửa 1 trường bất kỳ của Dự án cha (không đụng Mã Project_ID)
+          // cũng đủ khiến mã cha bị hoa hóa so với bản cũ → nếu so sánh nguyên văn ở đây sẽ tưởng
+          // mã ĐỔI THẬT và ghi đè projectId của MỌI công việc con, đẩy hàng loạt lên Firestore
+          // ngoài ý muốn (agent review PR#2 phát hiện, 25/08/2026).
+          if (k === 'projectId') {
+            if (maHienThi(p.projectId) !== maHienThi(savedProject.projectId as string)) (patch as any)[k] = savedProject[k];
+            return;
+          }
           if (p[k] !== savedProject[k]) (patch as any)[k] = savedProject[k];
         });
         if (Object.keys(patch).length === 0) return p;
@@ -2134,7 +2144,7 @@ export default function App() {
     // riêng mã là hòa nhau — thêm tiêu chí phụ để thứ tự không nhảy mỗi lần lưu:
     // cùng mã thì hồ sơ Dự án đứng trước, rồi xếp theo hạng mục, cuối cùng theo id.
     updated.sort((a, b) => {
-      const theoMa = (a.projectId || '').localeCompare(b.projectId || '');
+      const theoMa = maHienThi(a.projectId).localeCompare(maHienThi(b.projectId));
       if (theoMa !== 0) return theoMa;
       const chaTruoc = (a.loaiBanGhi === 'DU_AN' ? 0 : 1) - (b.loaiBanGhi === 'DU_AN' ? 0 : 1);
       if (chaTruoc !== 0) return chaTruoc;
@@ -2237,7 +2247,7 @@ export default function App() {
         const removeIds = new Set([parent.id, ...children.map(c => c.id)]);
         setProjects(projects.filter(p => !removeIds.has(p.id)));
         triggerToast(`Đã xóa dự án "${parent.tenDuAn}"${children.length > 0 ? ` cùng ${children.length} công việc con` : ''}.`);
-        logAction('Xóa dự án', `Xóa dự án "${parent.tenDuAn}" (${parent.projectId})${children.length > 0 ? ` kèm ${children.length} công việc con` : ''}.`);
+        logAction('Xóa dự án', `Xóa dự án "${parent.tenDuAn}" (${maHienThi(parent.projectId)})${children.length > 0 ? ` kèm ${children.length} công việc con` : ''}.`);
       },
     });
   };
@@ -2273,7 +2283,7 @@ export default function App() {
     triggerToast(`Đã áp dụng CĐT điều chỉnh & kéo hồ sơ về bước ${buocVe}.`);
     if (target) {
       const added = newTaskDefs.length ? ` Thêm ${newTaskDefs.length} công việc con mới.` : '';
-      logAction('CĐT điều chỉnh', `CĐT điều chỉnh hồ sơ ${target.projectId} - ${target.tenDuAn}: ${noiDung}. Kéo về bước ${buocVe}, giữ công việc đã hoàn thành.${added}`, undefined, getProjectParticipants(target));
+      logAction('CĐT điều chỉnh', `CĐT điều chỉnh hồ sơ ${maHienThi(target.projectId)} - ${target.tenDuAn}: ${noiDung}. Kéo về bước ${buocVe}, giữ công việc đã hoàn thành.${added}`, undefined, getProjectParticipants(target));
     }
   };
 
@@ -2903,7 +2913,7 @@ export default function App() {
     // Log the action
     const targetProj = projects.find(p => p.id === projId);
     if (targetProj) {
-      logAction('Cập nhật tác vụ', `Cập nhật trạng thái một số công việc thầu thành phần của hồ sơ ${targetProj.projectId} - ${targetProj.tenDuAn}`, undefined, getProjectParticipants(targetProj));
+      logAction('Cập nhật tác vụ', `Cập nhật trạng thái một số công việc thầu thành phần của hồ sơ ${maHienThi(targetProj.projectId)} - ${targetProj.tenDuAn}`, undefined, getProjectParticipants(targetProj));
     }
   };
 
@@ -3031,7 +3041,7 @@ export default function App() {
       if (tiTrongLech) {
         pushNotify(allManagerIds(targetProj), `⚠ Phân bổ tỉ trọng chưa đủ: "${targetProj.hangMuc} — ${targetProj.tenDuAn}" — ${tiTrongLech.moTa}`, targetProj.id);
       }
-      logAction('Cập nhật tác vụ', `Cập nhật cây công việc và tiến độ con cho hồ sơ ${targetProj.projectId} - ${targetProj.tenDuAn}`, undefined, getProjectParticipants(targetProj));
+      logAction('Cập nhật tác vụ', `Cập nhật cây công việc và tiến độ con cho hồ sơ ${maHienThi(targetProj.projectId)} - ${targetProj.tenDuAn}`, undefined, getProjectParticipants(targetProj));
       // CHỈ báo khi KẾ HOẠCH thật sự đổi (thêm/xoá việc, đổi tên, tỉ trọng, người giao, lịch).
       // Nhân viên chỉ kéo tiến độ / nhập kết quả thì KHÔNG báo — Quản lý nhìn % trên bảng là thấy,
       // báo mỗi lần nhúc nhích chỉ làm nhiễu chuông (chị Trâm báo 28/07/2026).
@@ -3231,7 +3241,7 @@ export default function App() {
     }));
     const stepTitle = KANBAN_STEPS.find(s => s.id === toStep)?.title || `Bước ${toStep}`;
     triggerToast(`Đã chuyển "${target.tenDuAn}" sang bước ${toStep}: ${stepTitle}.${step5AutoMsg}`);
-    logAction('Chuyển bước Kanban', `Chuyển hồ sơ ${target.projectId} - ${target.tenDuAn} từ bước ${fromStep} sang bước ${toStep} (${stepTitle})`, undefined, getProjectParticipants(target));
+    logAction('Chuyển bước Kanban', `Chuyển hồ sơ ${maHienThi(target.projectId)} - ${target.tenDuAn} từ bước ${fromStep} sang bước ${toStep} (${stepTitle})`, undefined, getProjectParticipants(target));
     // Vào bước 4 (trình BLĐ/Giám đốc) → MỞ NGAY bảng nhập tiến độ Phòng + kết quả công việc cho
     // Trưởng phòng làm luôn tại chỗ (chị Trâm chốt 25/07/2026), thay vì chỉ nhắc rồi TP phải tự tìm form.
     // Mở ở MỌI vòng (kể cả vòng chỉnh sửa lần 2, 3...) vì mỗi vòng phải nhập lại tiến độ & kết quả.
@@ -3308,7 +3318,7 @@ export default function App() {
     triggerToast(moVongMoi
       ? `Đã kéo "${p.hangMuc}" về Bước 1 và MỞ VÒNG ${vongMoi} — Quản lý phải tạo công việc con mới đủ 100% cho vòng này.`
       : `Đã kéo "${p.hangMuc}" về Bước 1 (giữ nguyên hạn nộp, vẫn ở vòng ${vongMoi}) — hệ thống đã báo Quản lý lập lại công việc con để trình duyệt tiến độ.`);
-    logAction('Kéo về Bước 1', `Kéo hồ sơ ${p.projectId} - ${p.tenDuAn} về Bước 1, giữ nguyên hạn nộp.${moVongMoi ? ` MỞ VÒNG ${vongMoi} (làm lại sau khi đã gửi CĐT).` : ''} Chờ Quản lý lập lại kế hoạch & trình Trưởng phòng duyệt tiến độ.`, undefined, getProjectParticipants(p));
+    logAction('Kéo về Bước 1', `Kéo hồ sơ ${maHienThi(p.projectId)} - ${p.tenDuAn} về Bước 1, giữ nguyên hạn nộp.${moVongMoi ? ` MỞ VÒNG ${vongMoi} (làm lại sau khi đã gửi CĐT).` : ''} Chờ Quản lý lập lại kế hoạch & trình Trưởng phòng duyệt tiến độ.`, undefined, getProjectParticipants(p));
     // Hàm này giờ CHỈ Trưởng phòng dùng (kéo thẳng về Bước 1, không hỏi). Quản lý đi đường khác:
     // bắt buộc qua bảng phân bổ lại việc con — xem handlePullBackApply.
     // Báo Quản lý phụ trách vào PHÂN BỔ LẠI công việc con để tính lại tiến độ của vòng này.
@@ -3394,10 +3404,10 @@ export default function App() {
     logAction(
       coDoiHan ? 'Dời hạn (kéo về Bước 1)' : 'Phân bổ lại việc con (giữ nguyên hạn)',
       coDoiHan
-        ? `${isL2 ? 'Quản lý xin' : 'Trưởng phòng'} dời hạn +${delayDays} ngày hồ sơ ${target.projectId} - ${target.tenDuAn}, kéo về Bước 1. Lý do: ${reason}.`
+        ? `${isL2 ? 'Quản lý xin' : 'Trưởng phòng'} dời hạn +${delayDays} ngày hồ sơ ${maHienThi(target.projectId)} - ${target.tenDuAn}, kéo về Bước 1. Lý do: ${reason}.`
         // Không dời hạn thì Delay Log không ghi — nhật ký hoạt động chính là chỗ lưu bằng chứng
         // "ai đổi phân công, đổi lúc nào, vì sao" (chị Trâm 29/07/2026).
-        : `${isL2 ? 'Quản lý' : 'Trưởng phòng'} phân bổ lại công việc con hồ sơ ${target.projectId} - ${target.tenDuAn}, kéo về Bước 1, GIỮ NGUYÊN hạn nộp ${fmtDateVN(target.ngayHoanThanhDuKienHienTai)}. Lý do: ${reason}.`,
+        : `${isL2 ? 'Quản lý' : 'Trưởng phòng'} phân bổ lại công việc con hồ sơ ${maHienThi(target.projectId)} - ${target.tenDuAn}, kéo về Bước 1, GIỮ NGUYÊN hạn nộp ${fmtDateVN(target.ngayHoanThanhDuKienHienTai)}. Lý do: ${reason}.`,
       undefined,
       getProjectParticipants(target)
     );
@@ -3442,10 +3452,10 @@ export default function App() {
       ? `Đã duyệt tiến độ Phòng 100%. Hồ sơ chuyển sang bước ${buocMoi}: ${tenBuocMoi}.`
       : 'Đã cập nhật kết quả và tiến độ cấp Phòng.');
     if (target && buocMoi) {
-      logAction('Chuyển bước Kanban', `Chuyển hồ sơ ${target.projectId} - ${target.tenDuAn} sang bước ${buocMoi} (${tenBuocMoi}) ngay sau khi Trưởng phòng duyệt tiến độ Phòng 100%`, undefined, getProjectParticipants(target));
+      logAction('Chuyển bước Kanban', `Chuyển hồ sơ ${maHienThi(target.projectId)} - ${target.tenDuAn} sang bước ${buocMoi} (${tenBuocMoi}) ngay sau khi Trưởng phòng duyệt tiến độ Phòng 100%`, undefined, getProjectParticipants(target));
     }
     if (target) {
-      logAction('Cập nhật kết quả Phòng', `Trưởng phòng cập nhật tiến độ Phòng ${tienDoPhong}% và kết quả kiểm tra cho hồ sơ ${target.projectId} - ${target.tenDuAn}`, undefined, getProjectParticipants(target));
+      logAction('Cập nhật kết quả Phòng', `Trưởng phòng cập nhật tiến độ Phòng ${tienDoPhong}% và kết quả kiểm tra cho hồ sơ ${maHienThi(target.projectId)} - ${target.tenDuAn}`, undefined, getProjectParticipants(target));
       // Khớp đúng điều kiện với nextStatus ở trên — đừng báo "đã HOÀN THÀNH" trong khi trạng thái
       // thật sự vẫn là DANG_THUC_HIEN (hồ sơ chưa qua bước 5).
       const daHoanThanh = target.tienDoBoPhan === 100 && tienDoPhong === 100 && target.trangThai === 'DANG_THUC_HIEN' && (buocMoi || target.kanbanStep || 1) >= 5;
@@ -3644,7 +3654,7 @@ export default function App() {
   const handleExportExcel = () => {
     const exportData = [...filteredProjects];
     // Sort chronologically by Project_ID
-    exportData.sort((a, b) => a.projectId.localeCompare(b.projectId));
+    exportData.sort((a, b) => maHienThi(a.projectId).localeCompare(maHienThi(b.projectId)));
 
     let html = `
       <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
@@ -7244,7 +7254,7 @@ export default function App() {
                   setXacNhanQuaB3(null);
                   setChoQuaBuoc3(null);
                   triggerToast(`Hồ sơ “${hoSo.tenDuAn}” đã sang Bước 3 — Trưởng phòng nhận được để duyệt.`);
-                  logAction('Chuyển bước Kanban', `Trình hồ sơ ${hoSo.projectId} - ${hoSo.tenDuAn} sang Bước 3 sau khi lưu chỉnh sửa (xác nhận 2 lần)`, undefined, getProjectParticipants(hoSo));
+                  logAction('Chuyển bước Kanban', `Trình hồ sơ ${maHienThi(hoSo.projectId)} - ${hoSo.tenDuAn} sang Bước 3 sau khi lưu chỉnh sửa (xác nhận 2 lần)`, undefined, getProjectParticipants(hoSo));
                 }}
                 className="px-3 py-1.5 rounded-lg text-[11px] font-black text-white bg-brand-accent hover:bg-brand-accent-hover transition-colors flex items-center gap-1.5"
               >
