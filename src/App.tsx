@@ -79,6 +79,7 @@ import ThongBaoNoiBoPanel from './components/ThongBaoNoiBoPanel';
 import TemplateMauPanel from './components/TemplateMauPanel';
 import DateInput from './components/DateInput';
 import { subscribeCollection, pushCollection, watchAuth, authEmailFor, signInWithHpcoreToken, signInAnonymouslyFb, signOutFb, fbAuth, projectIdDangChay, PROJECT_THAT } from './lib/firebase';
+import { maHienThi } from './lib/utils';
 import { reportActivity } from './lib/reportActivity';
 import { sandboxStaff, duAnNhap } from './data/sandboxData';
 
@@ -691,11 +692,10 @@ export default function App() {
               const formattedNum = num < 10 ? `0${num}` : `${num}`;
               p.projectId = `2026.${formattedNum}`;
             }
-            // Chuẩn hóa Mã Project_ID về CHỮ HOA — cùng lý do với nhánh nạp từ Firestore
-            // (subscribeCollection('projects', ...) bên dưới): hồ sơ cũ lỡ lưu chữ thường vẫn
-            // còn nguyên trong localStorage (chị Trâm báo 25/08/2026, "viết hoa hết nhưng hiển
-            // thị lúc hoa lúc thường").
-            p.projectId = String(p.projectId).trim().toUpperCase();
+            // KHÔNG chuẩn hóa projectId ở đây — projects state chính là thứ được so diff và đẩy
+            // lên Firestore (xem ghi chú ở nhánh subscribeCollection phía dưới); đổi giá trị
+            // trong state sẽ kéo theo ghi đè ngoài ý muốn ở lần lưu kế tiếp. Chuẩn hóa CHỈ ở lớp
+            // hiển thị (hàm maHienThi).
             // Dữ liệu cũ (chưa có loaiBanGhi) → coi là công việc/gói thầu (vẫn lên Kanban)
             if (!p.loaiBanGhi) p.loaiBanGhi = 'CONG_VIEC';
             // Tách số ngày cũ thành 3 chặng (giữ nguyên tổng = hạn cũ): thực hiện + TP duyệt + Giám đốc duyệt
@@ -1319,13 +1319,13 @@ export default function App() {
         });
         return;
       }
-      // Chuẩn hóa Mã Project_ID về CHỮ HOA ngay khi nạp từ cloud (chị Trâm báo 25/08/2026: mã
-      // "viết hoa hết nhưng hiển thị lúc hoa lúc thường") — ô nhập trong ProjectForm chỉ HIỂN
-      // THỊ hoa bằng CSS, các hồ sơ cũ lỡ lưu chữ thường vẫn còn nguyên trên cloud. Chuẩn hóa ở
-      // ĐÚNG 1 điểm nạp dữ liệu này để mọi nơi hiển thị trong app luôn nhất quán, mà KHÔNG cần
-      // sửa lại dữ liệu gốc trên Firestore (an toàn, không đụng dữ liệu thật của Phòng).
-      const chuanHoa = items.map(p => ({ ...p, projectId: (p.projectId || '').trim().toUpperCase() }));
-      const sorted = chuanHoa.sort((a, b) => (a.projectId || '').localeCompare(b.projectId || ''));
+      // KHÔNG chuẩn hóa projectId ở đây (đã thử ở bản trước — agent review phát hiện lỗi nặng):
+      // đổi projectId trong CHÍNH state `projects` làm state khác với `banSaoCloud` (bản sao
+      // dùng để so diff trước khi ghi, xem firebase.ts) → bất kỳ lần lưu KHÔNG LIÊN QUAN nào sau
+      // đó (sync effect bên dưới) cũng sẽ đẩy ghi đè HÀNG LOẠT hồ sơ cũ lên Firestore chỉ vì lệch
+      // chữ hoa/thường, kể cả hồ sơ người khác đang sửa (rủi ro mất dữ liệu). Chuẩn hóa CHỈ ở lớp
+      // HIỂN THỊ (hàm maHienThi ở dưới) — không đụng vào giá trị thật trong state/lưu trữ.
+      const sorted = [...items].sort((a, b) => (a.projectId || '').localeCompare(b.projectId || ''));
       lastRemoteProjects.current = JSON.stringify(sorted);
       setProjects(sorted);
     }, baoLoiCloud);
@@ -3762,7 +3762,7 @@ export default function App() {
 
       html += `
         <tr>
-          <td class="bold-text" style="text-align: center;">${p.projectId}</td>
+          <td class="bold-text" style="text-align: center;">${maHienThi(p.projectId)}</td>
           <td class="bold-text">${p.tenDuAn}</td>
           <td>${p.chuDauTu || 'Chưa cập nhật'}</td>
           <td>${p.diaChi || 'Chưa cập nhật'}</td>
@@ -4693,7 +4693,7 @@ export default function App() {
                                     className="w-full text-left p-3 hover:bg-slate-50 dark:hover:bg-dark-elevated/60 transition-colors cursor-pointer"
                                   >
                                     <div className="flex items-center gap-2">
-                                      <span className="text-[9px] font-mono font-black bg-slate-100 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded">{p.projectId}</span>
+                                      <span className="text-[9px] font-mono font-black bg-slate-100 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded">{maHienThi(p.projectId)}</span>
                                       <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">{p.hangMuc}</span>
                                     </div>
                                     <div className="text-xs font-black text-slate-800 dark:text-slate-200 mt-0.5 break-words" title={(p.duAnChaId && parentNameById[p.duAnChaId]) || p.tenDuAn}>📁 {(p.duAnChaId && parentNameById[p.duAnChaId]) || p.tenDuAn}</div>
@@ -4743,7 +4743,7 @@ export default function App() {
                                     className="w-full text-left p-3 hover:bg-slate-50 dark:hover:bg-dark-elevated/60 transition-colors cursor-pointer"
                                   >
                                     <div className="flex items-center gap-2">
-                                      <span className="text-[9px] font-mono font-black bg-slate-100 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded">{p.projectId}</span>
+                                      <span className="text-[9px] font-mono font-black bg-slate-100 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded">{maHienThi(p.projectId)}</span>
                                       <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">{p.hangMuc}</span>
                                     </div>
                                     <div className="text-xs font-black text-slate-800 dark:text-slate-200 mt-0.5 break-words" title={(p.duAnChaId && parentNameById[p.duAnChaId]) || p.tenDuAn}>📁 {(p.duAnChaId && parentNameById[p.duAnChaId]) || p.tenDuAn}</div>
@@ -5135,7 +5135,7 @@ export default function App() {
                                 <div className="space-y-1.5 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <span className="text-[9px] font-extrabold text-brand-accent dark:text-brand-accent-300 bg-brand-accent/10 dark:bg-brand-accent/15 px-1.5 py-0.5 rounded uppercase font-mono">
-                                      ID: {p.projectId}
+                                      ID: {maHienThi(p.projectId)}
                                     </span>
                                     {/* HẠNG MỤC — thông tin trọng yếu, hiển thị nổi bật */}
                                     <span className="text-[10px] font-black uppercase tracking-wide bg-brand-accent text-white px-2 py-0.5 rounded-md shadow-2xs">
@@ -5531,7 +5531,7 @@ export default function App() {
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="text-[9px] font-mono font-black bg-slate-200/70 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded shrink-0">{dp.projectId}</span>
+                                  <span className="text-[9px] font-mono font-black bg-slate-200/70 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded shrink-0">{maHienThi(dp.projectId)}</span>
                                   <span className="text-[9px] font-black bg-brand-accent/10 text-brand-accent dark:bg-brand-accent/15 dark:text-brand-accent-300 px-1.5 py-0.5 rounded-full shrink-0">{childCount} công việc</span>
                                 </div>
                                 <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 mt-1 leading-tight">📁 {dp.tenDuAn}</h4>
@@ -5774,7 +5774,7 @@ export default function App() {
 
                                   {/* Mã Dự Án (Project_ID in format YYYY.NN) */}
                                   <td className="col-span-2 block md:table-cell px-4 pt-3 pb-0 md:p-3 text-left md:text-center font-mono font-bold text-slate-900 dark:text-slate-100 md:bg-slate-50/30 md:dark:bg-dark-card/30">
-                                    {p.projectId}
+                                    {maHienThi(p.projectId)}
                                   </td>
 
                                   {/* Project Info (Optimized desktop width & responsive truncation) */}
@@ -6424,7 +6424,7 @@ export default function App() {
                             <div className="space-y-1 max-h-16 overflow-y-auto">
                               {memberProjects.slice(0, 2).map(p => (
                                 <div key={p.id} className="text-[10px] text-slate-600 dark:text-slate-300 font-bold truncate">
-                                  • [{p.projectId}] {p.tenDuAn}
+                                  • [{maHienThi(p.projectId)}] {p.tenDuAn}
                                 </div>
                               ))}
                               {memberProjects.length > 2 && (
@@ -7111,7 +7111,7 @@ export default function App() {
               </span>
               <div className="min-w-0">
                 <h3 className="text-sm font-black text-slate-800 dark:text-slate-100">Kéo hồ sơ về Bước 1</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">{pullBackProject.projectId} — {pullBackProject.hangMuc}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">{maHienThi(pullBackProject.projectId)} — {pullBackProject.hangMuc}</p>
               </div>
             </div>
             {/* BA LỰA CHỌN (chị Trâm chốt 29/07/2026). Bản 28/07 chỉ có 2 nút và mặc định "kéo về =
