@@ -21,6 +21,7 @@ import { TenViecConThuongDung } from '../utils/thuVienViecCon';
 import { calculateProjectProgress, progressOfRound, weightIssue, weightSumOfRound, weightSumAllRounds, soVongCoViec, tasksOfRound } from '../utils/taskTree';
 import { fmtDateVN } from '../utils/dateVN';
 import { tongSoLanGuiCDT, nhanLanGui, soLanGuiTruocApp } from '../utils/guiCDT';
+import { maHienThi } from '../lib/utils';
 import DateInput from './DateInput';
 import TextWithLinks from './TextWithLinks';
 import FileDropZone from './FileDropZone';
@@ -655,7 +656,11 @@ export default function ProjectForm({
       id: (formMode === 'EDIT_ALL' ? project?.id : undefined) || `P${Date.now()}`,
       loaiBanGhi,
       duAnChaId,
-      projectId,
+      // Ô nhập chỉ HIỂN THỊ hoa nhờ CSS "uppercase" (text-transform) — giá trị state gõ vào
+      // vẫn giữ nguyên chữ hoa/thường thật. Không chuẩn hóa ở đây thì lưu xuống theo đúng
+      // chữ người dùng gõ (có thể là chữ thường), rồi các nơi khác hiển thị lại {p.projectId}
+      // không có CSS này sẽ lộ ra "lúc hoa lúc thường" (chị Trâm báo 25/08/2026).
+      projectId: projectId.trim().toUpperCase(),
       tenDuAn,
       quanLyId,
       quanLyIdsPhu: quanLyIdsPhu.filter(id => id !== quanLyId),
@@ -835,7 +840,7 @@ export default function ProjectForm({
                   {selectedProject ? (
                     <>
                       <span className="text-[9px] font-mono font-black px-1 py-0.5 rounded shrink-0 bg-slate-100 dark:bg-dark-card text-slate-500 dark:text-slate-400">
-                        {selectedProject.projectId}
+                        {maHienThi(selectedProject.projectId)}
                       </span>
                       <span className="text-xs font-bold truncate flex-1 text-slate-800 dark:text-slate-100" title={selectedProject.tenDuAn}>
                         {selectedProject.tenDuAn}
@@ -906,7 +911,7 @@ export default function ProjectForm({
                         >
                           <div className="flex items-center gap-2">
                             <span className={`text-[9px] font-mono font-black px-1 py-0.5 rounded shrink-0 ${chon ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-dark-card text-slate-500 dark:text-slate-400'}`}>
-                              {p.projectId}
+                              {maHienThi(p.projectId)}
                             </span>
                             <span className="text-xs font-bold truncate flex-1" title={p.tenDuAn}>{p.tenDuAn}</span>
                             {chon && <span className="text-[10px] font-black shrink-0">✓ Đã chọn</span>}
@@ -1023,7 +1028,7 @@ export default function ProjectForm({
                   >
                     {dangChon ? (
                       <>
-                        <span className="text-[10px] font-mono font-black text-slate-500 dark:text-slate-400 shrink-0">{dangChon.projectId}</span>
+                        <span className="text-[10px] font-mono font-black text-slate-500 dark:text-slate-400 shrink-0">{maHienThi(dangChon.projectId)}</span>
                         <span className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{dangChon.tenDuAn}</span>
                       </>
                     ) : (
@@ -1061,7 +1066,7 @@ export default function ProjectForm({
                             <button type="button"
                               onClick={() => { chepTuDuAnMau(m.id); setDuAnMauTimKiem(''); setMoDsDuAnMau(false); }}
                               className="w-full text-left px-3 py-1.5 hover:bg-brand-accent/10 flex items-center gap-2 min-w-0">
-                              <span className="text-[10px] font-mono font-black text-slate-500 dark:text-slate-400 shrink-0">{m.projectId}</span>
+                              <span className="text-[10px] font-mono font-black text-slate-500 dark:text-slate-400 shrink-0">{maHienThi(m.projectId)}</span>
                               <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{m.tenDuAn}</span>
                               {m.chuDauTu && <span className="text-[10px] text-slate-400 truncate shrink">· {m.chuDauTu}</span>}
                             </button>
