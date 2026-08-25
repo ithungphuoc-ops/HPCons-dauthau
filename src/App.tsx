@@ -4496,10 +4496,15 @@ export default function App() {
                 role="search"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  const q = new FormData(e.currentTarget).get('q');
-                  setSearchQuery(String(q ?? ''));
+                  const q = String(new FormData(e.currentTarget).get('q') ?? '');
+                  setSearchQuery(q);
                   setActiveTab('PROJECTS');
                   setShowForm(false);
+                  // Góp ý chị Trâm (25/08/2026): tìm kiếm xong mà đang đứng ở tab
+                  // "Đang làm"/"Đã xong" thì kết quả bị lọc mất theo tab, tưởng app
+                  // lỗi không tìm ra — tự chuyển sang "Tất cả" để KHÔNG bị
+                  // `applyStatusFilter` giấu bớt kết quả đã tìm thấy.
+                  if (q.trim() !== '') setProjStatusFilter('ALL');
                 }}
                 className="hidden lg:block lg:w-48 xl:w-64 shrink-0"
               >
@@ -5242,7 +5247,15 @@ export default function App() {
                         aria-label="Tìm kiếm hồ sơ thầu"
                         placeholder="Tìm kiếm theo Tên thầu, Mã dự án thầu, nội dung bóc BOQ..."
                         value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setSearchQuery(value);
+                          // Cùng vá như ô tìm kiếm nhanh ở header (25/08/2026) — gõ
+                          // tìm kiếm mà đang ở tab "Đang làm"/"Đã xong" thì kết quả
+                          // bị applyStatusFilter lọc mất, tưởng app lỗi không ra kết
+                          // quả — tự chuyển sang "Tất cả" khi có từ khóa.
+                          if (value.trim() !== '') setProjStatusFilter('ALL');
+                        }}
                         className="w-full pl-9 pr-3 py-2 bg-slate-50 dark:bg-dark-bg border border-slate-200 dark:border-slate-800 rounded-lg text-xs font-medium focus:ring-brand-accent text-slate-800 dark:text-slate-100"
                       />
                     </div>
