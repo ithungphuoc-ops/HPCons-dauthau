@@ -6919,7 +6919,11 @@ export default function App() {
                           key={i}
                           onClick={() => openDay(ds)}
                           title="Bấm để xem / thêm lịch hẹn ngày này"
-                          className={`relative min-h-[76px] md:min-h-[104px] p-1.5 rounded-lg border text-left align-top flex flex-col gap-1 transition-colors cursor-pointer
+                          // Chị Trâm góp ý 24/08/2026: "lịch xem cũng render lại dài xuong[g] để
+                          // chứa nhiều thông tin hơn" — ô ngày trước đây khoá cứng quá thấp
+                          // (76/104px), chỉ đủ chỗ cho 3 việc rồi rơi vào "+N việc nữa". Tăng chiều
+                          // cao tối thiểu để hiện được nhiều việc hơn (xem dayTasks.slice bên dưới).
+                          className={`relative min-h-[104px] md:min-h-[152px] p-1.5 rounded-lg border text-left align-top flex flex-col gap-1 transition-colors cursor-pointer
                             ${inMonth ? 'bg-white dark:bg-dark-bg/40 border-slate-100 dark:border-slate-800' : 'bg-slate-50/60 dark:bg-dark-bg/10 border-transparent'}
                             ${isToday ? 'ring-1 ring-brand-accent border-brand-accent' : ''}
                             hover:bg-brand-accent/5 dark:hover:bg-brand-accent/10`}
@@ -6952,13 +6956,13 @@ export default function App() {
                             })()}
                           </span>
                           <span className="flex flex-col gap-0.5 w-full overflow-hidden">
-                            {dayTasks.slice(0, 3).map(t => (
+                            {dayTasks.slice(0, 5).map(t => (
                               <span key={t.id} className={`text-[9px] font-bold px-1.5 py-0.5 rounded truncate w-full text-left ${chipStyle(t, ds)}`} title={`${t.dueTime ? t.dueTime + ' ' : ''}${t.title}${t.repeat && t.repeat !== 'none' ? ' · ' + REPEAT_LABEL[t.repeat] : ''}`}>
                                 {t.dueTime ? <span className="font-black">{t.dueTime} </span> : null}{t.title}
                               </span>
                             ))}
-                            {dayTasks.length > 3 && (
-                              <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 px-1.5">+{dayTasks.length - 3} việc nữa</span>
+                            {dayTasks.length > 5 && (
+                              <span className="text-[9px] font-bold text-slate-400 dark:text-slate-500 px-1.5">+{dayTasks.length - 5} việc nữa</span>
                             )}
                           </span>
                         </button>
@@ -7109,7 +7113,12 @@ export default function App() {
                     }
 
                     return (
-                      <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[560px] overflow-y-auto pr-1">
+                      // Chị Trâm góp ý 24/08/2026 (gửi 3 lần, bổ sung dần): "Mở rộng khung nhật ký
+                      // dài xuống ... để hiển thị nhiều lịch sử hơn". Trước đây khoá cứng 560px bất
+                      // kể màn hình cao hay thấp — nay theo % chiều cao khung nhìn (vẫn có trần cứng
+                      // để không tràn quá cỡ trên màn rất cao), cuộn nhiều nội dung hơn mà không cần
+                      // cuộn cả trang.
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[75vh] md:max-h-[900px] overflow-y-auto pr-1">
                         {filtered.map(log => (
                           <div key={log.id} className="py-3 flex items-start gap-3">
                             <div className="w-8 h-8 rounded-lg bg-slate-100 dark:bg-dark-elevated flex items-center justify-center shrink-0 mt-0.5">
