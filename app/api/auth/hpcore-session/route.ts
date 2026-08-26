@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyHpcore, fetchCentralRole, fetchCentralAvatar, SSO_COOKIE_NAME } from "@/src/lib/hpcore";
+import { verifyHpcore, fetchCentralRole, fetchCentralAvatar, fetchCentralFullName, SSO_COOKIE_NAME } from "@/src/lib/hpcore";
 import { getAdminAuth, getAdminDb } from "@/src/lib/firebase-admin";
 
 // VIEWER = Level 4 (chị Trâm chốt 26/07/2026). Phải khai ở đây, nếu không App Tổng gán quyền
@@ -57,9 +57,10 @@ export async function GET(req: NextRequest) {
     // avatar → ghi staff → mint token) — mỗi lượt cộng dồn khiến đăng nhập chậm rõ rệt
     // (góp ý Trâm 14/08: "xác thực đăng nhập vào app lâu lắm"). Gộp các bước ĐỘC LẬP với
     // nhau chạy song song bằng Promise.all — chỉ còn 3 lượt round-trip nối tiếp thay vì 6.
-    const [centralRole, centralAvatar] = await Promise.all([
+    const [centralRole, centralAvatar, centralFullName] = await Promise.all([
       fetchCentralRole(identity.uid) as Promise<Role | null>,
       fetchCentralAvatar(identity.uid),
+      fetchCentralFullName(identity.uid),
     ]);
     // App Tổng vẫn là CỬA VÀO: chưa được phân quyền ở "Quản lý ứng dụng" (account.hpcore.vn)
     // thì từ chối thẳng, không tạo Auth user / staff doc / token.
@@ -97,16 +98,21 @@ export async function GET(req: NextRequest) {
     const role: Role = (cu?.role as Role) || centralRole;
     const chucVu: string = cu?.chucVu || CHUC_VU_BY_ROLE[centralRole];
 
-    // Avatar: ưu tiên ảnh thật từ hồ sơ App Tổng (account.hpcore.vn/profile) — đã lấy song song
-    // ở bước fetchCentralRole/fetchCentralAvatar bên trên, đổi avatar bên đó thì app này cũng
-    // cập nhật theo ngay lần sau, không còn kẹt cứng ảnh cũ nữa. Chỉ giữ ảnh local cũ khi App
-    // Tổng chưa có avatar nào. Ghi staff doc và mint custom token cũng không phụ thuộc nhau —
-    // chạy song song.
+    // Avatar + Họ tên: ưu tiên giá trị thật từ hồ sơ App Tổng (account.hpcore.vn/profile) —
+    // đã lấy song song ở bước fetchCentralRole/fetchCentralAvatar/fetchCentralFullName bên
+    // trên, đổi avatar/tên bên đó thì app này cũng cập nhật theo ngay lần sau, không còn kẹt
+    // cứng giá trị cũ nữa. Chỉ giữ giá trị local cũ khi App Tổng chưa có. Chị Trâm báo
+    // 24/08/2026: HỌ TÊN trước đây lấy từ claim `name` trong session cookie (identity.fullName)
+    // — claim này không tự cập nhật khi đổi tên bên App Tổng, khác hẳn avatar vốn đã đọc SỐNG
+    // đúng cách — nên vài người tên bị rơi về email dù avatar vẫn đúng. Nay họ tên cũng đọc
+    // sống giống avatar (fetchCentralFullName), identity.fullName chỉ còn là phương án dự
+    // phòng cuối nếu App Tổng đọc lỗi. Ghi staff doc và mint custom token cũng không phụ
+    // thuộc nhau — chạy song song.
     const [, token] = await Promise.all([
       staffRef.set(
         {
           id: identity.uid,
-          hoTen: identity.fullName || cu?.hoTen || identity.email,
+          hoTen: centralFullName || identity.fullName || cu?.hoTen || identity.email,
           chucVu,
           avatar: centralAvatar || cu?.avatar || "",
           kpiDiem: cu?.kpiDiem ?? 0,

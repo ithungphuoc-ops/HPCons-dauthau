@@ -88,3 +88,26 @@ export async function fetchCentralAvatar(uid: string): Promise<string | null> {
     return null;
   }
 }
+
+/**
+ * Họ tên thật của người dùng, đọc SỐNG từ hồ sơ App Tổng (users/{uid}.fullName —
+ * account.hpcore.vn/profile) — cùng nguồn/cách đọc với fetchCentralAvatar ở trên.
+ *
+ * Chị Trâm báo 24/08/2026: "Chưa đồng bộ được avatar - và họ tên của nhân sự ở trong app
+ * với app tổng bên ngoài". Avatar vốn đã đọc sống đúng cách (hàm trên), nhưng HỌ TÊN trước
+ * đây lại lấy từ claim `name` trong session cookie Firebase Auth (identity.fullName ở
+ * route SSO) — claim này chỉ được set 1 lần lúc tạo tài khoản/đăng nhập lần đầu, KHÔNG tự
+ * cập nhật khi người dùng đổi tên ở account.hpcore.vn/profile sau đó, nên vài người hiện
+ * tên rỗng/lệch (rơi về email) dù đã có tên đầy đủ bên App Tổng — trong khi avatar của
+ * chính họ lại đúng vì đọc sống. Nay họ tên cũng đọc sống giống avatar, cùng field
+ * `fullName` mà base-request-app/lib/session.ts đã dùng đúng cho cùng collection này.
+ */
+export async function fetchCentralFullName(uid: string): Promise<string | null> {
+  try {
+    const snap = await getHpcoreDb().collection("users").doc(uid).get();
+    const name = snap.data()?.fullName;
+    return typeof name === "string" && name.trim() ? name.trim() : null;
+  } catch {
+    return null;
+  }
+}
