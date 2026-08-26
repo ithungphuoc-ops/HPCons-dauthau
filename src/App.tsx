@@ -967,6 +967,12 @@ export default function App() {
   // Expanded project accordion state
   const [expandedProjectId, setExpandedProjectId] = useState<string | null>(null);
 
+  // Việc con cần cuộn tới trong "Danh sách tác vụ" của Nhân viên (L3) — bấm từ chuông thông báo.
+  // L3 không có tab Hồ sơ nên bấm thông báo đưa thẳng về Dashboard (xem onOpen của NotificationFeed);
+  // trước đây dừng lại đó, không cuộn tới đúng việc — Nguyễn Xuân Thi báo 24/08/2026: "Click vào
+  // thông báo không nhảy tới task".
+  const [personalHighlightTaskId, setPersonalHighlightTaskId] = useState<string | null>(null);
+
   // Bề rộng VÙNG ĐANG THẤY của bảng Báo cáo tiến độ (khung cuộn ngang), tính bằng CSS px.
   // Khay "xem nhanh hồ sơ" nằm trong một <td> nên mặc định giãn theo BỀ RỘNG CẢ BẢNG; phóng to chữ
   // (Ctrl + lăn chuột) là bảng rộng gần gấp đôi vùng thấy → nửa khay lọt ra ngoài khung, phải cuộn
@@ -1419,7 +1425,7 @@ export default function App() {
   // mở app lúc đồng hồ chạy tới mốc nhắc — đọc lên y như "người đó giao/làm việc con này", trong
   // khi họ hoàn toàn không liên quan tới việc con đó. Truyền laTinHeThong = true để BỎ TRỐNG
   // actorId; NotificationFeed thấy trống thì hiện biểu tượng chuông + nhãn "Hệ thống nhắc".
-  const pushNotify = (targetIds: (string | undefined)[], text: string, projId?: string, luonBao = false, laTinHeThong = false) => {
+  const pushNotify = (targetIds: (string | undefined)[], text: string, projId?: string, luonBao = false, laTinHeThong = false, taskId?: string) => {
     let ids = Array.from(new Set(targetIds.filter(Boolean) as string[])).filter(id => id !== currentUser?.staffId);
     if (!luonBao && projId) {
       const hoSo = projects.find(x => x.id === projId);
@@ -1435,7 +1441,7 @@ export default function App() {
         // actorId gán TẠI ĐÂY (không phải ở từng chỗ gọi): mọi tin do pushNotify bắn ra đều là
         // hệ quả của việc người đang đăng nhập vừa làm, nên lấy luôn — khỏi sửa hàng chục chỗ gọi.
         .map((tid, i) => ({
-          id: `N${Date.now()}-${i}-${tid}`, targetId: tid, text, projId, ngay: now,
+          id: `N${Date.now()}-${i}-${tid}`, targetId: tid, text, projId, taskId, ngay: now,
           actorId: laTinHeThong ? undefined : currentUser?.staffId,
         }));
       if (items.length === 0) return prev;
@@ -1451,13 +1457,13 @@ export default function App() {
   // projId: hồ sơ liên quan — có thì bấm vào tin mở đúng hồ sơ đó (tin nhắc hạn việc con cần cái
   // này, trước đây để trống nên bấm vào không đi đâu). Tin tự nhắc luôn KHÔNG có actorId → chuông
   // hiện "Hệ thống nhắc".
-  const notifySelf = (text: string, projId?: string) => {
+  const notifySelf = (text: string, projId?: string, taskId?: string) => {
     const id = currentUser?.staffId;
     if (!id) return;
     const now = new Date().toISOString();
     setNotifs(prev => {
       if (prev.some(n => n.targetId === id && n.text === text)) return prev;
-      const merged = [...prev, { id: `N${Date.now()}-self`, targetId: id, text, projId, ngay: now } as AppNotification];
+      const merged = [...prev, { id: `N${Date.now()}-self`, targetId: id, text, projId, taskId, ngay: now } as AppNotification];
       const byTarget: Record<string, AppNotification[]> = {};
       merged.forEach(n => { (byTarget[n.targetId] = byTarget[n.targetId] || []).push(n); });
       return Object.values(byTarget).flatMap(list => [...list].sort((a, b) => a.ngay.localeCompare(b.ngay)).slice(-30));
@@ -1585,8 +1591,10 @@ export default function App() {
           const hanVN = han.split('-').reverse().join('-');
           const nhan = (text: string) => {
             // laTinHeThong = true: nhắc hạn là tin của HỆ THỐNG, không gán tên người đang mở app.
-            if (nguoiNhan.includes(currentUser.staffId)) notifySelf(text, p.id);
-            pushNotify(nguoiNhan, text, p.id, false, true);
+            // Kèm t.id: bấm vào tin cuộn thẳng tới đúng việc con này trong cây, không chỉ mở hồ sơ
+            // rồi để người dùng tự tìm (Nguyễn Xuân Thi báo 24/08/2026).
+            if (nguoiNhan.includes(currentUser.staffId)) notifySelf(text, p.id, t.id);
+            pushNotify(nguoiNhan, text, p.id, false, true, t.id);
           };
           // DÙNG CHUNG MỘT BIỂU TƯỢNG ⏰ cho mọi tin nhắc hạn (chị Trâm chốt 29/07/2026):
           // trước đây mốc 1 dùng ⏰ còn mốc 2 dùng ⚠, hai tin cùng loại mà nhìn như hai hệ thống
@@ -2072,7 +2080,7 @@ export default function App() {
               const tang = sau > truoc.sp;
               pushNotify(nguoiNhan,
                 `${nguoiSua} vừa ${tang ? 'tăng' : 'giảm'} tiến độ thực hiện việc "${t.name}" (${label}) từ ${truoc.sp}% ${tang ? 'lên' : 'xuống'} ${sau}%.`,
-                savedProject.id);
+                savedProject.id, false, false, t.id);
             }
           }
           // (Việc đã chia đã được đệ quy ở nhánh trên — tới đây chắc chắn là việc lá, không đệ quy nữa.)
@@ -2200,7 +2208,7 @@ export default function App() {
           pushNotify(nguoiMoi, laViecMoi
             ? `📌 ${aiGiao} vừa giao bạn việc mới: "${t.name}" (${label})${han ? ` — hạn ${han}` : ''}.`
             : `🔄 ${aiGiao} vừa chuyển việc "${t.name}" (${label}) sang cho bạn${han ? ` — hạn ${han}` : ''}.`,
-            savedProject.id);
+            savedProject.id, false, false, t.id);
         });
         baoTiepNhan(savedProject.tasks);
       }
@@ -2794,7 +2802,10 @@ export default function App() {
   // tiến độ và bung sẵn hồ sơ đó. Phải chỉnh bộ lọc trạng thái cho khớp, nếu không hồ sơ nằm ngoài
   // bộ lọc đang bật thì bấm vào chẳng thấy gì — chị Trâm báo 28/07/2026: hồ sơ ở bước 5/6/7 đã xong
   // mà bộ lọc mặc định là "Đang làm" nên danh sách trống trơn.
-  const moHoSo = (projId: string) => {
+  // taskId: có thì sau khi mở hồ sơ, CUỘN THẲNG tới đúng việc con đó trong cây công việc thay vì
+  // chỉ mở hồ sơ rồi để người dùng tự tìm (Nguyễn Xuân Thi báo 24/08/2026: "Click vào thông báo
+  // không nhảy tới task").
+  const moHoSo = (projId: string, taskId?: string) => {
     const p = projects.find(x => x.id === projId);
     if (p) setProjStatusFilter(isWorkDone(p) ? 'DONE' : 'ACTIVE');
     setActiveTab('PROJECTS');
@@ -2802,25 +2813,33 @@ export default function App() {
     // bấm thông báo không có tác dụng gì (chị Trâm báo 17/08/2026 — góp ý #1).
     setShowForm(false);
     setExpandedProjectId(projId);
-    // Ghi nhớ hồ sơ cần cuộn tới. Không cuộn ngay tại đây được vì hàng của hồ sơ mới CHƯA render
-    // (bộ lọc trạng thái vừa đổi) — để effect bên dưới cuộn sau khi danh sách đã dựng lại.
+    // Ghi nhớ hồ sơ (và việc con, nếu có) cần cuộn tới. Không cuộn ngay tại đây được vì hàng của
+    // hồ sơ mới CHƯA render (bộ lọc trạng thái vừa đổi) — để effect bên dưới cuộn sau khi danh
+    // sách đã dựng lại.
     hoSoCanCuonToi.current = projId;
+    viecConCanCuonToi.current = taskId || null;
   };
 
-  // ===== CUỘN TỚI HỒ SƠ VỪA MỞ TỪ CHUÔNG / KANBAN / DASHBOARD =====
+  // ===== CUỘN TỚI HỒ SƠ (VÀ VIỆC CON, NẾU CÓ) VỪA MỞ TỪ CHUÔNG / KANBAN / DASHBOARD =====
   // Chị Trâm báo 17/08/2026 (góp ý #1): "bấm vào tin thứ 1 xem xong, bấm qua tin thứ 2 thì không
   // tự chuyển phân rã, vẫn còn kẹt ở màn hình dự án 1".
   // Nguyên nhân: expandedProjectId ĐÃ đổi đúng sang hồ sơ 2, nhưng trang không tự cuộn nên mắt
   // vẫn đang ở vùng của hồ sơ 1 — trông y như không có gì xảy ra.
   const hoSoCanCuonToi = useRef<string | null>(null);
+  const viecConCanCuonToi = useRef<string | null>(null);
   useEffect(() => {
     const projId = hoSoCanCuonToi.current;
     if (!projId || activeTab !== 'PROJECTS' || showForm) return;
     hoSoCanCuonToi.current = null;
-    // Chờ 1 nhịp cho danh sách render xong hàng của hồ sơ mới rồi mới cuộn.
+    const taskId = viecConCanCuonToi.current;
+    viecConCanCuonToi.current = null;
+    // Chờ 1 nhịp cho danh sách (và cây công việc, nếu hồ sơ đang mở rộng) render xong rồi mới cuộn.
     const hen = setTimeout(() => {
-      const hang = document.getElementById(`hang-ho-so-${projId}`);
-      hang?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // Có taskId thì ưu tiên cuộn thẳng tới đúng việc con — nó nằm bên TRONG hàng hồ sơ (đã mở
+      // rộng sẵn từ setExpandedProjectId ở moHoSo) nên cuộn tới nó là đủ, khỏi cuộn 2 lần.
+      const dich = (taskId && document.getElementById(`viec-con-${taskId}`))
+        || document.getElementById(`hang-ho-so-${projId}`);
+      dich?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 0);
     return () => clearTimeout(hen);
   }, [activeTab, showForm, expandedProjectId, projStatusFilter]);
@@ -4650,7 +4669,14 @@ export default function App() {
                             setShowNotif(false);
                             // Nhân viên (L3) không có tab Hồ sơ → đưa về "KPI Cá Nhân" (tab DASHBOARD)
                             // nơi liệt kê tác vụ đang phụ trách, thay vì bấm vào tin mà không đi đâu.
-                            if (currentUser.role === 'STAFF') { setActiveTab('DASHBOARD'); setShowForm(false); return; }
+                            if (currentUser.role === 'STAFF') {
+                              setActiveTab('DASHBOARD');
+                              setShowForm(false);
+                              // Có việc con cụ thể thì cuộn thẳng tới đó trong "Danh sách tác vụ",
+                              // không chỉ dừng lại ở Dashboard rồi để tự tìm.
+                              setPersonalHighlightTaskId(n.taskId || null);
+                              return;
+                            }
                             // ===== TIN "ĐƯỢC CHỌN LÀM QUẢN LÝ CHO DỰ ÁN" → VÀO THẲNG FORM CÔNG VIỆC MỚI =====
                             // (chị Trâm chốt 18/08/2026 — góp ý #87). Chỉ áp khi tin gắn với một bản ghi
                             // DỰ ÁN: được giao quản lý một dự án thì việc tiếp theo là lập công việc cho
@@ -4670,7 +4696,7 @@ export default function App() {
                             // Còn lại (Quản lý L2, Ban giám đốc L4) đều có tab Hồ sơ → mở hồ sơ.
                             // TRƯỚC ĐÂY chỉ xét đúng 'MANAGER', nên Ban giám đốc (L4) bấm thông báo
                             // là không đi đâu cả — giờ L4 đã xem được tab Hồ sơ (chị Trâm chốt 17/08/2026).
-                            if (n.projId) moHoSo(n.projId);
+                            if (n.projId) moHoSo(n.projId, n.taskId);
                           }}
                         />
                       </div>
@@ -4781,7 +4807,7 @@ export default function App() {
                             <NotificationFeed
                               notifs={myNotifs}
                               staff={staff}
-                              onOpen={(n) => { setShowNotif(false); if (n.projId) moHoSo(n.projId); }}
+                              onOpen={(n) => { setShowNotif(false); if (n.projId) moHoSo(n.projId, n.taskId); }}
                             />
                           </>
                         )}
@@ -5076,6 +5102,7 @@ export default function App() {
                         onUpdateTasks={handleUpdateTasks}
                         onToggleTask={handleToggleSubtask}
                         onExported={handleMyWorkExported}
+                        highlightTaskId={personalHighlightTaskId}
                       />
                     </div>
 
