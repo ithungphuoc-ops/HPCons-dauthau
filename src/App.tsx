@@ -971,7 +971,10 @@ export default function App() {
   // L3 không có tab Hồ sơ nên bấm thông báo đưa thẳng về Dashboard (xem onOpen của NotificationFeed);
   // trước đây dừng lại đó, không cuộn tới đúng việc — Nguyễn Xuân Thi báo 24/08/2026: "Click vào
   // thông báo không nhảy tới task".
-  const [personalHighlightTaskId, setPersonalHighlightTaskId] = useState<string | null>(null);
+  // Kèm projId: DOM id của dòng việc cá nhân là `${projectId}-${taskId}` (giống rowKey trong
+  // MyTasksPanel), vì taskId một mình không đảm bảo DUY NHẤT toàn cục — 2 dự án khác nhau có thể
+  // trót trùng id việc con (agent review PR#5).
+  const [personalHighlightTaskId, setPersonalHighlightTaskId] = useState<{ projId: string; taskId: string } | null>(null);
 
   // Bề rộng VÙNG ĐANG THẤY của bảng Báo cáo tiến độ (khung cuộn ngang), tính bằng CSS px.
   // Khay "xem nhanh hồ sơ" nằm trong một <td> nên mặc định giãn theo BỀ RỘNG CẢ BẢNG; phóng to chữ
@@ -2818,6 +2821,11 @@ export default function App() {
     // sách đã dựng lại.
     hoSoCanCuonToi.current = projId;
     viecConCanCuonToi.current = taskId || null;
+    // BẮT BUỘC đổi mỗi lần gọi, kể cả khi projId/taskId trùng với lần trước (agent review PR#5):
+    // effect bên dưới phụ thuộc expandedProjectId/activeTab/... — nếu 2 tin liên tiếp cùng một
+    // hồ sơ ĐANG MỞ SẴN thì các setXxx ở trên không đổi giá trị nào cả (React bỏ qua re-render vì
+    // giá trị y hệt), effect không chạy lại, tin thứ 2 (việc con khác) không cuộn tới đâu cả.
+    setScrollTrigger(n => n + 1);
   };
 
   // ===== CUỘN TỚI HỒ SƠ (VÀ VIỆC CON, NẾU CÓ) VỪA MỞ TỪ CHUÔNG / KANBAN / DASHBOARD =====
@@ -2827,6 +2835,9 @@ export default function App() {
   // vẫn đang ở vùng của hồ sơ 1 — trông y như không có gì xảy ra.
   const hoSoCanCuonToi = useRef<string | null>(null);
   const viecConCanCuonToi = useRef<string | null>(null);
+  // Tăng dần mỗi lần cần cuộn (moHoSo hoặc mở "Danh sách tác vụ" của Nhân viên) — CHỈ để ép effect
+  // chạy lại kể cả khi đích cuộn trùng lần trước, KHÔNG mang ý nghĩa gì khác.
+  const [scrollTrigger, setScrollTrigger] = useState(0);
   useEffect(() => {
     const projId = hoSoCanCuonToi.current;
     if (!projId || activeTab !== 'PROJECTS' || showForm) return;
@@ -2842,7 +2853,7 @@ export default function App() {
       dich?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 0);
     return () => clearTimeout(hen);
-  }, [activeTab, showForm, expandedProjectId, projStatusFilter]);
+  }, [activeTab, showForm, expandedProjectId, projStatusFilter, scrollTrigger]);
 
   // Tìm task theo id trong cây công việc (phục vụ kiểm tra điều kiện hoàn thành)
   const findTaskInTree = (list: ProjectTask[], taskId: string): ProjectTask | undefined => {
@@ -4685,7 +4696,12 @@ export default function App() {
                               setShowForm(false);
                               // Có việc con cụ thể thì cuộn thẳng tới đó trong "Danh sách tác vụ",
                               // không chỉ dừng lại ở Dashboard rồi để tự tìm.
-                              setPersonalHighlightTaskId(n.taskId || null);
+                              setPersonalHighlightTaskId(n.taskId && n.projId ? { projId: n.projId, taskId: n.taskId } : null);
+                              // Dùng CHUNG scrollTrigger với moHoSo — 2 tin liên tiếp trỏ cùng 1 việc
+                              // con vẫn phải cuộn lại được (agent review PR#5, cùng lý do đã sửa ở
+                              // moHoSo: setPersonalHighlightTaskId với giá trị y hệt lần trước thì
+                              // React bỏ qua re-render, effect bên MyTasksPanel không chạy lại).
+                              setScrollTrigger(n => n + 1);
                               return;
                             }
                             // ===== TIN "ĐƯỢC CHỌN LÀM QUẢN LÝ CHO DỰ ÁN" → VÀO THẲNG FORM CÔNG VIỆC MỚI =====
@@ -5123,7 +5139,9 @@ export default function App() {
                         onUpdateTasks={handleUpdateTasks}
                         onToggleTask={handleToggleSubtask}
                         onExported={handleMyWorkExported}
-                        highlightTaskId={personalHighlightTaskId}
+                        highlightProjectId={personalHighlightTaskId?.projId ?? null}
+                        highlightTaskId={personalHighlightTaskId?.taskId ?? null}
+                        highlightNonce={scrollTrigger}
                       />
                     </div>
 
