@@ -6676,6 +6676,15 @@ export default function App() {
                       triggerToast(`Đã phục hồi biểu mẫu "${bi.ten}" từ thùng rác.`);
                       logAction('Phục hồi biểu mẫu', `${bi.ten} · ${bi.link}`);
                     }
+                    // SỬA tên/link/ghi chú (nút bút chì — chị Trâm báo 24/08/2026): nhận biết qua
+                    // sự có mặt của 'ten' trong bản vá — chỉ luồng Sửa (TemplateMauPanel.luuSua)
+                    // gửi field này. LƯU Ý nếu thêm luồng gọi onUpdate mới: không được gửi CẢ 'ten'
+                    // LẪN 'daXoa: false' trong cùng 1 lần gọi — 2 nhánh if ở đây không loại trừ
+                    // nhau, gộp chung sẽ bắn cả 2 toast/log cho 1 hành động (agent review PR#3).
+                    if (bi && thayDoi.ten !== undefined) {
+                      triggerToast(`Đã lưu thay đổi biểu mẫu "${thayDoi.ten}".`);
+                      logAction('Sửa template mẫu', `${bi.ten} → ${thayDoi.ten} · ${thayDoi.link}`);
+                    }
                   }}
                   /* Nút 🗑 nay chỉ BỎ VÀO THÙNG RÁC — chị Trâm lỡ xoá 2 biểu mẫu và không lấy lại
                      được (18/08/2026). Dữ liệu vẫn còn, phục hồi bằng nút ↩ trong thùng rác. */

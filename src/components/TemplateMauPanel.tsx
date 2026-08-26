@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { TenderTemplate } from '../types';
-import { FileSpreadsheet, Plus, ExternalLink, Trash2, Trash, Undo2, AlertTriangle } from 'lucide-react';
+import { FileSpreadsheet, Plus, ExternalLink, Trash2, Trash, Undo2, AlertTriangle, Pencil, Check, X } from 'lucide-react';
 import TextWithLinks from './TextWithLinks';
 
 // ===== TEMPLATE MẪU ĐẤU THẦU (chị Trâm — góp ý #8, mở rộng 18/08/2026) =====
@@ -26,6 +26,11 @@ import TextWithLinks from './TextWithLinks';
 // gõ link không đúng ("k,jklk") thì bấm tên nhảy sang trang 404 của app, không hiểu đi đâu. Nay:
 // link không hợp lệ thì KHÔNG render thành liên kết nữa, mà hiện cảnh báo + in rõ link đang khai,
 // và ô nhập link cũng cảnh báo ngay lúc gõ.
+//
+// ⚠ NÚT SỬA (bút chì) — chị Trâm báo 24/08/2026: "Thêm bút chỉnh sửa nội dung link và tiêu đề
+// link". Trước đây gõ sai tên/link là phải Xoá (vào thùng rác) rồi Thêm lại từ đầu, mất luôn cả
+// "Cấp được thấy"/ghi chú đã khai. Nay bấm 🖉 mở form sửa ngay tại chỗ (tên, link, ghi chú, cấp
+// được thấy) — dùng lại đúng `onUpdate` đã có sẵn cho việc phục hồi từ thùng rác.
 
 type VaiTro = 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER';
 
@@ -82,6 +87,34 @@ export default function TemplateMauPanel({ templates, vaiTro, canEdit, onAdd, on
   const [levels, setLevels] = useState<VaiTro[]>([]);   // rỗng = mọi cấp đều thấy
   const [moThungRac, setMoThungRac] = useState(false);
 
+  // ===== SỬA BIỂU MẪU TẠI CHỖ (chị Trâm báo 24/08/2026) =====
+  const [dangSuaId, setDangSuaId] = useState<string | null>(null);
+  const [suaTen, setSuaTen] = useState('');
+  const [suaLink, setSuaLink] = useState('');
+  const [suaGhiChu, setSuaGhiChu] = useState('');
+  const [suaLevels, setSuaLevels] = useState<VaiTro[]>([]);
+
+  const batDauSua = (t: TenderTemplate) => {
+    setDangSuaId(t.id);
+    setSuaTen(t.ten);
+    setSuaLink(t.link);
+    setSuaGhiChu(t.ghiChu || '');
+    setSuaLevels(t.levels || []);
+  };
+  const huySua = () => setDangSuaId(null);
+  const suaLinkSai = suaLink.trim().length > 0 && !linkMoDuoc(suaLink);
+  const suaDuocLuu = suaTen.trim().length > 0 && linkMoDuoc(suaLink);
+  const luuSua = (id: string) => {
+    if (!suaDuocLuu) return;
+    onUpdate(id, {
+      ten: suaTen.trim(),
+      link: suaLink.trim(),
+      ghiChu: suaGhiChu.trim() || undefined,
+      levels: suaLevels.length > 0 ? suaLevels : undefined,
+    });
+    setDangSuaId(null);
+  };
+
   const linkSai = link.trim().length > 0 && !linkMoDuoc(link);
   const themDuoc = ten.trim().length > 0 && linkMoDuoc(link);
   const them = () => {
@@ -108,6 +141,89 @@ export default function TemplateMauPanel({ templates, vaiTro, canEdit, onAdd, on
 
   const dongMau = (t: TenderTemplate, trongRac: boolean) => {
     const moDuoc = linkMoDuoc(t.link);
+
+    // ===== ĐANG SỬA biểu mẫu này — hiện form sửa tại chỗ thay vì dòng hiển thị bình thường =====
+    if (dangSuaId === t.id) {
+      return (
+        <li key={t.id} className="border border-brand-accent/40 rounded-lg px-3 py-2 bg-brand-accent/5 dark:bg-brand-accent/10 space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <input
+              value={suaTen}
+              onChange={(e) => setSuaTen(e.target.value)}
+              placeholder="Tên biểu mẫu"
+              autoFocus
+              className="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated"
+            />
+            <div className="space-y-1">
+              <input
+                value={suaLink}
+                onChange={(e) => setSuaLink(e.target.value)}
+                placeholder="Đường link tệp — dán link OneDrive / Drive, hoặc \\máy-chủ\thư-mục"
+                className={`w-full px-2.5 py-1.5 border rounded-lg text-[11px] font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated ${
+                  suaLinkSai ? 'border-brand-warning' : 'border-slate-200 dark:border-slate-700'
+                }`}
+              />
+              {suaLinkSai && (
+                <p className="text-[10px] font-bold text-brand-warning flex items-start gap-1">
+                  <AlertTriangle className="w-3 h-3 shrink-0 mt-0.5" />
+                  Đây chưa phải đường link mở được.
+                </p>
+              )}
+            </div>
+          </div>
+          <input
+            value={suaGhiChu}
+            onChange={(e) => setSuaGhiChu(e.target.value)}
+            placeholder="Ghi chú (không bắt buộc)"
+            className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated"
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Cấp được thấy:
+            </span>
+            {TEN_LEVEL.map(l => {
+              const chon = suaLevels.includes(l.key);
+              return (
+                <button
+                  key={l.key}
+                  type="button"
+                  onClick={() => setSuaLevels(prev => chon ? prev.filter(x => x !== l.key) : [...prev, l.key])}
+                  className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-colors ${
+                    chon
+                      ? 'border-brand-accent bg-brand-accent/10 text-brand-accent dark:text-brand-accent-300'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-brand-accent/50'
+                  }`}
+                >
+                  {chon ? '✓ ' : ''}{l.nhan}
+                </button>
+              );
+            })}
+            <span className="text-[10px] text-slate-400 dark:text-slate-500">
+              {suaLevels.length === 0 ? '(không chọn = mọi cấp đều thấy)' : `(${suaLevels.length} cấp)`}
+            </span>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={huySua}
+              className="px-2.5 py-1.5 rounded-lg text-[11px] font-black text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-dark-elevated flex items-center gap-1"
+            >
+              <X className="w-3.5 h-3.5" /> Hủy
+            </button>
+            <button
+              type="button"
+              onClick={() => luuSua(t.id)}
+              disabled={!suaDuocLuu}
+              title={!suaDuocLuu ? 'Cần có tên biểu mẫu và một đường link mở được' : 'Lưu thay đổi'}
+              className="px-3 py-1.5 rounded-lg text-[11px] font-black text-white bg-brand-accent hover:bg-brand-accent-hover disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+            >
+              <Check className="w-3.5 h-3.5" /> Lưu
+            </button>
+          </div>
+        </li>
+      );
+    }
+
     return (
       <li key={t.id} className={`flex items-start justify-between gap-2 border rounded-lg px-3 py-2 ${
         trongRac
@@ -198,15 +314,26 @@ export default function TemplateMauPanel({ templates, vaiTro, canEdit, onAdd, on
                 )}
               </>
             ) : (
-              /* MỘT nút duy nhất: bỏ vào thùng rác (chị Trâm chốt 18/08/2026) */
-              <button
-                type="button"
-                onClick={() => onDelete(t.id)}
-                title="Xoá biểu mẫu — vào thùng rác, phục hồi lại được"
-                className="p-1 rounded text-slate-300 hover:text-brand-danger transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
+              <>
+                {/* SỬA — chị Trâm báo 24/08/2026: gõ sai tên/link không cần Xoá rồi Thêm lại */}
+                <button
+                  type="button"
+                  onClick={() => batDauSua(t)}
+                  title="Sửa tên/link/ghi chú của biểu mẫu này"
+                  className="p-1 rounded text-slate-300 hover:text-brand-accent transition-colors"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                {/* MỘT nút duy nhất: bỏ vào thùng rác (chị Trâm chốt 18/08/2026) */}
+                <button
+                  type="button"
+                  onClick={() => onDelete(t.id)}
+                  title="Xoá biểu mẫu — vào thùng rác, phục hồi lại được"
+                  className="p-1 rounded text-slate-300 hover:text-brand-danger transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </>
             )}
           </div>
         )}
