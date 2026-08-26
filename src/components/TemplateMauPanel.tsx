@@ -158,7 +158,7 @@ export default function TemplateMauPanel({ templates, vaiTro, canEdit, onAdd, on
               <input
                 value={suaLink}
                 onChange={(e) => setSuaLink(e.target.value)}
-                placeholder="Đường link tệp"
+                placeholder="Đường link tệp — dán link OneDrive / Drive, hoặc \\máy-chủ\thư-mục"
                 className={`w-full px-2.5 py-1.5 border rounded-lg text-[11px] font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated ${
                   suaLinkSai ? 'border-brand-warning' : 'border-slate-200 dark:border-slate-700'
                 }`}
