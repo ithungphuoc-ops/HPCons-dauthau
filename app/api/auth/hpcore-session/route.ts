@@ -107,9 +107,13 @@ export async function GET(req: NextRequest) {
     // là lỗi chị Trâm báo 24/08/2026) cần được TỰ SỬA ở lần đăng nhập kế tiếp, không phải giữ
     // nguyên mãi mãi. Một họ tên thật không bao giờ trùng y hệt địa chỉ email của người đó —
     // nên dùng chính dấu hiệu "hoTen cũ === email" để phân biệt "lỗi cũ cần tự sửa" với "Trưởng
-    // phòng đã chỉnh tay thật, phải giữ nguyên".
+    // phòng đã chỉnh tay thật, phải giữ nguyên". So với CẢ email hiện tại LẪN email đã lưu lần
+    // trước (cu?.email — SSO đổi email hiếm khi xảy ra nhưng nếu có, hoTen cũ có thể đang trùng
+    // email CŨ chứ không phải email hiện tại; so 1 chiều sẽ bỏ sót, không tự sửa được nữa —
+    // CodeRabbit góp ý vòng 2, PR#4).
     const hoTenCu = cu?.hoTen as string | undefined;
-    const hoTenCuLaLoiCu = !hoTenCu || hoTenCu === identity.email;
+    const emailCu = typeof cu?.email === "string" ? cu.email : undefined;
+    const hoTenCuLaLoiCu = !hoTenCu || hoTenCu === identity.email || (!!emailCu && hoTenCu === emailCu);
     const hoTen: string = hoTenCuLaLoiCu
       ? (centralFullName || identity.fullName || identity.email)
       : hoTenCu;
