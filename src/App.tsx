@@ -4667,6 +4667,17 @@ export default function App() {
                           staff={staff}
                           onOpen={(n) => {
                             setShowNotif(false);
+                            // ===== TIN KHÔNG GẮN HỒ SƠ NÀO (nội bộ / biểu mẫu mới) → LUÔN VỀ TAB
+                            // "THÔNG BÁO - TEMPLATE" =====
+                            // Nguyễn Xuân Thi báo (qua Sếp truyền đạt, 26/08/2026): "lúc lick vô nó ko
+                            // tự xổ ra hoặc tới mục có thông báo để xem". 2 loại tin này (pushNotify
+                            // với projId=undefined) trước đây bấm vào không đi đâu cả, kể cả STAFF —
+                            // nên kiểm TRƯỚC nhánh vai trò bên dưới, áp cho mọi vai trò như nhau.
+                            if (!n.projId && /^(📣 Thông báo nội bộ|📄 Biểu mẫu mới)/.test(n.text || '')) {
+                              setActiveTab('TEMPLATES');
+                              setShowForm(false);
+                              return;
+                            }
                             // Nhân viên (L3) không có tab Hồ sơ → đưa về "KPI Cá Nhân" (tab DASHBOARD)
                             // nơi liệt kê tác vụ đang phụ trách, thay vì bấm vào tin mà không đi đâu.
                             if (currentUser.role === 'STAFF') {
@@ -4807,7 +4818,17 @@ export default function App() {
                             <NotificationFeed
                               notifs={myNotifs}
                               staff={staff}
-                              onOpen={(n) => { setShowNotif(false); if (n.projId) moHoSo(n.projId, n.taskId); }}
+                              onOpen={(n) => {
+                                setShowNotif(false);
+                                // Cùng lý do với NotificationFeed phía trên (không vai trò nào đi đâu
+                                // được với tin không gắn hồ sơ trước đây).
+                                if (!n.projId && /^(📣 Thông báo nội bộ|📄 Biểu mẫu mới)/.test(n.text || '')) {
+                                  setActiveTab('TEMPLATES');
+                                  setShowForm(false);
+                                  return;
+                                }
+                                if (n.projId) moHoSo(n.projId, n.taskId);
+                              }}
                             />
                           </>
                         )}
