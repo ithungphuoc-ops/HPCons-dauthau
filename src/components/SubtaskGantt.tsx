@@ -760,7 +760,13 @@ export default function SubtaskGantt({ tasks, staff, projectStartDate, canEdit, 
               const daChiaChoNhieuNguoi = (task.subtasks || []).length > 0;
               const vongCuaDong = vongCua(task);
               return (
-                <tr key={task.id} className={`text-slate-600 dark:text-slate-300 align-middle ${vongCuaDong < vongHienTai ? 'bg-slate-50/60 dark:bg-dark-bg/40' : ''} ${depth > 0 ? 'bg-brand-accent/[0.03] dark:bg-brand-accent/[0.06]' : ''}`}>
+                <tr
+                  key={task.id}
+                  // id để bấm thông báo liên quan việc con này CUỘN THẲNG tới đây (xem
+                  // viecConCanCuonToi trong App.tsx — Nguyễn Xuân Thi báo 24/08/2026).
+                  id={`viec-con-${task.id}`}
+                  className={`text-slate-600 dark:text-slate-300 align-middle ${vongCuaDong < vongHienTai ? 'bg-slate-50/60 dark:bg-dark-bg/40' : ''} ${depth > 0 ? 'bg-brand-accent/[0.03] dark:bg-brand-accent/[0.06]' : ''}`}
+                >
                   <td className="p-2">
                     <button
                       type="button"

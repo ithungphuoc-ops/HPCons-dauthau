@@ -189,6 +189,11 @@ export interface AppNotification {
   targetId: string; // Mã nhân sự người nhận
   text: string; // Nội dung thông báo
   projId?: string; // Hồ sơ liên quan (bấm vào mở)
+  // Việc con CỤ THỂ trong cây công việc của hồ sơ trên (nếu tin nói về đúng 1 việc con — vd
+  // nhắc hạn việc con, giao việc con). Có thì bấm vào tin CUỘN THẲNG tới đúng việc con đó
+  // trong cây, không chỉ mở hồ sơ rồi để người dùng tự tìm (Nguyễn Xuân Thi báo 24/08/2026:
+  // "Click vào thông báo không nhảy tới task").
+  taskId?: string;
   ngay: string; // Thời điểm phát sinh (ISO)
   daDoc?: boolean; // Đã xem (mở chuông là tính đã xem) — tin vẫn giữ trong danh sách, chỉ tắt số đếm
   // NGƯỜI GÂY RA tin này (chị Trâm chốt 30/07/2026 — làm chuông dễ đọc như Base):

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Project, ProjectTask } from '../types';
 import { ListTodo, CheckCircle, Search, Download } from 'lucide-react';
 import StaffTaskResultPanel from './StaffTaskResultPanel';
@@ -115,15 +115,39 @@ interface MyTasksPanelProps {
   onToggleTask: (projectId: string, taskId: string) => void;
   // Đã xuất xong file: App hiện toast + ghi Nhật ký hoạt động
   onExported?: (count: number, scope: string) => void;
+  // Việc con cần CUỘN THẲNG tới (bấm vào từ chuông thông báo) — Nguyễn Xuân Thi báo 24/08/2026:
+  // "Click vào thông báo không nhảy tới task". App.tsx gán 1 lần rồi tự xoá sau khi đã cuộn.
+  // highlightProjectId đi KÈM highlightTaskId — taskId một mình không đảm bảo duy nhất toàn cục
+  // giữa các dự án khác nhau (agent review PR#5).
+  highlightProjectId?: string | null;
+  highlightTaskId?: string | null;
+  // Tăng dần mỗi lần App.tsx muốn cuộn — kể cả khi trỏ lại ĐÚNG việc con của lần trước (agent
+  // review PR#5): nếu chỉ phụ thuộc highlightTaskId, 2 lần bấm liên tiếp cùng 1 việc con sẽ có
+  // giá trị y hệt nhau nên effect không chạy lại, lần bấm thứ 2 không cuộn tới đâu cả.
+  highlightNonce?: number;
 }
 
-export default function MyTasksPanel({ projects, currentUserId, personalOnly, title, subtitle, currentUserName, managedProjects, staffNames, duAnChaInfo, onUpdateTasks, onToggleTask, onExported }: MyTasksPanelProps) {
+export default function MyTasksPanel({ projects, currentUserId, personalOnly, title, subtitle, currentUserName, managedProjects, staffNames, duAnChaInfo, onUpdateTasks, onToggleTask, onExported, highlightProjectId, highlightTaskId, highlightNonce }: MyTasksPanelProps) {
   const [expandedTaskKey, setExpandedTaskKey] = useState<string | null>(null);
   // Hồ sơ đang mở khối thông tin mô tả (nút ℹ️ HỒ SƠ)
   const [infoProjectId, setInfoProjectId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   // Lọc theo trạng thái: mặc định chỉ hiện việc CẦN LÀM (ẩn việc đã xong cho gọn)
   const [viewMode, setViewMode] = useState<'ACTIVE' | 'DONE' | 'ALL'>('ACTIVE');
+
+  // Bấm từ chuông thông báo tới đúng 1 việc con (highlightTaskId) — việc đó có thể đang bị nút
+  // lọc ACTIVE/DONE che mất (vd tin báo "vừa hoàn thành" nhưng đang đứng ở tab "Cần làm"), nên
+  // trước tiên MỞ VỀ "Tất cả" để chắc chắn tìm thấy, rồi cuộn tới đúng dòng đó.
+  useEffect(() => {
+    if (!highlightTaskId || !highlightProjectId) return;
+    setViewMode('ALL');
+    const hen = setTimeout(() => {
+      document.getElementById(`viec-canhan-${highlightProjectId}-${highlightTaskId}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 0);
+    return () => clearTimeout(hen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightProjectId, highlightTaskId, highlightNonce]);
 
   // Tra tên nhân sự theo id — dùng cho khối "ℹ️ Hồ sơ" (quản lý phụ trách / quản lý kế thừa).
   // Chỉ là bản đồ id → họ tên, KHÔNG kèm KPI hay tiến độ, giữ đúng quy tắc bảo mật với L3.
@@ -598,7 +622,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
               const daysLeft = !isNaN(hanMoc) ? Math.ceil((hanMoc - bayGio) / 86400000) : Infinity;
               const dueSoon = !isNaN(hanMoc) && !task.isCompleted && !overdue && daysLeft <= 3;
               return (
-                <div key={rowKey} className="py-2">
+                <div key={rowKey} id={`viec-canhan-${rowKey}`} className="py-2">
                   <div className="flex items-center justify-between gap-4">
                     <div className="space-y-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
