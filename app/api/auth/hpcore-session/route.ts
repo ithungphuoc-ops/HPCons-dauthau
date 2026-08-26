@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyHpcore, fetchCentralRole, fetchCentralAvatar, SSO_COOKIE_NAME } from "@/src/lib/hpcore";
+import { verifyHpcore, fetchCentralRole, fetchCentralAvatar, fetchCentralFullName, SSO_COOKIE_NAME } from "@/src/lib/hpcore";
 import { getAdminAuth, getAdminDb } from "@/src/lib/firebase-admin";
 
 // VIEWER = Level 4 (chị Trâm chốt 26/07/2026). Phải khai ở đây, nếu không App Tổng gán quyền
@@ -57,9 +57,10 @@ export async function GET(req: NextRequest) {
     // avatar → ghi staff → mint token) — mỗi lượt cộng dồn khiến đăng nhập chậm rõ rệt
     // (góp ý Trâm 14/08: "xác thực đăng nhập vào app lâu lắm"). Gộp các bước ĐỘC LẬP với
     // nhau chạy song song bằng Promise.all — chỉ còn 3 lượt round-trip nối tiếp thay vì 6.
-    const [centralRole, centralAvatar] = await Promise.all([
+    const [centralRole, centralAvatar, centralFullName] = await Promise.all([
       fetchCentralRole(identity.uid) as Promise<Role | null>,
       fetchCentralAvatar(identity.uid),
+      fetchCentralFullName(identity.uid),
     ]);
     // App Tổng vẫn là CỬA VÀO: chưa được phân quyền ở "Quản lý ứng dụng" (account.hpcore.vn)
     // thì từ chối thẳng, không tạo Auth user / staff doc / token.
@@ -97,16 +98,35 @@ export async function GET(req: NextRequest) {
     const role: Role = (cu?.role as Role) || centralRole;
     const chucVu: string = cu?.chucVu || CHUC_VU_BY_ROLE[centralRole];
 
-    // Avatar: ưu tiên ảnh thật từ hồ sơ App Tổng (account.hpcore.vn/profile) — đã lấy song song
-    // ở bước fetchCentralRole/fetchCentralAvatar bên trên, đổi avatar bên đó thì app này cũng
-    // cập nhật theo ngay lần sau, không còn kẹt cứng ảnh cũ nữa. Chỉ giữ ảnh local cũ khi App
-    // Tổng chưa có avatar nào. Ghi staff doc và mint custom token cũng không phụ thuộc nhau —
-    // chạy song song.
+    // HỌ TÊN: cùng nguyên tắc "hồ sơ đã có thì KHÔNG ghi đè" như role/chucVu ở trên (chị Trâm
+    // chốt 17/08/2026, lý do y hệt: Trưởng phòng sửa tay trong "Đội ngũ & KPI" xong, người đó
+    // đăng nhập lại là mất — StaffEditModal.tsx CÓ ô sửa Họ tên, nên hoTen cũng cần được bảo
+    // vệ như vậy (agent review PR#4 phát hiện, 26/08/2026).
+    //
+    // NHƯNG khác role/chucVu: hoTen ĐANG CÓ những bản ghi SAI thật (rơi về đúng email — chính
+    // là lỗi chị Trâm báo 24/08/2026) cần được TỰ SỬA ở lần đăng nhập kế tiếp, không phải giữ
+    // nguyên mãi mãi. Một họ tên thật không bao giờ trùng y hệt địa chỉ email của người đó —
+    // nên dùng chính dấu hiệu "hoTen cũ === email" để phân biệt "lỗi cũ cần tự sửa" với "Trưởng
+    // phòng đã chỉnh tay thật, phải giữ nguyên". So với CẢ email hiện tại LẪN email đã lưu lần
+    // trước (cu?.email — SSO đổi email hiếm khi xảy ra nhưng nếu có, hoTen cũ có thể đang trùng
+    // email CŨ chứ không phải email hiện tại; so 1 chiều sẽ bỏ sót, không tự sửa được nữa —
+    // CodeRabbit góp ý vòng 2, PR#4).
+    const hoTenCu = cu?.hoTen as string | undefined;
+    const emailCu = typeof cu?.email === "string" ? cu.email : undefined;
+    const hoTenCuLaLoiCu = !hoTenCu || hoTenCu === identity.email || (!!emailCu && hoTenCu === emailCu);
+    const hoTen: string = hoTenCuLaLoiCu
+      ? (centralFullName || identity.fullName || identity.email)
+      : hoTenCu;
+
+    // Avatar: ưu tiên ảnh thật từ hồ sơ App Tổng (account.hpcore.vn/profile) — đã lấy song
+    // song ở bước fetchCentralAvatar bên trên, đổi avatar bên đó thì app này cũng cập nhật
+    // theo ngay lần sau. Chỉ giữ ảnh local cũ khi App Tổng chưa có avatar nào. Ghi staff doc
+    // và mint custom token cũng không phụ thuộc nhau — chạy song song.
     const [, token] = await Promise.all([
       staffRef.set(
         {
           id: identity.uid,
-          hoTen: identity.fullName || cu?.hoTen || identity.email,
+          hoTen,
           chucVu,
           avatar: centralAvatar || cu?.avatar || "",
           kpiDiem: cu?.kpiDiem ?? 0,
