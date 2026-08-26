@@ -98,21 +98,31 @@ export async function GET(req: NextRequest) {
     const role: Role = (cu?.role as Role) || centralRole;
     const chucVu: string = cu?.chucVu || CHUC_VU_BY_ROLE[centralRole];
 
-    // Avatar + Họ tên: ưu tiên giá trị thật từ hồ sơ App Tổng (account.hpcore.vn/profile) —
-    // đã lấy song song ở bước fetchCentralRole/fetchCentralAvatar/fetchCentralFullName bên
-    // trên, đổi avatar/tên bên đó thì app này cũng cập nhật theo ngay lần sau, không còn kẹt
-    // cứng giá trị cũ nữa. Chỉ giữ giá trị local cũ khi App Tổng chưa có. Chị Trâm báo
-    // 24/08/2026: HỌ TÊN trước đây lấy từ claim `name` trong session cookie (identity.fullName)
-    // — claim này không tự cập nhật khi đổi tên bên App Tổng, khác hẳn avatar vốn đã đọc SỐNG
-    // đúng cách — nên vài người tên bị rơi về email dù avatar vẫn đúng. Nay họ tên cũng đọc
-    // sống giống avatar (fetchCentralFullName), identity.fullName chỉ còn là phương án dự
-    // phòng cuối nếu App Tổng đọc lỗi. Ghi staff doc và mint custom token cũng không phụ
-    // thuộc nhau — chạy song song.
+    // HỌ TÊN: cùng nguyên tắc "hồ sơ đã có thì KHÔNG ghi đè" như role/chucVu ở trên (chị Trâm
+    // chốt 17/08/2026, lý do y hệt: Trưởng phòng sửa tay trong "Đội ngũ & KPI" xong, người đó
+    // đăng nhập lại là mất — StaffEditModal.tsx CÓ ô sửa Họ tên, nên hoTen cũng cần được bảo
+    // vệ như vậy (agent review PR#4 phát hiện, 26/08/2026).
+    //
+    // NHƯNG khác role/chucVu: hoTen ĐANG CÓ những bản ghi SAI thật (rơi về đúng email — chính
+    // là lỗi chị Trâm báo 24/08/2026) cần được TỰ SỬA ở lần đăng nhập kế tiếp, không phải giữ
+    // nguyên mãi mãi. Một họ tên thật không bao giờ trùng y hệt địa chỉ email của người đó —
+    // nên dùng chính dấu hiệu "hoTen cũ === email" để phân biệt "lỗi cũ cần tự sửa" với "Trưởng
+    // phòng đã chỉnh tay thật, phải giữ nguyên".
+    const hoTenCu = cu?.hoTen as string | undefined;
+    const hoTenCuLaLoiCu = !hoTenCu || hoTenCu === identity.email;
+    const hoTen: string = hoTenCuLaLoiCu
+      ? (centralFullName || identity.fullName || identity.email)
+      : hoTenCu;
+
+    // Avatar: ưu tiên ảnh thật từ hồ sơ App Tổng (account.hpcore.vn/profile) — đã lấy song
+    // song ở bước fetchCentralAvatar bên trên, đổi avatar bên đó thì app này cũng cập nhật
+    // theo ngay lần sau. Chỉ giữ ảnh local cũ khi App Tổng chưa có avatar nào. Ghi staff doc
+    // và mint custom token cũng không phụ thuộc nhau — chạy song song.
     const [, token] = await Promise.all([
       staffRef.set(
         {
           id: identity.uid,
-          hoTen: centralFullName || identity.fullName || cu?.hoTen || identity.email,
+          hoTen,
           chucVu,
           avatar: centralAvatar || cu?.avatar || "",
           kpiDiem: cu?.kpiDiem ?? 0,
