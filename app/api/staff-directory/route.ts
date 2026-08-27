@@ -1,15 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyHpcore, getHpcoreDb, SSO_COOKIE_NAME } from "@/src/lib/hpcore";
+import { verifyHpcore, fetchCentralRole, getHpcoreDb, parseCookieHeader, SSO_COOKIE_NAME } from "@/src/lib/hpcore";
 import { getAdminDb } from "@/src/lib/firebase-admin";
-
-function parseCookie(req: NextRequest, name: string): string | undefined {
-  const header = req.headers.get("cookie") ?? "";
-  return header
-    .split(";")
-    .map((c) => c.trim())
-    .find((c) => c.startsWith(`${name}=`))
-    ?.slice(name.length + 1);
-}
 
 /**
  * Danh bạ nhân sự để chọn khi "Thêm tài khoản nhân sự mới" (Đội Ngũ & KPI) — đọc
@@ -25,10 +16,19 @@ function parseCookie(req: NextRequest, name: string): string | undefined {
  * cho chọn trùng người đã tồn tại.
  */
 export async function GET(req: NextRequest) {
-  const cookie = parseCookie(req, SSO_COOKIE_NAME);
+  const cookie = parseCookieHeader(req.headers.get("cookie"), SSO_COOKIE_NAME);
   const identity = await verifyHpcore(cookie);
   if (!identity) {
     return NextResponse.json({ error: "NO_HPCORE_SESSION" }, { status: 401 });
+  }
+  // Đọc danh bạ để lộ tên/email/phòng ban của 100+ nhân sự — phải là người ĐÃ được cấp
+  // quyền vào app này (app_permissions/{uid}.dauthau), không chỉ cần có tài khoản
+  // App Tổng bất kỳ. Đúng cơ chế route SSO đang dùng — thiếu bước này thì bất kỳ ai có
+  // phiên hpcore hợp lệ (kể cả chưa từng vào app đấu thầu) cũng gọi thẳng URL lấy được
+  // toàn bộ email nhân sự công ty (lỗ hổng thật, agent code-review phát hiện 27/08/2026).
+  const role = await fetchCentralRole(identity.uid);
+  if (!role) {
+    return NextResponse.json({ error: "NOT_AUTHORIZED" }, { status: 403 });
   }
 
   try {
@@ -36,10 +36,26 @@ export async function GET(req: NextRequest) {
       getHpcoreDb().collection("users").where("isActive", "==", true).get(),
       getAdminDb().collection("staff").get(),
     ]);
-    const daCoHoSo = new Set(staffSnap.docs.map((d) => d.id));
+
+    // Loại người ĐÃ có hồ sơ trong app này — khớp theo doc id (đúng cho hồ sơ tạo qua
+    // luồng mới, id = uid App Tổng) VÀ theo email (phòng hờ hồ sơ CŨ tạo tay trước PR
+    // này, id kiểu "S009" không phải uid nên không khớp theo id). Hồ sơ cũ tạo tay mà
+    // CHƯA từng có email lưu lại (chuyện thường gặp — trước đây "Thêm tài khoản" không
+    // hỏi email) vẫn có thể lọt qua bước loại này; dọn sạch lịch sử cũ (gộp hồ sơ trùng)
+    // là việc riêng, không nằm trong PR đổi giao diện này.
+    const idsDaCo = new Set(staffSnap.docs.map((d) => d.id));
+    const emailsDaCo = new Set(
+      staffSnap.docs
+        .map((d) => (d.data() as { email?: string }).email?.trim().toLowerCase())
+        .filter((e): e is string => !!e)
+    );
 
     const directory = usersSnap.docs
-      .filter((d) => !daCoHoSo.has(d.id))
+      .filter((d) => {
+        if (idsDaCo.has(d.id)) return false;
+        const email = (d.data() as { email?: string }).email?.trim().toLowerCase();
+        return !(email && emailsDaCo.has(email));
+      })
       .map((d) => {
         const u = d.data() as {
           fullName?: string; email?: string; username?: string | null;

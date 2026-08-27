@@ -13,6 +13,21 @@ export const SSO_COOKIE_NAME = "session";
 export const hpcoreLoginUrl = (returnTo: string): string =>
   `https://account.hpcore.vn/login?next=${encodeURIComponent(returnTo)}`;
 
+/**
+ * Đọc 1 cookie theo tên từ header `Cookie` thô — dùng chung cho mọi route cần verify
+ * phiên SSO (trước đây copy-paste riêng ở từng route.ts, dễ lệch nhau khi sửa —
+ * agent code-review phát hiện khi làm PR "Đội Ngũ & KPI đồng bộ App Tổng", 27/08/2026).
+ * Nhận thẳng chuỗi header (không phụ thuộc kiểu NextRequest) để dùng được ở bất kỳ
+ * route nào, kể cả ngoài Next.js App Router.
+ */
+export function parseCookieHeader(cookieHeader: string | null | undefined, name: string): string | undefined {
+  return (cookieHeader ?? "")
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith(`${name}=`))
+    ?.slice(name.length + 1);
+}
+
 function loadCredential(): object {
   const raw = process.env.HPCORE_FIREBASE_SERVICE_ACCOUNT;
   if (!raw) {
