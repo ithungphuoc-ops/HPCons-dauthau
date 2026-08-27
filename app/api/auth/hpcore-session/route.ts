@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyHpcore, fetchCentralRole, fetchCentralAvatar, fetchCentralFullName, SSO_COOKIE_NAME } from "@/src/lib/hpcore";
+import { verifyHpcore, fetchCentralRole, fetchCentralAvatar, fetchCentralFullName, parseCookieHeader, SSO_COOKIE_NAME } from "@/src/lib/hpcore";
 import { getAdminAuth, getAdminDb } from "@/src/lib/firebase-admin";
 
 // VIEWER = Level 4 (chị Trâm chốt 26/07/2026). Phải khai ở đây, nếu không App Tổng gán quyền
@@ -26,21 +26,12 @@ const CHUC_VU_BY_ROLE: Record<Role, string> = {
   VIEWER: "Ban giám đốc",
 };
 
-function parseCookie(req: NextRequest, name: string): string | undefined {
-  const header = req.headers.get("cookie") ?? "";
-  return header
-    .split(";")
-    .map((c) => c.trim())
-    .find((c) => c.startsWith(`${name}=`))
-    ?.slice(name.length + 1);
-}
-
 // Cầu nối SSO: verify phiên App Tổng (account.hpcore.vn) → mint Custom Token cho
 // project Firebase RIÊNG của app đấu thầu → upsert hồ sơ nhân sự với vai trò do
 // App Tổng gán tập trung (app_permissions/{uid}.dauthau). Client sau đó tự
 // signInWithCustomToken() rồi đọc Firestore staff/{uid} qua subscribeCollection đã có sẵn.
 export async function GET(req: NextRequest) {
-  const cookie = parseCookie(req, SSO_COOKIE_NAME);
+  const cookie = parseCookieHeader(req.headers.get("cookie"), SSO_COOKIE_NAME);
   const identity = await verifyHpcore(cookie);
   if (!identity) {
     return NextResponse.json({ error: "NO_HPCORE_SESSION" }, { status: 401 });

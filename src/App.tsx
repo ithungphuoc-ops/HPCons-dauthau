@@ -6423,10 +6423,11 @@ export default function App() {
                               <div>
                                 <h4 className="text-xs font-black text-slate-900 dark:text-white leading-tight">{member.hoTen}</h4>
                                 <span className="text-[9px] font-bold text-slate-400 block uppercase tracking-wider">{member.chucVu}</span>
+                                {/* Bỏ badge "ID: <uuid>" và dòng "Mật khẩu: Firebase quản lý (mã hóa)"
+                                    (Sếp chốt 27/08/2026): ID nội bộ không giúp ích gì cho Trưởng phòng
+                                    khi nhìn danh sách, còn "mật khẩu" dễ gây hiểu lầm — app này không
+                                    hề lưu mật khẩu nào, App Tổng lo hết phần đăng nhập. */}
                                 <div className="mt-1 flex flex-wrap gap-1">
-                                  <span className="text-[9px] bg-slate-100 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 font-extrabold px-1 py-0.5 rounded inline-block">
-                                    ID: {member.id}
-                                  </span>
                                   <span className={`text-[8px] uppercase font-black px-1 py-0.5 rounded inline-block ${
                                     (member.role || chucVuToRole(member.chucVu)) === 'BOOD' ? 'bg-brand-accent/10 text-brand-accent dark:text-brand-accent-300' :
                                     (member.role || chucVuToRole(member.chucVu)) === 'MANAGER' ? 'bg-brand-warning/15 text-brand-warning' :
@@ -6437,12 +6438,9 @@ export default function App() {
                                   </span>
                                 </div>
                                 {member.email && (
-                                  <div className="mt-2 space-y-0.5 border-t border-slate-100 dark:border-slate-800/80 pt-1.5">
+                                  <div className="mt-2 border-t border-slate-100 dark:border-slate-800/80 pt-1.5">
                                     <div className="text-[9px] font-mono text-slate-600 dark:text-slate-300 font-bold truncate max-w-[130px]" title={member.email}>
                                       ✉️ {member.email}
-                                    </div>
-                                    <div className="text-[9px] text-slate-500 font-bold">
-                                      🔐 Mật khẩu: <span className="text-[8px] font-medium">Firebase quản lý (mã hóa)</span>
                                     </div>
                                   </div>
                                 )}
