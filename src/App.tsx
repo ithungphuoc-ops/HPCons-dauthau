@@ -1886,16 +1886,26 @@ export default function App() {
 
   // Handle saving staff member updates
   const handleSaveStaff = (updatedMember: Staff) => {
-    const updatedStaffList = staff.map(s => s.id === updatedMember.id ? updatedMember : s);
+    // Họ tên giờ CHỈ do route SSO cập nhật (đồng bộ sống từ App Tổng, xem
+    // hpcore-session/route.ts) — StaffEditModal không còn cho sửa tay hoTen, chỉ gửi
+    // lại đúng giá trị nó THẤY LÚC MỞ modal. Nếu người này vừa đăng nhập lại trong lúc
+    // modal đang mở, giá trị đó có thể đã CŨ hơn `staff` hiện tại — giữ nguyên hoTen
+    // mới nhất trong state, KHÔNG lấy từ modal, tránh vô tình ghi đè tên vừa đồng bộ
+    // (agent code-review + CodeRabbit phát hiện, PR "Họ tên luôn đồng bộ App Tổng",
+    // 27/08/2026).
+    const updatedStaffList = staff.map(s =>
+      s.id === updatedMember.id ? { ...updatedMember, hoTen: s.hoTen } : s
+    );
     setStaff(updatedStaffList);
     localStorage.setItem('erp_staff', JSON.stringify(updatedStaffList));
-    
+
     // Also re-trigger statistics on the updated staff list
     updateStaffStats(projects, updatedStaffList);
-    
+
+    const hoTenHienTai = updatedStaffList.find(s => s.id === updatedMember.id)?.hoTen ?? updatedMember.hoTen;
     setEditingStaff(null);
-    triggerToast(`Đã cập nhật thông tin nhân sự: ${updatedMember.hoTen}`);
-    logAction('Cập nhật nhân sự', `Cập nhật hồ sơ thông tin của nhân sự: ${updatedMember.hoTen} (${updatedMember.chucVu})`);
+    triggerToast(`Đã cập nhật thông tin nhân sự: ${hoTenHienTai}`);
+    logAction('Cập nhật nhân sự', `Cập nhật hồ sơ thông tin của nhân sự: ${hoTenHienTai} (${updatedMember.chucVu})`);
   };
 
   // Handle saving project (both Add and Edit)
