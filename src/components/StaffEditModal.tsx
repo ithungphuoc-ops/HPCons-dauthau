@@ -109,8 +109,17 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
         newErrors.pickedPerson = 'Vui lòng chọn 1 nhân sự từ danh bạ App Tổng';
       } else {
         // Phòng hờ: danh bạ có thể đã lỗi thời (người này vừa được thêm ở tab khác) —
-        // API /api/staff-directory đã tự loại người đã có hồ sơ, đây chỉ là lớp bảo vệ thêm.
-        const isDuplicate = existingStaff.some(s => s.id === pickedPerson.id);
+        // API /api/staff-directory đã tự loại người đã có hồ sơ, đây chỉ là lớp bảo vệ
+        // thêm. Khớp cả email/username ngoài id — hồ sơ CŨ tạo tay trước PR này mang mã
+        // kiểu "S009" (không phải uid App Tổng) nên không khớp theo id (CodeRabbit góp ý
+        // 27/08/2026, cùng gốc bug với phía server).
+        const email = pickedPerson.email?.trim().toLowerCase();
+        const username = pickedPerson.username?.trim().toLowerCase();
+        const isDuplicate = existingStaff.some(s =>
+          s.id === pickedPerson.id ||
+          (!!email && s.email?.trim().toLowerCase() === email) ||
+          (!!username && s.username?.trim().toLowerCase() === username)
+        );
         if (isDuplicate) {
           newErrors.pickedPerson = 'Người này đã có hồ sơ trong app — thử tải lại trang.';
         }

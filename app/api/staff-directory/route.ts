@@ -38,23 +38,32 @@ export async function GET(req: NextRequest) {
     ]);
 
     // Loại người ĐÃ có hồ sơ trong app này — khớp theo doc id (đúng cho hồ sơ tạo qua
-    // luồng mới, id = uid App Tổng) VÀ theo email (phòng hờ hồ sơ CŨ tạo tay trước PR
-    // này, id kiểu "S009" không phải uid nên không khớp theo id). Hồ sơ cũ tạo tay mà
-    // CHƯA từng có email lưu lại (chuyện thường gặp — trước đây "Thêm tài khoản" không
-    // hỏi email) vẫn có thể lọt qua bước loại này; dọn sạch lịch sử cũ (gộp hồ sơ trùng)
-    // là việc riêng, không nằm trong PR đổi giao diện này.
+    // luồng mới, id = uid App Tổng) VÀ theo email/username (phòng hờ hồ sơ CŨ tạo tay
+    // trước PR này, id kiểu "S009" không phải uid nên không khớp theo id — CodeRabbit
+    // góp ý thêm username ngoài email, 27/08/2026). Hồ sơ cũ tạo tay mà CHƯA từng có cả
+    // email lẫn username lưu lại (chuyện thường gặp — trước đây "Thêm tài khoản" không
+    // hỏi 2 trường này) vẫn có thể lọt qua bước loại; dọn sạch lịch sử cũ (gộp hồ sơ
+    // trùng) là việc riêng, không nằm trong PR đổi giao diện này.
     const idsDaCo = new Set(staffSnap.docs.map((d) => d.id));
     const emailsDaCo = new Set(
       staffSnap.docs
         .map((d) => (d.data() as { email?: string }).email?.trim().toLowerCase())
         .filter((e): e is string => !!e)
     );
+    const usernamesDaCo = new Set(
+      staffSnap.docs
+        .map((d) => (d.data() as { username?: string }).username?.trim().toLowerCase())
+        .filter((u): u is string => !!u)
+    );
 
     const directory = usersSnap.docs
       .filter((d) => {
         if (idsDaCo.has(d.id)) return false;
-        const email = (d.data() as { email?: string }).email?.trim().toLowerCase();
-        return !(email && emailsDaCo.has(email));
+        const data = d.data() as { email?: string; username?: string };
+        const email = data.email?.trim().toLowerCase();
+        if (email && emailsDaCo.has(email)) return false;
+        const username = data.username?.trim().toLowerCase();
+        return !(username && usernamesDaCo.has(username));
       })
       .map((d) => {
         const u = d.data() as {
