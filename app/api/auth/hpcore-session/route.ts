@@ -89,25 +89,14 @@ export async function GET(req: NextRequest) {
     const role: Role = (cu?.role as Role) || centralRole;
     const chucVu: string = cu?.chucVu || CHUC_VU_BY_ROLE[centralRole];
 
-    // HỌ TÊN: cùng nguyên tắc "hồ sơ đã có thì KHÔNG ghi đè" như role/chucVu ở trên (chị Trâm
-    // chốt 17/08/2026, lý do y hệt: Trưởng phòng sửa tay trong "Đội ngũ & KPI" xong, người đó
-    // đăng nhập lại là mất — StaffEditModal.tsx CÓ ô sửa Họ tên, nên hoTen cũng cần được bảo
-    // vệ như vậy (agent review PR#4 phát hiện, 26/08/2026).
-    //
-    // NHƯNG khác role/chucVu: hoTen ĐANG CÓ những bản ghi SAI thật (rơi về đúng email — chính
-    // là lỗi chị Trâm báo 24/08/2026) cần được TỰ SỬA ở lần đăng nhập kế tiếp, không phải giữ
-    // nguyên mãi mãi. Một họ tên thật không bao giờ trùng y hệt địa chỉ email của người đó —
-    // nên dùng chính dấu hiệu "hoTen cũ === email" để phân biệt "lỗi cũ cần tự sửa" với "Trưởng
-    // phòng đã chỉnh tay thật, phải giữ nguyên". So với CẢ email hiện tại LẪN email đã lưu lần
-    // trước (cu?.email — SSO đổi email hiếm khi xảy ra nhưng nếu có, hoTen cũ có thể đang trùng
-    // email CŨ chứ không phải email hiện tại; so 1 chiều sẽ bỏ sót, không tự sửa được nữa —
-    // CodeRabbit góp ý vòng 2, PR#4).
-    const hoTenCu = cu?.hoTen as string | undefined;
-    const emailCu = typeof cu?.email === "string" ? cu.email : undefined;
-    const hoTenCuLaLoiCu = !hoTenCu || hoTenCu === identity.email || (!!emailCu && hoTenCu === emailCu);
-    const hoTen: string = hoTenCuLaLoiCu
-      ? (centralFullName || identity.fullName || identity.email)
-      : hoTenCu;
+    // HỌ TÊN: KHÁC role/chucVu ở trên — Sếp chốt 27/08/2026 (cùng đợt đổi "Thêm tài khoản
+    // nhân sự mới" sang chọn người thật từ App Tổng): họ tên là DANH TÍNH, luôn đồng bộ SỐNG
+    // từ App Tổng ở MỖI LẦN đăng nhập, giống hệt avatar bên dưới — không còn giữ nguyên giá
+    // trị cũ nữa (đảo ngược quyết định 17/08/2026 trước đây, vốn coi hoTen như role/chucVu để
+    // bảo vệ chỉnh sửa tay). Lý do: nhiều hồ sơ vẫn kẹt tên xấu (vd "loc nguyen") vì tên đó
+    // KHÁC email nên không rơi vào diện "lỗi rõ ràng" của cơ chế tự sửa cũ — Sếp muốn App Tổng
+    // là nguồn DUY NHẤT cho tên/avatar, Trưởng phòng không còn tự gõ tay sửa tên ở đây nữa.
+    const hoTen: string = centralFullName || identity.fullName || identity.email;
 
     // Avatar: ưu tiên ảnh thật từ hồ sơ App Tổng (account.hpcore.vn/profile) — đã lấy song
     // song ở bước fetchCentralAvatar bên trên, đổi avatar bên đó thì app này cũng cập nhật
