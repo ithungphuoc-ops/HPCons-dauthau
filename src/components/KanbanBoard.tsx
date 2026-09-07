@@ -63,6 +63,11 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
   // MẶC ĐỊNH lọc theo NĂM HIỆN TẠI (chị Trâm chốt 17/08/2026) — tự đổi theo lịch, sang 2027 thì
   // mặc định thành 2027, không phải sửa code lại. Năm lấy theo giờ Việt Nam, không theo giờ máy.
   const [yearFilter, setYearFilter] = useState<string>(() => namHienTaiVN());
+  // Lọc theo PHÂN LOẠI HẠNG MỤC (chị chốt qua demo — dễ tìm gói thầu theo loại: báo giá chi tiết,
+  // khái toán, phát sinh, cải tạo...). 'ALL' = không lọc, giữ nguyên mọi loại, giống mặc định của
+  // ô lọc Năm.
+  const [hangMucFilter, setHangMucFilter] = useState<string>('ALL');
+  const HANG_MUC_OPTIONS: Project['hangMuc'][] = ['Báo giá chi tiết', 'Khái toán', 'Báo giá phát sinh', 'Cải tạo', 'VE', 'Lập hồ sơ thầu'];
 
   // ===== NĂM CỦA HỒ SƠ =====
   // Lấy theo NGÀY BẮT ĐẦU — trường này luôn có và luôn là ISO nên không thể suy ra sai.
@@ -89,18 +94,20 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
     [projects]
   );
 
-  // Lọc hồ sơ theo NĂM + khoảng ngày (từ - đến) để bảng không bị "ngộp" khi có hàng trăm dự án
+  // Lọc hồ sơ theo NĂM + PHÂN LOẠI HẠNG MỤC + khoảng ngày (từ - đến) để bảng không bị "ngộp" khi
+  // có hàng trăm dự án. Cả 3 bộ lọc kết hợp được với nhau (AND), không loại trừ nhau.
   const filteredProjects = useMemo(() => {
     const byYear = yearFilter === 'ALL' ? projects : projects.filter(p => projectYear(p) === yearFilter);
-    if (!fromDate && !toDate) return byYear;
+    const byHangMuc = hangMucFilter === 'ALL' ? byYear : byYear.filter(p => p.hangMuc === hangMucFilter);
+    if (!fromDate && !toDate) return byHangMuc;
     const from = fromDate ? new Date(fromDate).getTime() : -Infinity;
     const to = toDate ? new Date(toDate).getTime() : Infinity;
-    return byYear.filter(p => {
+    return byHangMuc.filter(p => {
       const s = new Date(p.ngayBatDau).getTime();
       const e = new Date(p.ngayHoanThanhThucTe || p.ngayHoanThanhDuKienHienTai || p.ngayHoanThanhDuKienGoc).getTime();
       return s <= to && e >= from; // lịch dự án giao với khoảng lọc
     });
-  }, [projects, fromDate, toDate, yearFilter]);
+  }, [projects, fromDate, toDate, yearFilter, hangMucFilter]);
 
   const canMove = (fromStep: number, toStep: number): boolean => {
     if (currentUserRole === 'BOOD') return true;
@@ -157,6 +164,18 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
           >
             <option value="ALL">Tất cả năm</option>
             {years.map(y => <option key={y} value={y}>Năm {y}</option>)}
+          </select>
+          {/* Lọc nhanh theo PHÂN LOẠI HẠNG MỤC — dùng đúng khuôn ô lọc Năm ở trên, kết hợp được
+              với nhau (xem filteredProjects). Giúp tìm nhanh gói thầu theo loại (báo giá chi tiết,
+              khái toán, phát sinh, cải tạo...) trên bảng có nhiều thẻ. */}
+          <select
+            value={hangMucFilter}
+            onChange={(e) => setHangMucFilter(e.target.value)}
+            className="text-[0.72rem] font-black bg-slate-50 dark:bg-dark-bg/50 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-accent cursor-pointer"
+            title="Lọc hồ sơ trên Kanban theo phân loại hạng mục"
+          >
+            <option value="ALL">Tất cả loại</option>
+            {HANG_MUC_OPTIONS.map(h => <option key={h} value={h}>{h}</option>)}
           </select>
           {/* Mobile: dòng lọc thời gian xuống hàng riêng bên dưới (chị chốt 14/07) */}
           {/* KHÔNG đặt biểu tượng lịch trang trí ở đây: mỗi ô DateInput đã có nút lịch riêng
