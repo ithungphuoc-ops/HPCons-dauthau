@@ -128,6 +128,18 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
     return list;
   }, [dateBounds]);
 
+  // ===== CỘT "HÔM NAY" (Sếp yêu cầu 07/09/2026: tô sáng ngày hiện tại để biết tiến độ đã trôi
+  // tới đâu) — mốc tính từ 00:00 của hôm nay (không lấy giờ hiện tại) để dải tô khớp đúng ranh
+  // giới ô ngày trên header, không lệch dần theo giờ trong ngày. null = hôm nay nằm ngoài phạm vi
+  // đang hiển thị (đã lọc năm/trạng thái/khoảng ngày ra ngoài) → ẩn phần tô, không vẽ sai vị trí.
+  const todayLeftPercent = useMemo(() => {
+    const totalDuration = dateBounds.totalDays * 24 * 60 * 60 * 1000;
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const pct = ((todayStart - dateBounds.start.getTime()) / totalDuration) * 100;
+    return pct >= 0 && pct < 100 ? pct : null;
+  }, [dateBounds]);
+
   // Format date labels helper
   const formatDateLabel = (date: Date) => {
     const d = date.getDate();
@@ -316,6 +328,12 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
           </span>
           <span>Cần đặc biệt kiểm soát sát sao</span>
         </div>
+        {todayLeftPercent !== null && (
+          <div className="flex items-center gap-1.5">
+            <div className="w-4 h-3 bg-slate-500/45 dark:bg-slate-400/40 rounded border border-slate-500/60 dark:border-slate-400/55"></div>
+            <span>Hôm nay ({fmtDateVN(new Date())}) — cột tô sáng cho biết tiến độ đã trôi tới đâu</span>
+          </div>
+        )}
       </div>
 
       {/* Gantt Main Area with scrolling — khung cuộn riêng (cả dọc + ngang) để GHIM thanh ngày
@@ -335,20 +353,25 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
                 dateList.map((date, idx) => {
                   // CHỈ TÔ CHỦ NHẬT (chị Trâm chốt 18/08/2026: "thứ 7 công ty vẫn làm").
                   const laChuNhat = date.getDay() === 0;
+                  // HÔM NAY: so theo ngày-tháng-năm máy hiện tại, không so getTime() (giờ trong
+                  // ngày làm lệch), tô riêng để phân biệt với màu cam Chủ Nhật.
+                  const homNay = new Date();
+                  const laHomNay = date.getFullYear() === homNay.getFullYear()
+                    && date.getMonth() === homNay.getMonth() && date.getDate() === homNay.getDate();
                   return (
                     <div
                       key={idx}
                       style={{ width: `${100 / dateBounds.totalDays}%` }}
                       className={`text-center py-2 text-[10px] flex-shrink-0 border-r border-slate-100/50 dark:border-slate-800 flex flex-col justify-center ${
-                        laChuNhat ? 'bg-brand-warning/10' : ''
+                        laHomNay ? 'bg-slate-500/45 dark:bg-slate-400/40' : laChuNhat ? 'bg-brand-warning/10' : ''
                       }`}
                     >
                       {/* Chữ phải ĐỌC RÕ (chị Trâm báo 18/08/2026: mờ quá) — bỏ màu xám nhạt,
                           dùng màu chữ chính và in đậm cho cả tên thứ lẫn ngày. */}
-                      <span className={`font-black ${laChuNhat ? 'text-brand-warning' : 'text-slate-600 dark:text-slate-300'}`}>
+                      <span className={`font-black ${laHomNay ? 'text-slate-900 dark:text-white' : laChuNhat ? 'text-brand-warning' : 'text-slate-600 dark:text-slate-300'}`}>
                         {getDayName(date)}
                       </span>
-                      <span className={`font-black ${laChuNhat ? 'text-brand-warning' : 'text-slate-700 dark:text-slate-100'}`}>
+                      <span className={`font-black ${laHomNay ? 'text-slate-900 dark:text-white' : laChuNhat ? 'text-brand-warning' : 'text-slate-700 dark:text-slate-100'}`}>
                         {formatDateLabel(date)}
                       </span>
                     </div>
@@ -402,6 +425,7 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
                   );
                 })
               )}
+
             </div>
           </div>
 
@@ -491,6 +515,15 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
                         />
                       ))}
                     </div>
+
+                    {/* Cột "Hôm nay" nối tiếp phần tô ở header, cùng % vị trí (todayLeftPercent) —
+                        z-10 để nằm dưới các thanh/nhãn tiến độ (z-20) nhưng trên lưới nền. */}
+                    {todayLeftPercent !== null && (
+                      <div
+                        className="absolute top-0 bottom-0 bg-slate-500/35 dark:bg-slate-400/30 z-10 pointer-events-none"
+                        style={{ left: `${todayLeftPercent}%`, width: `${100 / dateBounds.totalDays}%` }}
+                      />
+                    )}
 
                     {/* Bars Container */}
                     <div className="w-full relative h-14">
