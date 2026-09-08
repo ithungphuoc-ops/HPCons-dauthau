@@ -129,16 +129,18 @@ export default function GanttChart({ projects: allProjects, staff, currentUserRo
   }, [dateBounds]);
 
   // ===== CỘT "HÔM NAY" (Sếp yêu cầu 07/09/2026: tô sáng ngày hiện tại để biết tiến độ đã trôi
-  // tới đâu) — mốc tính từ 00:00 của hôm nay (không lấy giờ hiện tại) để dải tô khớp đúng ranh
-  // giới ô ngày trên header, không lệch dần theo giờ trong ngày. null = hôm nay nằm ngoài phạm vi
-  // đang hiển thị (đã lọc năm/trạng thái/khoảng ngày ra ngoài) → ẩn phần tô, không vẽ sai vị trí.
+  // tới đâu) — LẤY VỊ TRÍ TỪ CHÍNH `dateList` (mảng đã dùng để vẽ từng ô ngày trên header) thay vì
+  // tính lại mốc giờ UTC/local riêng: tính riêng từng bị lệch ~7 tiếng so với ô ngày thật (giờ VN
+  // UTC+7 vs mốc UTC-midnight của dateBounds.start) — Sếp báo 08/09/2026 "phần tô sáng bị lệch ra
+  // khỏi cột". Dùng chung index với dateList thì luôn khớp 100% với ô ngày trên header, không thể
+  // lệch múi giờ được nữa. null = hôm nay nằm ngoài phạm vi đang hiển thị → ẩn phần tô.
   const todayLeftPercent = useMemo(() => {
-    const totalDuration = dateBounds.totalDays * 24 * 60 * 60 * 1000;
     const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const pct = ((todayStart - dateBounds.start.getTime()) / totalDuration) * 100;
-    return pct >= 0 && pct < 100 ? pct : null;
-  }, [dateBounds]);
+    const idx = dateList.findIndex(d =>
+      d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+    );
+    return idx === -1 ? null : (idx / dateBounds.totalDays) * 100;
+  }, [dateList, dateBounds.totalDays]);
 
   // Format date labels helper
   const formatDateLabel = (date: Date) => {
