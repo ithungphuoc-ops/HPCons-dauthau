@@ -306,6 +306,25 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
                         <span className="inline-block mt-1 text-[0.58rem] font-black uppercase tracking-wide bg-slate-100 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded leading-none">
                           {p.hangMuc}
                         </span>
+                        {/* DÒNG TIẾN ĐỘ (Sếp yêu cầu 08/09/2026: "thêm 1 dòng tiến độ của công việc ở
+                            KANBAN để dễ nhìn") — thanh ngang tổng tiến độ (Bộ phận 70% + Phòng 30%,
+                            đúng công thức đang dùng ở Gantt/Báo cáo), nhìn lướt cả cột là biết ngay
+                            thẻ nào đang chạy nhanh/chậm mà không cần đọc số %. */}
+                        {(() => {
+                          const tongTienDo = Math.min(100, (p.tienDoBoPhan || 0) * 0.7 + (p.tienDoPhong || 0) * 0.3);
+                          const daXong = (p.tienDoBoPhan || 0) >= 100 && (p.tienDoPhong || 0) >= 100;
+                          const mauThanh = daXong
+                            ? 'bg-brand-success'
+                            : p.trangThai === 'TRE_TIEN_DO' ? 'bg-brand-danger' : 'bg-brand-accent';
+                          return (
+                            <div
+                              className="mt-1 h-1.5 w-full bg-slate-100 dark:bg-dark-elevated rounded-full overflow-hidden"
+                              title={`Tổng tiến độ ${Math.round(tongTienDo)}% (Bộ phận ${p.tienDoBoPhan || 0}% × 70% + Phòng ${p.tienDoPhong || 0}% × 30%)`}
+                            >
+                              <div className={`h-full rounded-full transition-all ${mauThanh}`} style={{ width: `${tongTienDo}%` }} />
+                            </div>
+                          );
+                        })()}
                         {/* Nói rõ ngay trên thẻ vì sao nút ► bị khoá — nếu không, người dùng bấm mãi
                             không đi mà chẳng hiểu tại sao (chị Trâm 29/07/2026). */}
                         {hienNhanChoDuyet && (
