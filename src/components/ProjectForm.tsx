@@ -433,14 +433,34 @@ export default function ProjectForm({
     }
     
     // If not completed: check if current date exceeds current expected completion date and progress is < 100%
-    const todayStr = '2026-06-26'; // Current simulation date
+    // SỬA 08/09/2026 (Sếp báo): trước để cứng ngày giả lập '2026-06-26' (sót từ lúc demo), nên nút
+    // bắt buộc nhập lý do trễ hạn tính sai theo ngày đó suốt từ trước giờ, không theo đúng hôm nay.
+    const todayStr = new Date().toISOString().split('T')[0];
     if (ngayHoanThanhDuKienHienTai && (tienDoBoPhan < 100 || tienDoPhong < 100)) {
       return new Date(todayStr) > new Date(ngayHoanThanhDuKienHienTai);
     }
     return false;
   };
 
+  // ===== HẠN BỊ ĐẨY XA SO VỚI LẦN LƯU TRƯỚC (Sếp báo lỗi 08/09/2026) =====
+  // Trước đây: sửa hồ sơ (vd sau khi TP kéo về Bước 1 để QL cập nhật lại việc con) làm "Hạn hoàn
+  // thành Phòng (tự tính)" bị đẩy xa thêm N ngày thì app lưu thẳng, không bắt ghi lại vào lịch sử dời
+  // tiến độ — chỉ coi là "trễ" khi hạn đã TRÔI QUA (isOverdue), còn hạn tương lai bị đẩy xa hơn thì
+  // lọt qua hoàn toàn. So sánh NGAY TẠI FORM (không phân biệt vai trò lưu — TP hay QL lưu cũng đều
+  // bị bắt) nên không lặp lại lỗ hổng "chỉ nhánh Quản lý ở App.tsx mới so sánh".
+  const daBiDayXaHan = !!project && !!project.ngayHoanThanhDuKienGoc && !!ngayHoanThanhDuKienGoc
+    && ngayHoanThanhDuKienGoc > project.ngayHoanThanhDuKienGoc;
+
+  // SỬA 08/09/2026 (Sếp chỉnh lại): lý do dời tiến độ phải nhập ĐÚNG Ở MỤC "5. Lịch Sử Dời Tiến Độ"
+  // (bấm "+ Đăng ký dời tiến độ" — đã có sẵn phiếu riêng: hạn mới, lý do, người phê duyệt), KHÔNG
+  // phải ô "Ghi chú nguyên nhân trễ hạn" ở mục 6 (ô đó dành riêng cho lúc hồ sơ ĐÃ quá hạn thật, phục
+  // vụ chấm KPI cuối kỳ — khác mục đích). Nên `delayReasonRequired`/`nguyenNhanTreHan` GIỮ NGUYÊN chỉ
+  // gắn với isOverdue() như cũ; hạn bị đẩy xa được validate RIÊNG bằng daCoLogDoiTienDo bên dưới.
   const delayReasonRequired = isOverdue();
+
+  // Đã có ít nhất 1 dòng MỚI trong lịch sử dời tiến độ kể từ khi mở form (so độ dài với delayLogs gốc
+  // của project) — tức Quản lý/TP đã dùng đúng phiếu "Đăng ký dời tiến độ" để khai lý do + người duyệt.
+  const daCoLogDoiTienDo = delayLogs.length > (project?.delayLogs || []).length;
 
   // Quản lý (Level 2) CHỈ XEM thông tin chung & thông tin gốc phòng kinh doanh —
   // chỉ Trưởng phòng (Level 1) khởi tạo & chỉnh sửa các mục này.
@@ -573,6 +593,12 @@ export default function ProjectForm({
       errs.nguyenNhanTreHan = 'Bắt buộc: Dự án đang trễ hạn thầu! Vui lòng điền nguyên nhân để thẩm định KPI.';
     }
 
+    // Hạn hoàn thành Phòng bị đẩy xa so với lần lưu trước mà CHƯA khai phiếu ở mục 5 — bắt buộc bấm
+    // "+ Đăng ký dời tiến độ" (đúng chỗ có sẵn: hạn mới, lý do, người phê duyệt), không cho lưu thẳng.
+    if (daBiDayXaHan && !daCoLogDoiTienDo) {
+      errs.delayLogRequired = 'Bắt buộc: Hạn hoàn thành Phòng đã bị đẩy xa so với lần lưu trước! Bấm "+ Đăng ký dời tiến độ" ở mục 5 (Lịch Sử Dời Tiến Độ) để khai lý do trước khi lưu.';
+    }
+
     // RÀNG BUỘC PHÂN BỔ TỈ TRỌNG (chị Trâm chốt 25/07/2026): phải chia đủ 100% cho VÒNG HIỆN TẠI
     // mới được lưu. Tạo công việc mới thì bắt buộc phải có việc con; sửa hồ sơ thì chỉ ràng buộc
     // khi vòng hiện tại đã có việc con (Trưởng phòng vẫn dựng được khung hồ sơ trước khi phân rã).
@@ -618,7 +644,8 @@ export default function ProjectForm({
         trangThai = 'HOAN_THANH_DUNG_HAN';
       }
     } else {
-      const todayStr = '2026-06-26';
+      // Cùng lỗi ngày giả cứng như isOverdue() ở trên — sửa chung một lượt (08/09/2026).
+      const todayStr = new Date().toISOString().split('T')[0];
       if (new Date(todayStr) > new Date(ngayHoanThanhDuKienHienTai)) {
         trangThai = 'TRE_TIEN_DO';
       } else {
@@ -645,11 +672,13 @@ export default function ProjectForm({
       : (project?.loaiBanGhi || 'CONG_VIEC');
     const duAnChaId = formMode === 'ADD_WORK' ? selectedProjectId : (formMode === 'EDIT_ALL' ? project?.duAnChaId : undefined);
 
-    // Lịch Sử Dời Tiến Độ (Delay Logs) CHỈ ghi ở luồng riêng "kéo hồ sơ từ Bước 4 về Bước 1"
-    // (CĐT yêu cầu điều chỉnh — xem handlePullBackApply/PullBackDelayModal). Sửa hồ sơ bình
-    // thường ở đây làm hạn lùi xa hơn thì KHÔNG tính là dời tiến độ chính thức, không ép nhập lý
-    // do / không tự ghi log (chị Trâm sửa lại 28/07/2026 — trước đó bắt lỗi nhầm cả lúc chưa
-    // từng gửi CĐT). App.tsx tự gắn cờ choDuyetLai âm thầm để Trưởng phòng biết mà xem lại.
+    // SỬA 08/09/2026 (Sếp báo lỗi): trước đây Delay Logs CHỈ ghi ở luồng riêng "kéo hồ sơ từ Bước 4
+    // về Bước 1" (xem handlePullBackApply/PullBackDelayModal) — sửa hồ sơ bình thường ở ĐÂY làm hạn
+    // bị đẩy xa hơn thì hoàn toàn lọt qua, không có bằng chứng trong lịch sử. Giờ validate ở trên
+    // (daBiDayXaHan && !daCoLogDoiTienDo) đã CHẶN LƯU cho tới khi Quản lý/TP tự bấm "+ Đăng ký dời
+    // tiến độ" ở mục 5 và điền đúng phiếu (lý do, người phê duyệt, hạn mới) — phiếu đó tự đẩy vào
+    // state `delayLogs` qua handleAddDelayLog rồi, nên ở ĐÂY chỉ cần lưu nguyên `delayLogs`, không tự
+    // chế thêm dòng nào nữa (tránh trùng / sai người khai lý do).
     const finalDelayLogs = delayLogs;
 
     const savedProject: Project = {
@@ -1819,10 +1848,13 @@ export default function ProjectForm({
         </div>
         )}
 
-        {/* Section 4: Lịch sử dời tiến độ (Delay Logs) — ĐÃ TÍCH HỢP vào luồng cập nhật (tự ghi khi
-            Quản lý dời tiến độ), chỉ hiện khi SỬA hồ sơ để xem lịch sử; form khởi tạo không hiển thị */}
+        {/* Section 4: Lịch sử dời tiến độ (Delay Logs) — chỉ hiện khi SỬA hồ sơ để xem lịch sử; form
+            khởi tạo không hiển thị. Hạn hoàn thành Phòng bị đẩy xa mà chưa khai phiếu ở đây thì bị
+            chặn lưu (xem daBiDayXaHan/daCoLogDoiTienDo) — SỬA 08/09/2026 theo đúng góp ý của Sếp:
+            lý do dời tiến độ phải nhập ở phiếu "Đăng ký dời tiến độ" NGAY TẠI ĐÂY, không phải ô
+            "Ghi chú nguyên nhân trễ hạn" ở mục 6 (ô đó chỉ dành cho lúc hồ sơ đã thật sự quá hạn). */}
         {formMode === 'EDIT_ALL' && !isParentEdit && (
-        <div className="bg-slate-50/50 dark:bg-dark-card/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 space-y-4">
+        <div className="bg-slate-50/50 dark:bg-dark-card/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 space-y-4" id="field-delayLogRequired">
           <div className="flex items-center justify-between border-b border-slate-200/60 dark:border-slate-800 pb-2">
             <h3 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
               <span className="w-1.5 h-3 bg-brand-warning rounded-full"></span>
@@ -1831,12 +1863,22 @@ export default function ProjectForm({
             <button
               type="button"
               onClick={() => setShowAddDelay(!showAddDelay)}
-              className="text-xs bg-brand-warning hover:bg-brand-warning/85 text-white font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all shadow-2xs"
+              className={`text-xs text-white font-bold px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all shadow-2xs ${
+                errors.delayLogRequired ? 'bg-brand-danger hover:bg-brand-danger/85 animate-pulse' : 'bg-brand-warning hover:bg-brand-warning/85'
+              }`}
             >
               <Plus className="w-3.5 h-3.5" />
               Đăng ký dời tiến độ
             </button>
           </div>
+
+          {/* Cảnh báo hạn bị đẩy xa — bắt buộc khai phiếu ở NGAY mục này mới lưu được (chị/Sếp chốt
+              08/09/2026: không dùng ké ô "Ghi chú nguyên nhân trễ hạn" ở mục 6 nữa). */}
+          {errors.delayLogRequired && (
+            <p className="text-[11px] font-bold text-brand-danger bg-brand-danger/10 border border-brand-danger/25 rounded-lg px-2.5 py-2">
+              ⛔ {errors.delayLogRequired}
+            </p>
+          )}
 
           {/* New Delay Log Sub-form */}
           {showAddDelay && (
