@@ -1,5 +1,5 @@
 import "server-only";
-import { chuanHoaChu, chuanHoaMa, chuanHoaNgayLa } from "./chuanHoaChu";
+import { chuanHoaChu, chuanHoaMa, chuanHoaNgayLa, idAnToanTuMa } from "./chuanHoaChu";
 
 /**
  * TIẾN ĐỘ THIẾT KẾ — DỮ LIỆU LẤY TỪ APP THIẾT KẾ (chị Trâm chốt 15/09/2026)
@@ -50,7 +50,11 @@ const laySo = (r: Record<string, unknown>, ...keys: string[]): number | undefine
     const v = r[k];
     const n = typeof v === "number" ? v : Number(v);
     // CỐ Ý nhận cả số 0: "0 task" và "trễ 0 ngày" là thông tin thật, không phải thiếu dữ liệu.
-    if (v !== null && v !== undefined && v !== "" && Number.isFinite(n)) return n;
+    // Chuỗi chỉ có khoảng trắng vẫn phải coi là THIẾU (không trim thì Number(" ")=0 biến trường
+    // thiếu thành "0" thật — cùng lỗi CodeRabbit phát hiện ở bản duAnTong.ts, sửa đồng bộ luôn).
+    if (v === null || v === undefined) continue;
+    if (typeof v === "string" && !v.trim()) continue;
+    if (Number.isFinite(n)) return n;
   }
   return undefined;
 };
@@ -113,6 +117,5 @@ export const chuanHoaDuAn = (r: Record<string, unknown>): DuAnThietKe | null => 
   };
 };
 
-/** Id document Firestore an toàn suy ra từ mã dự án (mã có dấu "/" sẽ làm vỡ đường dẫn). */
-export const docIdTuMa = (maDuAn: string): string =>
-  maDuAn.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 200) || "khong-ma";
+/** Id document Firestore an toàn (không trùng) suy ra từ mã dự án — xem idAnToanTuMa(). */
+export const docIdTuMa = (maDuAn: string): string => idAnToanTuMa(maDuAn);

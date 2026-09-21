@@ -112,7 +112,35 @@ export const chuanHoaMa = (v?: unknown): string | undefined => {
  */
 export const chuanHoaNgayLa = (raw: string): string => {
   const khongOffset = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.exec(raw);
-  if (khongOffset) return khongOffset[1];
+  if (khongOffset) {
+    // Regex trên chỉ khớp ĐÚNG HÌNH DẠNG yyyy-mm-dd — chưa chắc là ngày lịch có thật (CodeRabbit
+    // phát hiện lúc rà PR #11, 21/09/2026: "2026-02-30" khớp hình dạng nhưng tháng 2 không có ngày
+    // 30). Dựng lại bằng Date.UTC rồi so ngược 3 phần — round-trip không khớp thì coi như ngày lạ,
+    // trả nguyên văn thay vì nhét ngày không tồn tại vào dữ liệu đã "chuẩn hoá".
+    const [y, m, d] = khongOffset[1].split("-").map(Number);
+    const kiemTra = new Date(Date.UTC(y, m - 1, d));
+    if (kiemTra.getUTCFullYear() === y && kiemTra.getUTCMonth() === m - 1 && kiemTra.getUTCDate() === d) {
+      return khongOffset[1];
+    }
+    return raw;
+  }
   const t = Date.parse(raw);
   return Number.isNaN(t) ? raw : new Date(t).toISOString().slice(0, 10);
+};
+
+/**
+ * Mã dự án → id document Firestore AN TOÀN VÀ KHÔNG TRÙNG (CodeRabbit phát hiện lúc rà PR #11,
+ * 21/09/2026 — `chuanHoaMa` chỉ xoá khoảng trắng + viết hoa, không giới hạn ký tự; trước đây
+ * `docIdTuMaDuAn`/`docIdTuMa` tự làm riêng `replace(/[^a-zA-Z0-9_.-]/g, "_")` — GỘP MỌI ký tự lạ
+ * về CÙNG MỘT "_", nên "A/B" và "A?B" ra cùng 1 document ID, GHI ĐÈ dữ liệu dự án khác nhau lên
+ * nhau mà không ai biết).
+ *
+ * Mỗi ký tự KHÔNG hợp lệ được mã hoá RIÊNG theo mã Unicode của chính nó (`_<mã 36>_`) thay vì gộp
+ * chung — hai ký tự lạ khác nhau luôn ra chuỗi thoát khác nhau, nên 2 mã dự án khác nhau không thể
+ * đụng document ID qua bước này. Mã dự án thật (từ App Thông tin dự án) là chuỗi ngắn nên KHÔNG áp
+ * dụng giới hạn 200 ký tự nữa — bỏ luôn rủi ro trùng do cắt bớt.
+ */
+export const idAnToanTuMa = (maDuAn: string): string => {
+  const ma = maDuAn.replace(/[^a-zA-Z0-9_.-]/g, (c) => `_${c.codePointAt(0)!.toString(36)}_`);
+  return ma || "khong-ma";
 };

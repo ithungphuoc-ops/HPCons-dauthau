@@ -345,26 +345,32 @@ export default function TienDoThietKePanel({ duLieuBanThu, chiMaDuAn }: Props) {
                 return (
                   <Fragment key={d.maDuAn}>
                     <tr
-                      role="button"
-                      tabIndex={0}
-                      aria-expanded={mo}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault();
-                          setMoRong(s => ({ ...s, [d.maDuAn]: !mo }));
-                        }
-                      }}
                       className="border-t border-slate-100 dark:border-slate-800 hover:bg-brand-accent/[0.04] cursor-pointer"
                       onClick={() => setMoRong(s => ({ ...s, [d.maDuAn]: !mo }))}
                     >
                       <td className={`${o} text-center text-[11px] font-bold text-slate-500`}>{idx + 1}</td>
                       <td className={`${o} whitespace-nowrap`}>
-                        <span className="inline-flex items-center gap-1 text-xs font-black text-brand-accent dark:text-brand-accent-300">
-                          {hm.length > 0
-                            ? (mo ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />)
-                            : <span className="w-3.5" />}
-                          {d.maDuAn}
-                        </span>
+                        {/* Nút riêng trong ô "Mã dự án" — role="button" trên <tr> làm hàng và các ô
+                            mất ngữ nghĩa bảng với trình đọc màn hình (CodeRabbit phát hiện lúc rà
+                            PR #11, 21/09/2026). onClick vẫn giữ ở <tr> cho chuột bấm cả hàng như cũ,
+                            nút này lo phần bàn phím/trình đọc màn hình — stopPropagation để không
+                            bấm 2 lần thành không đổi gì. */}
+                        {hm.length > 0 ? (
+                          <button
+                            type="button"
+                            aria-expanded={mo}
+                            onClick={e => { e.stopPropagation(); setMoRong(s => ({ ...s, [d.maDuAn]: !mo })); }}
+                            className="inline-flex items-center gap-1 text-xs font-black text-brand-accent dark:text-brand-accent-300 cursor-pointer"
+                          >
+                            {mo ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                            {d.maDuAn}
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-black text-brand-accent dark:text-brand-accent-300">
+                            <span className="w-3.5" />
+                            {d.maDuAn}
+                          </span>
+                        )}
                       </td>
                       <td className={`${o} text-xs font-bold text-slate-800 dark:text-slate-100`}>
                         {d.tenDuAn}

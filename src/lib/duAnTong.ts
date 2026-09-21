@@ -1,5 +1,5 @@
 import "server-only";
-import { chuanHoaChu, chuanHoaMa, chuanHoaNgayLa } from "./chuanHoaChu";
+import { chuanHoaChu, chuanHoaMa, chuanHoaNgayLa, idAnToanTuMa } from "./chuanHoaChu";
 
 /**
  * DANH MỤC DỰ ÁN TỪ "APP THÔNG TIN DỰ ÁN" (chị Trâm chốt 15/09/2026)
@@ -39,8 +39,10 @@ export const chuanHoaDuAnTong = (r: Record<string, unknown>): DuAnTong | null =>
       const v = r[k];
       // CỐ Ý nhận cả số 0 (CodeRabbit phát hiện lúc rà PR #11, 21/09/2026 — trước đây `n > 0` làm
       // dự án mới khởi tạo, tiến độ 0%, hiện ô trống thay vì "0%"; tienDoThietKe.ts đã làm đúng,
-      // hai bộ chuẩn hoá lệch luật nhau).
-      if (v === null || v === undefined || v === "") continue;
+      // hai bộ chuẩn hoá lệch luật nhau). Chuỗi chỉ có khoảng trắng (" ", "\t") cũng phải coi là
+      // THIẾU dữ liệu như chuỗi rỗng — không thì Number(" ") = 0 biến trường thiếu thành "0" thật
+      // (CodeRabbit phát hiện cùng đợt rà).
+      if (v === null || v === undefined || (typeof v === "string" && !v.trim())) continue;
       const n = typeof v === "number" ? v : Number(v);
       if (Number.isFinite(n) && n >= 0) return n;
     }
@@ -84,6 +86,5 @@ export const chuanHoaDuAnTong = (r: Record<string, unknown>): DuAnTong | null =>
   };
 };
 
-/** Id document Firestore an toàn suy ra từ mã dự án. */
-export const docIdTuMaDuAn = (maDuAn: string): string =>
-  maDuAn.replace(/[^a-zA-Z0-9_.-]/g, "_").slice(0, 200) || "khong-ma";
+/** Id document Firestore an toàn (không trùng) suy ra từ mã dự án — xem idAnToanTuMa(). */
+export const docIdTuMaDuAn = (maDuAn: string): string => idAnToanTuMa(maDuAn);
