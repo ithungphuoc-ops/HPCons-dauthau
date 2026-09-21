@@ -135,12 +135,22 @@ export const chuanHoaNgayLa = (raw: string): string => {
  * về CÙNG MỘT "_", nên "A/B" và "A?B" ra cùng 1 document ID, GHI ĐÈ dữ liệu dự án khác nhau lên
  * nhau mà không ai biết).
  *
- * Mỗi ký tự KHÔNG hợp lệ được mã hoá RIÊNG theo mã Unicode của chính nó (`_<mã 36>_`) thay vì gộp
- * chung — hai ký tự lạ khác nhau luôn ra chuỗi thoát khác nhau, nên 2 mã dự án khác nhau không thể
- * đụng document ID qua bước này. Mã dự án thật (từ App Thông tin dự án) là chuỗi ngắn nên KHÔNG áp
- * dụng giới hạn 200 ký tự nữa — bỏ luôn rủi ro trùng do cắt bớt.
+ * ⚠ SỬA LẦN 2 (21/09/2026) — bản đầu tự dựng escape tay (`_<mã 36>_`) TƯỞNG là 1-1 nhưng KHÔNG tự
+ * đồng bộ (self-delimiting): ký tự phân cách "_" lại nằm trong chính tập ký tự ĐƯỢC PHÉP, nên chuỗi
+ * thoát của 1 ký tự lạ có thể trùng y hệt 1 đoạn ký tự thường ở mã khác — agent review độc lập tự
+ * chạy Node xác nhận va chạm thật: "PRJ/01" và "PRJ_1b_01" ra cùng 1 chuỗi. Nay dùng thẳng
+ * `encodeURIComponent()` — phép mã hoá 1-1 CHUẨN đã kiểm chứng rộng rãi (đúng vì chính ký tự "%"
+ * cũng được mã hoá, nên không có chuyện lẫn giữa escape và ký tự thường). Chỉ còn xử lý thêm 2 quy
+ * tắc RIÊNG của Firestore mà encodeURIComponent không biết: id không được đúng bằng "." / ".." và
+ * không được khớp /^__.*__$/. Bỏ giới hạn cắt 200 ký tự — mã dự án thật rất ngắn, cắt bớt mới chính
+ * là nguồn va chạm ban đầu.
  */
 export const idAnToanTuMa = (maDuAn: string): string => {
-  const ma = maDuAn.replace(/[^a-zA-Z0-9_.-]/g, (c) => `_${c.codePointAt(0)!.toString(36)}_`);
-  return ma || "khong-ma";
+  // KHÔNG .trim() ở đây — mã dự án đã qua chuanHoaMa() (xoá hết khoảng trắng) trước khi tới hàm
+  // này; .trim() thêm ở đây chỉ làm mất tính 1-1 (fuzz test tự kiểm chứng: " 0" và "0" sẽ ra cùng
+  // 1 id nếu trim, dù về mặt hàm này KHÔNG nên tự coi 2 chuỗi khác nhau là một).
+  let id = encodeURIComponent(maDuAn);
+  if (id === "." || id === "..") id = `dau-cham-${id.length}`;
+  if (/^__.*__$/.test(id)) id = `id-${id}`;
+  return id || "khong-ma";
 };
