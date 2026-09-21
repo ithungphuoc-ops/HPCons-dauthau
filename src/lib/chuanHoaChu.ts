@@ -138,19 +138,32 @@ export const chuanHoaNgayLa = (raw: string): string => {
  * ⚠ SỬA LẦN 2 (21/09/2026) — bản đầu tự dựng escape tay (`_<mã 36>_`) TƯỞNG là 1-1 nhưng KHÔNG tự
  * đồng bộ (self-delimiting): ký tự phân cách "_" lại nằm trong chính tập ký tự ĐƯỢC PHÉP, nên chuỗi
  * thoát của 1 ký tự lạ có thể trùng y hệt 1 đoạn ký tự thường ở mã khác — agent review độc lập tự
- * chạy Node xác nhận va chạm thật: "PRJ/01" và "PRJ_1b_01" ra cùng 1 chuỗi. Nay dùng thẳng
- * `encodeURIComponent()` — phép mã hoá 1-1 CHUẨN đã kiểm chứng rộng rãi (đúng vì chính ký tự "%"
- * cũng được mã hoá, nên không có chuyện lẫn giữa escape và ký tự thường). Chỉ còn xử lý thêm 2 quy
- * tắc RIÊNG của Firestore mà encodeURIComponent không biết: id không được đúng bằng "." / ".." và
- * không được khớp /^__.*__$/. Bỏ giới hạn cắt 200 ký tự — mã dự án thật rất ngắn, cắt bớt mới chính
- * là nguồn va chạm ban đầu.
+ * chạy Node xác nhận va chạm thật: "PRJ/01" và "PRJ_1b_01" ra cùng 1 chuỗi. Đổi sang
+ * `encodeURIComponent()` — phép mã hoá 1-1 CHUẨN.
+ *
+ * ⚠ SỬA LẦN 3 (21/09/2026) — lần 2 dùng `encodeURIComponent()` đúng là 1-1, nhưng 2 chuỗi THAY THẾ
+ * cho ca biên "." / ".." / "__...__" (`dau-cham-1`, `id-__x__`...) lại VÔ TÌNH toàn ký tự
+ * "unreserved" — nên bản thân CHÚNG cũng là ảnh (output) hợp lệ của encodeURIComponent cho MỘT mã
+ * dự án literal khác (vd mã dự án `"dau-cham-1"` y hệt chuỗi thay thế cho mã `"."`) — agent review
+ * độc lập tự chạy Node xác nhận đúng 3 cặp va chạm này. Sửa triệt để: mọi chuỗi thay thế đều có tiền
+ * tố `"%!"` — `encodeURIComponent` CHỈ phát ký tự "%" khi đi kèm ĐÚNG 2 chữ số hex ngay sau (dạng
+ * `%XX`), không bao giờ phát "%!" — nên bất kỳ chuỗi bắt đầu bằng "%!" chắc chắn KHÔNG THỂ là output
+ * tự nhiên của encodeURIComponent cho bất kỳ input nào khác, đảm bảo 2 "vùng ảnh" tách biệt hoàn
+ * toàn. Bỏ giới hạn cắt 200 ký tự — mã dự án thật rất ngắn, cắt bớt mới chính là nguồn va chạm ban
+ * đầu.
  */
+/** Surrogate đơn lẻ (JSON.parse từ payload webhook lỗi có thể tạo ra) làm encodeURIComponent ném
+ * URIError — hỏng cả lô ghi chỉ vì 1 bản ghi lỗi mã hoá. Thay bằng U+FFFD trước khi mã hoá. */
+const antoanChuoi = (s: string): string =>
+  s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "�");
+
 export const idAnToanTuMa = (maDuAn: string): string => {
   // KHÔNG .trim() ở đây — mã dự án đã qua chuanHoaMa() (xoá hết khoảng trắng) trước khi tới hàm
   // này; .trim() thêm ở đây chỉ làm mất tính 1-1 (fuzz test tự kiểm chứng: " 0" và "0" sẽ ra cùng
   // 1 id nếu trim, dù về mặt hàm này KHÔNG nên tự coi 2 chuỗi khác nhau là một).
-  let id = encodeURIComponent(maDuAn);
-  if (id === "." || id === "..") id = `dau-cham-${id.length}`;
-  if (/^__.*__$/.test(id)) id = `id-${id}`;
-  return id || "khong-ma";
+  const id = encodeURIComponent(antoanChuoi(maDuAn));
+  if (id === ".") return "%!dot1";
+  if (id === "..") return "%!dot2";
+  if (/^__.*__$/.test(id)) return `%!reserved_${id}`;
+  return id || "%!rong";
 };
