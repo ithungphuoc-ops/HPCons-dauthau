@@ -3463,29 +3463,16 @@ export default function App() {
     walkAssignees(updatedTasks);
     const assignees = Object.entries(assigneeCount).sort((a, b) => b[1] - a[1]).map(([id]) => id);
 
-    // Mốc KẾT THÚC của kế hoạch (max ngày kết thúc các việc con có đặt ngày)
-    const DAY = 24 * 60 * 60 * 1000;
-    const planEnd = (list: ProjectTask[]): number | null => {
-      let max: number | null = null;
-      const walk = (ts: ProjectTask[]) => ts.forEach(t => {
-        if (t.ngayBatDau) {
-          const s = new Date(t.ngayBatDau).getTime();
-          if (!isNaN(s)) { const e = s + Math.max(1, t.soNgay || 1) * DAY; if (max === null || e > max) max = e; }
-        }
-        if (t.subtasks?.length) walk(t.subtasks);
-      });
-      walk(list);
-      return max;
-    };
-
-    // Quản lý sửa kế hoạch làm tiến độ DELAY xa hơn đã báo → gắn cờ chờ TP duyệt lại.
-    // Không kéo dài (giữ nguyên/rút ngắn) → im lặng, không làm phiền TP.
+    // Quản lý sửa kế hoạch làm hạn Bộ phận ĐỔI (tăng hay giảm đều tính) → gắn cờ chờ TP duyệt lại.
+    // Dùng ĐÚNG hàm getDeptDeadline() như đường lưu qua ProjectForm (handleSaveProject) — cùng một
+    // công thức cho cả hai đường sửa kế hoạch, khớp đúng chốt 19/09/2026: "tăng hay giảm đều phải
+    // trình lại", không chỉ bắt lúc kéo dài (bản trước chỉ so newEnd > oldEnd, bỏ sót rút ngắn).
     const targetBefore = projects.find(p => p.id === projId);
     let delayed = false;
     if (currentUser?.role === 'MANAGER' && targetBefore) {
-      const oldEnd = planEnd(targetBefore.tasks || []);
-      const newEnd = planEnd(updatedTasks);
-      delayed = oldEnd !== null && newEnd !== null && newEnd > oldEnd;
+      const hanCu = ymdOf(getDeptDeadline(targetBefore));
+      const hanMoi = ymdOf(getDeptDeadline({ ...targetBefore, tasks: updatedTasks }));
+      delayed = hanCu !== hanMoi;
     }
 
     // Vòng làm việc đang chạy — tiến độ Bộ phận tính RIÊNG cho vòng này (vòng mới bắt đầu lại từ 0%).
@@ -3522,7 +3509,7 @@ export default function App() {
     // lúc đang chia), nhưng phải cảnh báo + báo chuông cho Quản lý biết đang kẹt chỗ nào.
     const tiTrongLech = weightIssue(updatedTasks, vongCuaHoSo);
     triggerToast(delayed
-      ? '⚠ Kế hoạch bị kéo dài so với tiến độ đã báo — hệ thống đã báo Trưởng phòng duyệt lại!'
+      ? '⚠ Hạn Bộ phận đã đổi so với tiến độ đã báo — hệ thống đã báo Trưởng phòng duyệt lại!'
       : tiTrongLech
         ? `⚠ ${tiTrongLech.moTa} Hồ sơ chỉ lưu được khi chia đủ 100%.`
         : 'Đã cập nhật tiến độ công việc con. Tiến độ bộ phận tự động tính gộp!');
