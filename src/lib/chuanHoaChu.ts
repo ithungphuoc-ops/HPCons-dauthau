@@ -151,17 +151,21 @@ export const chuanHoaNgayLa = (raw: string): string => {
  * tự nhiên của encodeURIComponent cho bất kỳ input nào khác, đảm bảo 2 "vùng ảnh" tách biệt hoàn
  * toàn. Bỏ giới hạn cắt 200 ký tự — mã dự án thật rất ngắn, cắt bớt mới chính là nguồn va chạm ban
  * đầu.
+ *
+ * ⚠ THỬ THÊM RỒI BỎ (21/09/2026) — từng thêm bước thay "sửa" surrogate đơn lẻ (UTF-16 lỗi, JSON có
+ * thể tạo ra) bằng U+FFFD trước khi mã hoá, để tránh encodeURIComponent ném URIError. Agent review
+ * độc lập tự chạy Node xác nhận CHÍNH bước "sửa" đó lại phá tính 1-1: nhiều surrogate lẻ KHÁC GIÁ
+ * TRỊ (`"A\uD800B"`, `"A\uD801B"`) và cả 1 mã hợp lệ ĐÃ SẴN chứa U+FFFD thật (`"A�B"`) đều bị
+ * gộp về CÙNG một chuỗi rồi ra cùng 1 document ID — đúng loại lỗi đang cố sửa. Quyết định: KHÔNG cố
+ * "sửa" chuỗi lỗi — để encodeURIComponent tự ném URIError, 2 route webhook đã có try/catch bọc
+ * ngoài (trả lỗi 500 sạch cho đúng bản ghi đó), thà báo lỗi rõ ràng còn hơn âm thầm trùng ID với dự
+ * án khác.
  */
-/** Surrogate đơn lẻ (JSON.parse từ payload webhook lỗi có thể tạo ra) làm encodeURIComponent ném
- * URIError — hỏng cả lô ghi chỉ vì 1 bản ghi lỗi mã hoá. Thay bằng U+FFFD trước khi mã hoá. */
-const antoanChuoi = (s: string): string =>
-  s.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "�");
-
 export const idAnToanTuMa = (maDuAn: string): string => {
   // KHÔNG .trim() ở đây — mã dự án đã qua chuanHoaMa() (xoá hết khoảng trắng) trước khi tới hàm
   // này; .trim() thêm ở đây chỉ làm mất tính 1-1 (fuzz test tự kiểm chứng: " 0" và "0" sẽ ra cùng
   // 1 id nếu trim, dù về mặt hàm này KHÔNG nên tự coi 2 chuỗi khác nhau là một).
-  const id = encodeURIComponent(antoanChuoi(maDuAn));
+  const id = encodeURIComponent(maDuAn);
   if (id === ".") return "%!dot1";
   if (id === "..") return "%!dot2";
   if (/^__.*__$/.test(id)) return `%!reserved_${id}`;
