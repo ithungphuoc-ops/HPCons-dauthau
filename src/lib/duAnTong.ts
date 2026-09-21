@@ -1,5 +1,5 @@
 import "server-only";
-import { chuanHoaChu, chuanHoaMa } from "./chuanHoaChu";
+import { chuanHoaChu, chuanHoaMa, chuanHoaNgayLa } from "./chuanHoaChu";
 
 /**
  * DANH MỤC DỰ ÁN TỪ "APP THÔNG TIN DỰ ÁN" (chị Trâm chốt 15/09/2026)
@@ -37,8 +37,12 @@ export const chuanHoaDuAnTong = (r: Record<string, unknown>): DuAnTong | null =>
   const laySo = (...keys: string[]): number | undefined => {
     for (const k of keys) {
       const v = r[k];
+      // CỐ Ý nhận cả số 0 (CodeRabbit phát hiện lúc rà PR #11, 21/09/2026 — trước đây `n > 0` làm
+      // dự án mới khởi tạo, tiến độ 0%, hiện ô trống thay vì "0%"; tienDoThietKe.ts đã làm đúng,
+      // hai bộ chuẩn hoá lệch luật nhau).
+      if (v === null || v === undefined || v === "") continue;
       const n = typeof v === "number" ? v : Number(v);
-      if (Number.isFinite(n) && n > 0) return n;
+      if (Number.isFinite(n) && n >= 0) return n;
     }
     return undefined;
   };
@@ -56,8 +60,7 @@ export const chuanHoaDuAnTong = (r: Record<string, unknown>): DuAnTong | null =>
     if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
     const dmy = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
     if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
-    const t = Date.parse(raw);
-    return Number.isNaN(t) ? raw : new Date(t).toISOString().slice(0, 10);
+    return chuanHoaNgayLa(raw);
   };
 
   return {

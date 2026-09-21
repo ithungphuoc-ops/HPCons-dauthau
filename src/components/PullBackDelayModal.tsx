@@ -97,7 +97,14 @@ export default function PullBackDelayModal({ project, staff, isBOOD, doiTienDo, 
   const daSuaViecCon = soNgayTangThem > 0;
   // Chế độ "giữ nguyên hạn": dù việc con có tăng ngày thì hạn nộp vẫn không đổi — Quản lý đã
   // khẳng định tiến độ không đổi, tự thu xếp trong khoảng thời gian cũ.
-  const actualDelay = doiTienDo ? soNgayTangThem : 0;
+  //
+  // ⚠ SỬA 21/09/2026 (CodeRabbit rà PR #11) — actualDelay PHẢI đo bằng MỐC KẾT THÚC bị đẩy ra
+  // (soNgayHanBiDay), KHÔNG PHẢI tổng ngày việc con tăng thêm (soNgayTangThem). Trước đây dùng
+  // soNgayTangThem nên thêm 1 việc con CHẠY SONG SONG (tổng ngày tăng nhưng mốc cuối không đổi)
+  // vẫn báo "dời +N ngày" và ghi delayDays > 0 cho handlePullBackApply — dù dòng chữ ngay dưới
+  // (soNgayHanBiDay === 0 && soNgayTangThem > 0) đã nói đúng là "hạn nộp giữ nguyên — lưu bình
+  // thường". Giao diện nói một đằng, số ghi vào phiếu một nẻo.
+  const actualDelay = doiTienDo ? soNgayHanBiDay : 0;
 
   const curDeadline = project.ngayHoanThanhDuKienHienTai;
   const newDeadlineDate = new Date(new Date(curDeadline).getTime() + actualDelay * DAY);

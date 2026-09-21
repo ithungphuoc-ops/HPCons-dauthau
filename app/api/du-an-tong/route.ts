@@ -47,7 +47,10 @@ export async function GET(req: NextRequest) {
         .map((d) => d.data() as DuAnTong)
         .filter((x) => !!x?.maDuAn)
         .sort((a, b) => (a.maDuAn || "").localeCompare(b.maDuAn || ""));
-      return NextResponse.json({ items, nguon: "webhook" });
+      // Mốc "Cập nhật lúc" hiện ở đầu bảng (DanhMucDuAnPanel.tsx) — lấy mốc MỚI NHẤT trong các
+      // bản ghi, cùng cách app/api/tien-do-thiet-ke/route.ts đã tính, để hai bảng đồng nhất.
+      const capNhatLuc = items.map((x) => x.capNhatLuc || "").filter(Boolean).sort().pop();
+      return NextResponse.json({ items, nguon: "webhook", capNhatLuc });
     }
   } catch (e) {
     if (!process.env.DU_AN_TONG_API_URL) {

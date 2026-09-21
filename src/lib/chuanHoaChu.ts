@@ -23,7 +23,7 @@ import "server-only";
  *     tên riêng người ta gõ đúng (vd "Kho vận Long Thành" → "Kho Vận Long Thành"). Chỉ can thiệp
  *     khi chuỗi TOÀN HOA hoặc TOÀN THƯỜNG — hai ca đó chắc chắn là gõ ẩu, không phải chủ ý.
  *     · TOÀN HOA  → viết hoa chữ đầu mỗi từ ("CÔNG TY TNHH DỆT" → "Công ty TNHH Dệt").
- *     · TOÀN THƯỜNG → viết hoa chữ đầu câu ("nhà máy dệt bình dương" → "Nhà máy dệt Bình Dương"
+ *     · TOÀN THƯỜNG → viết hoa chữ đầu câu ("nhà máy dệt bình dương" → "Nhà máy dệt bình dương"
  *       — chỉ hoa chữ đầu, KHÔNG đoán đâu là tên riêng, vì đoán sai còn tệ hơn để nguyên).
  *
  *  3. TỪ VIẾT TẮT LUÔN GIỮ HOA
@@ -96,4 +96,23 @@ export const chuanHoaMa = (v?: unknown): string | undefined => {
   if (typeof v !== 'string') return undefined;
   const sach = v.replace(/\s+/g, '').trim().toUpperCase();
   return sach || undefined;
+};
+
+/**
+ * Ngày lạ (không khớp yyyy-mm-dd / dd-mm-yyyy) → yyyy-mm-dd, GIỮ ĐÚNG NGÀY LỊCH đã ghi trong
+ * chuỗi (CodeRabbit phát hiện lúc rà PR #11, 21/09/2026 — dùng chung cho duAnTong.ts và
+ * tienDoThietKe.ts, trước đó mỗi file tự làm một bản giống hệt nhau).
+ *
+ * ⚠ Chuỗi ISO ngày-giờ KHÔNG offset (vd "2026-08-03T00:00:00") không được đưa thẳng qua
+ * Date.parse()+toISOString(): Date.parse hiểu chuỗi đó là GIỜ MÁY CHỦ chạy app, rồi toISOString()
+ * quy đổi sang UTC — máy chủ chạy múi giờ khác UTC (vd dev chạy máy để múi Asia/Ho_Chi_Minh) có
+ * thể làm ngày lùi một hôm. Cắt thẳng phần "yyyy-mm-dd" khỏi chuỗi loại này để giữ đúng ngày lịch,
+ * không đi vòng qua giờ. Timestamp CÓ "Z" hoặc offset rõ ràng (+07:00...) là mốc UTC thật, quy đổi
+ * bình thường qua Date.parse.
+ */
+export const chuanHoaNgayLa = (raw: string): string => {
+  const khongOffset = /^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.exec(raw);
+  if (khongOffset) return khongOffset[1];
+  const t = Date.parse(raw);
+  return Number.isNaN(t) ? raw : new Date(t).toISOString().slice(0, 10);
 };

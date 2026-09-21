@@ -1,5 +1,5 @@
 import "server-only";
-import { chuanHoaChu, chuanHoaMa } from "./chuanHoaChu";
+import { chuanHoaChu, chuanHoaMa, chuanHoaNgayLa } from "./chuanHoaChu";
 
 /**
  * TIẾN ĐỘ THIẾT KẾ — DỮ LIỆU LẤY TỪ APP THIẾT KẾ (chị Trâm chốt 15/09/2026)
@@ -65,9 +65,7 @@ const layNgay = (r: Record<string, unknown>, ...keys: string[]): string | undefi
     const [, d, m, y] = dmy;
     return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
   }
-  const t = Date.parse(raw);
-  if (!Number.isNaN(t)) return new Date(t).toISOString().slice(0, 10);
-  return raw; // giữ nguyên chuỗi lạ còn hơn nuốt mất thông tin
+  return chuanHoaNgayLa(raw);
 };
 
 const chuanHoaHangMuc = (r: Record<string, unknown>, i: number): HangMucThietKe | null => {

@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
 import { Project, Staff } from '../types';
-import { getInitials, getInitialsColor, getTenderDeadline } from '../App';
+import { getInitials, getInitialsColor, getTenderDeadline, ymdOf } from '../App';
 import { ChevronLeft, ChevronRight, Lock, LayoutGrid, ClipboardCheck } from 'lucide-react';
 import DateInput from './DateInput';
 import { tongSoLanGuiCDT, nhanLanGui } from '../utils/guiCDT';
-import { namHienTaiVN, fmtDateVN } from '../utils/dateVN';
+import { namHienTaiVN, fmtDateVN, nowVN } from '../utils/dateVN';
 import { maHoSo } from '../lib/utils';
 
 // 7 bước quy trình thầu trên bảng Kanban.
@@ -328,12 +328,15 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
                   // HẠN THẦU của hồ sơ — cùng nguồn với badge "⏰ Hạn thầu" ở màn Báo Cáo Tiến Độ
                   // (getTenderDeadline), để hai nơi không bao giờ lệch ngày nhau.
                   const hanThau = getTenderDeadline(p);
-                  const hanThauISO = hanThau.toISOString().split('T')[0];
+                  const hanThauISO = ymdOf(hanThau);
                   // Quá hạn: chỉ tính khi hồ sơ CHƯA chốt kết quả. Hồ sơ đã trúng/rớt hoặc đã hoàn
                   // thành thì treo chữ đỏ "quá hạn" là gây hiểu nhầm — việc đã xong rồi.
                   const daChotKetQua = step >= 6
                     || p.trangThai === 'HOAN_THANH_DUNG_HAN' || p.trangThai === 'HOAN_THANH_TRE_HAN';
-                  const quaHanThau = !daChotKetQua && hanThauISO < new Date().toISOString().split('T')[0];
+                  // So theo NGÀY VIỆT NAM (không phải giờ UTC của máy chủ) — trước 07:00 giờ VN,
+                  // new Date().toISOString() còn trả ngày hôm trước, làm cờ quá hạn lùi mất 1 ngày
+                  // (CodeRabbit phát hiện lúc rà PR #11, 21/09/2026).
+                  const quaHanThau = !daChotKetQua && hanThauISO < ymdOf(nowVN());
                   const parentName = (p.duAnChaId && parentNameById[p.duAnChaId]) || p.tenDuAn;
                   // Bước lùi: 6/7 → 5, còn lại → step-1
                   const backStep = (step === 6 || step === 7) ? 5 : step - 1;

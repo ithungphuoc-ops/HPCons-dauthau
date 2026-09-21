@@ -345,6 +345,15 @@ export default function TienDoThietKePanel({ duLieuBanThu, chiMaDuAn }: Props) {
                 return (
                   <Fragment key={d.maDuAn}>
                     <tr
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={mo}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setMoRong(s => ({ ...s, [d.maDuAn]: !mo }));
+                        }
+                      }}
                       className="border-t border-slate-100 dark:border-slate-800 hover:bg-brand-accent/[0.04] cursor-pointer"
                       onClick={() => setMoRong(s => ({ ...s, [d.maDuAn]: !mo }))}
                     >

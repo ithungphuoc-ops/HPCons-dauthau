@@ -1,12 +1,12 @@
 ========================================================================
   APP BÁO CÁO TIẾN ĐỘ — PHÒNG ĐẤU THẦU HP-CONS  (mã nguồn gửi IT)
-  Gói ngày: 14-09-2026   ·   Người gửi: Ngô Trâm (ngotram@hpcons.com.vn)
+  Gói ngày: 19-09-2026   ·   Người gửi: Ngô Trâm (ngotram@hpcons.com.vn)
   Nhánh chuẩn: ver4  (= toàn bộ master + cấu hình CodeRabbit)
 ========================================================================
 
 ĐÂY LÀ GÌ
   Mã nguồn đầy đủ của app "Báo cáo tiến độ Phòng Đấu thầu" (Next.js 15 +
-  React 19 + TypeScript + Tailwind v4), bản mới nhất tới 14-09-2026.
+  React 19 + TypeScript + Tailwind v4), bản mới nhất tới 19-09-2026.
   Đã kiểm TypeScript sạch (npx tsc --noEmit → 0 lỗi).
 
 ĐỌC FILE NÀO TRƯỚC
