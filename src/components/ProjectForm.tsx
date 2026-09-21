@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Project, Staff, DelayLog, ProjectTask } from '../types';
-import { chucVuToRole, CHUC_VU_KHONG_TINH_NHAN_SU } from '../App';
+import { chucVuToRole, CHUC_VU_KHONG_TINH_NHAN_SU, getDeptDeadline, getExecEnd, ymdOf, khauDangTre, nhanKhauTre } from '../App';
+import { BUOC_XONG_PHAN_PHONG } from './KanbanBoard';
 
 // Ai được đứng trong ô "Chuyên viên thực hiện" (chị Trâm chốt 17/08/2026: "không hiện tên Level 4").
 // Lọc theo ĐÚNG luật nhân sự đang có của app, không tự đặt luật riêng:
@@ -14,14 +15,14 @@ const nhanSuNhanViecDuoc = (s: Staff): boolean =>
   !s.daNghi
   && (s.role || chucVuToRole(s.chucVu)) !== 'VIEWER'
   && !CHUC_VU_KHONG_TINH_NHAN_SU.includes(s.chucVu);
-import { Plus, Trash2, Calendar, Clock, AlertTriangle, CheckCircle2, Save, X, CheckSquare, Square, Search, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, Calendar, Clock, AlertTriangle, CheckCircle2, Save, X, CheckSquare, Square, Search, ChevronDown, Pencil } from 'lucide-react';
 import { motion } from 'motion/react';
 import SubtaskGantt, { DEFAULT_TASK_DAYS, khoangKeHoachViecCon } from './SubtaskGantt';
 import { TenViecConThuongDung } from '../utils/thuVienViecCon';
 import { calculateProjectProgress, progressOfRound, weightIssue, weightSumOfRound, weightSumAllRounds, soVongCoViec, tasksOfRound } from '../utils/taskTree';
 import { fmtDateVN } from '../utils/dateVN';
 import { tongSoLanGuiCDT, nhanLanGui, soLanGuiTruocApp } from '../utils/guiCDT';
-import { maHienThi } from '../lib/utils';
+import { maHienThi, maHoSo } from '../lib/utils';
 import DateInput from './DateInput';
 import TextWithLinks from './TextWithLinks';
 import FileDropZone from './FileDropZone';
@@ -29,6 +30,7 @@ import { luuAnh, taiAnhVe, CAU_NHAC_CHUA_MO_QUYEN } from '../utils/anhDinhKem';
 import { AutoGrowTextarea } from './ui';
 import { parseAttachments, joinAttachments } from '../utils/attachments';
 import { useModalA11y } from '../utils/useModalA11y';
+import { MAU_MO_TA_DU_AN, dungMauNeuTrong, chiLaKhungTrong } from '../utils/mauNhapLieu';
 
 interface ProjectFormProps {
   project?: Project; // If provided, we are editing; else creating
@@ -75,6 +77,13 @@ const getDaysDifference = (dateStr1: string, dateStr2: string): number => {
   return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 };
 
+/** Một dự án đọc từ App Thông tin dự án — khớp với route /api/du-an-tong. */
+type DuAnTongItem = {
+  maDuAn: string; tenDuAn: string; chuDauTu?: string; diaChi?: string; quocTich?: string;
+  hinhThucXayDung?: string; hoSoPhatThau?: string; dienTichDat?: number;
+  tienDoThietKe?: number; giaiDoanThietKe?: string;
+};
+
 export default function ProjectForm({ 
   project, 
   staffList, 
@@ -105,7 +114,14 @@ export default function ProjectForm({
   const [thucHienId, setThucHienId] = useState<string>(project?.thucHienId || '');
   const [thucHienIds, setThucHienIds] = useState<string[]>(project?.thucHienIds || (project?.thucHienId ? [project.thucHienId] : []));
   const [hangMuc, setHangMuc] = useState<Project['hangMuc']>(project?.hangMuc || 'Báo giá chi tiết');
-  const [moTa, setMoTa] = useState<string>(project?.moTa || '');
+  // KHUNG MÔ TẢ DỰ ÁN dựng sẵn (chị Trâm chốt 19/09/2026) — chỉ áp cho hồ sơ DỰ ÁN (mở từ dấu +
+  // hoặc Tạo thủ công trong bảng Danh mục). Công việc con KHÔNG dùng khung này: ô moTa của công
+  // việc là ghi chú riêng của Quản lý, nhét khung vào đó là ép họ xoá tay mỗi lần tạo việc.
+  const [moTa, setMoTa] = useState<string>(
+    (formMode === 'CREATE_TENDER' || (formMode === 'EDIT_ALL' && project?.loaiBanGhi === 'DU_AN'))
+      ? dungMauNeuTrong(project?.moTa, MAU_MO_TA_DU_AN)
+      : (project?.moTa || ''),
+  );
 
   // New specific bidding statistics fields
   const [chuDauTu, setChuDauTu] = useState<string>(project?.chuDauTu || '');
@@ -144,6 +160,7 @@ export default function ProjectForm({
   );
   const [soNgayDuyetTP, setSoNgayDuyetTP] = useState<number>(project?.soNgayDuyetTP ?? 1);
   // Thời hạn ĐÃ HẸN với CĐT (nếu có) — mốc cam kết ngoài, nhập tay, độc lập với hạn tự tính
+  const [maNoiBo, setMaNoiBo] = useState<string>(project?.maNoiBo || '');
   const [hanHenCDT, setHanHenCDT] = useState<string>(project?.hanHenCDT || '');
   // Số lần ĐÃ GỬI CĐT trước khi dùng app — khai tay (góp ý #11). Giữ dạng chuỗi để ô nhập xoá
   // trắng được; lúc lưu mới đổi sang số.
@@ -205,7 +222,7 @@ export default function ProjectForm({
     setHoSoPhatThau(m.hoSoPhatThau || 'CĐT phát thầu');
     setHinhThucDauThau(m.hinhThucDauThau || 'Đấu thầu cạnh tranh');
     setTinhTrangDuAn(m.tinhTrangDuAn || 'Đang triển khai');
-    setMoTa(m.moTa || '');
+    setMoTa(dungMauNeuTrong(m.moTa, MAU_MO_TA_DU_AN));
     if (m.quanLyId) setQuanLyId(m.quanLyId);
     setQuanLyIdsPhu((m.quanLyIdsPhu || []).filter(x => x !== m.quanLyId));
   };
@@ -274,6 +291,9 @@ export default function ProjectForm({
   
   const [ngayHoanThanhThucTe, setNgayHoanThanhThucTe] = useState<string>(project?.ngayHoanThanhThucTe || '');
   const [nguyenNhanTreHan, setNguyenNhanTreHan] = useState<string>(project?.nguyenNhanTreHan || '');
+  // Hai ô lý do trễ TÁCH THEO KHÂU (chị Trâm chốt 19/09/2026) — xem ghi chú ở mục 6.
+  const [lyDoTreBoPhan, setLyDoTreBoPhan] = useState<string>(project?.lyDoTreBoPhan || '');
+  const [lyDoTrePhong, setLyDoTrePhong] = useState<string>(project?.lyDoTrePhong || '');
 
   // Delay logs management
   const [delayLogs, setDelayLogs] = useState<DelayLog[]>(project?.delayLogs || []);
@@ -318,7 +338,8 @@ export default function ProjectForm({
     };
     const q = parentQuery.trim().toLowerCase();
     return [...projectsListForSelect]
-      .filter(p => !q || `${p.projectId} ${p.tenDuAn} ${p.chuDauTu || ''}`.toLowerCase().includes(q))
+      // Tìm theo MÃ ĐẦY ĐỦ (cả hai ô) — gõ "BG-COL" cũng ra, không chỉ gõ được ô 1.
+      .filter(p => !q || `${maHoSo(p)} ${p.tenDuAn} ${p.chuDauTu || ''}`.toLowerCase().includes(q))
       .sort((a, b) => {
         const xa = daXong(a) ? 1 : 0;
         const xb = daXong(b) ? 1 : 0;
@@ -375,11 +396,67 @@ export default function ProjectForm({
   const [newDelayDate, setNewDelayDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [newDelayNewEnd, setNewDelayNewEnd] = useState<string>('');
   const [newDelayReason, setNewDelayReason] = useState<string>('');
-  const [newDelayApprover, setNewDelayApprover] = useState<string>('');
+  // Phiếu đang lập thuộc khâu nào — mặc định Bộ phận (xem ghi chú `khau` trong types.ts).
+  const [newDelayKhau, setNewDelayKhau] = useState<'BO_PHAN' | 'PHONG'>('BO_PHAN');
 
   // Auto-calculated fields
   const [ngayHoanThanhDuKienGoc, setNgayHoanThanhDuKienGoc] = useState<string>('');
   const [ngayHoanThanhDuKienHienTai, setNgayHoanThanhDuKienHienTai] = useState<string>('');
+
+  // ===== CHỌN MÃ DỰ ÁN TỪ APP THÔNG TIN DỰ ÁN (chị Trâm chốt 15/09/2026) =====
+  // "Chị chỉ cần click chọn mã dự án là sẽ tự động xổ các trường dữ liệu còn lại. Trường dữ liệu
+  //  này chỉ là GỢI Ý, được quyền sửa tay (vì đôi khi ghi sai mô tả)."
+  // Nên: điền xong KHÔNG khoá ô nào — mọi trường vẫn gõ đè được như trước.
+  const [dsDuAnTong, setDsDuAnTong] = useState<DuAnTongItem[]>([]);
+  const [tinhTrangDuAnTong, setTinhTrangDuAnTong] = useState<'dangTai' | 'xong' | 'chuaNoi' | 'loi'>('dangTai');
+  const [thongBaoDuAnTong, setThongBaoDuAnTong] = useState('');
+  const [moDsMaDuAn, setMoDsMaDuAn] = useState(false);
+  const [timMaDuAn, setTimMaDuAn] = useState('');
+  // Dự án vừa chọn — giữ lại để "sổ" tiến độ thiết kế kèm theo, và để biết ô nào là số liệu gợi ý.
+  const [duAnTongDaChon, setDuAnTongDaChon] = useState<DuAnTongItem | null>(null);
+
+  // Chỉ nạp ở màn KHỞI TẠO DỰ ÁN và sửa hồ sơ Dự án — các chế độ khác không dùng tới.
+  const canDanhMucDuAn = formMode === 'CREATE_TENDER' || isParentEdit;
+  useEffect(() => {
+    if (!canDanhMucDuAn) return;
+    let huy = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/du-an-tong', { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if (huy) return;
+        const items: DuAnTongItem[] = Array.isArray(data?.items) ? data.items : [];
+        setDsDuAnTong(items);
+        if (data?.chuaCauHinh) { setTinhTrangDuAnTong('chuaNoi'); setThongBaoDuAnTong(data?.thongBao || ''); }
+        else if (!res.ok || data?.thongBao) { setTinhTrangDuAnTong('loi'); setThongBaoDuAnTong(data?.thongBao || 'Không lấy được danh mục dự án.'); }
+        else setTinhTrangDuAnTong('xong');
+      } catch {
+        if (!huy) { setTinhTrangDuAnTong('loi'); setThongBaoDuAnTong('Không gọi được App Thông tin dự án.'); }
+      }
+    })();
+    return () => { huy = true; };
+  }, [canDanhMucDuAn]);
+
+  /**
+   * Chọn một mã dự án → ĐIỀN GỢI Ý vào các ô còn lại.
+   * CỐ Ý chỉ điền ô nào đang TRỐNG, không đè lên chữ người dùng đã gõ: chị Trâm nói dữ liệu bên kia
+   * "đôi khi ghi sai mô tả" nên người nhập hay sửa lại — đè mất công gõ của họ là phản tác dụng.
+   * Riêng mã dự án và tên thì luôn lấy theo lựa chọn, vì đó chính là thứ vừa được chọn.
+   */
+  const chonMaDuAnTong = (d: DuAnTongItem) => {
+    setDuAnTongDaChon(d);
+    setProjectId(d.maDuAn);
+    if (d.tenDuAn) setTenDuAn(d.tenDuAn);
+    if (d.chuDauTu && !chuDauTu.trim()) setChuDauTu(d.chuDauTu);
+    if (d.diaChi && !diaChi.trim()) setDiaChi(d.diaChi);
+    if (d.quocTich && !quocTich.trim()) setQuocTich(d.quocTich);
+    if (d.hinhThucXayDung) setHinhThucXayDung(d.hinhThucXayDung as Project['hinhThucXayDung']);
+    if (d.hoSoPhatThau) setHoSoPhatThau(d.hoSoPhatThau as Project['hoSoPhatThau']);
+    if (d.dienTichDat && !dienTichDat) setDienTichDat(d.dienTichDat);
+    setErrors(prev => { const c = { ...prev }; delete c.projectId; delete c.tenDuAn; return c; });
+    setMoDsMaDuAn(false);
+    setTimMaDuAn('');
+  };
 
   // Form error validation
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
@@ -392,15 +469,142 @@ export default function ProjectForm({
       const originalEnd = addDaysToDate(ngayBatDau, soNgayDuKien - 1);
       setNgayHoanThanhDuKienGoc(originalEnd);
 
-      // Hạn hiện tại = hạn gốc + phần dời CHƯA nằm trong kế hoạch việc con.
-      // `soNgayLech` cố ý để 0 ở những lần dời phát sinh TỪ việc con: hạn gốc phía trên đã tính
-      // theo kế hoạch con rồi, cộng thêm lần nữa là hạn nhảy gấp đôi (chị Trâm báo 29/07/2026).
-      // Số ngày ĐÃ DỜI để hiển thị/báo cáo thì đọc từ cặp hạn cũ → hạn mới (tongNgayDoiHan).
-      const totalOffsetDays = delayLogs.reduce((sum, log) => sum + log.soNgayLech, 0);
-      const currentEnd = addDaysToDate(originalEnd, totalOffsetDays);
+      // ===== HẠN HIỆN TẠI DÙNG CHUNG CÔNG THỨC VỚI MỌI MÀN HÌNH (sửa 14/09/2026) =====
+      // Chị Trâm báo: "Quản lý bấm dời tiến độ việc con thì lại lấn qua tiến độ của phòng."
+      //
+      // Cách cũ: hạn hiện tại = hạn GỐC + tổng ngày xin gia hạn. Mà hạn gốc = ngày bắt đầu +
+      // soNgayDuKien − 1, tức hạn TỔNG đã gồm luôn ngày Trưởng phòng duyệt và ngày BLĐ duyệt.
+      // Cộng phiếu vào đó nghĩa là ngày xin gia hạn bị tính chồng lên phần thời gian của Phòng —
+      // trái với luật chị chốt: "giấy phép đó chỉ tính cho tiến độ bộ phận".
+      // Kèm hệ quả thứ hai: trường lưu tính một kiểu, Dashboard/Kanban/Gantt tính kiểu khác, nên
+      // cùng một hồ sơ mỗi nơi ra một ngày.
+      //
+      // Nay gọi thẳng getDeptDeadline — đúng hàm mà mọi màn hình đang dùng. Trong đó phiếu gia hạn
+      // cộng vào hạn BỘ PHẬN trước, rồi mới cộng số ngày Trưởng phòng kiểm tra. Nhờ vậy số ngày
+      // xin gia hạn không ăn vào phần của Phòng, và bốn nơi cùng ra một con số.
+      const currentEnd = ymdOf(getDeptDeadline({
+        ngayBatDau,
+        tasks,
+        soNgayThucHien,
+        soNgayDuyetTP,
+        soNgayDuyetBLD,
+        soNgayDuKien,
+        vongHienTai: Math.max(1, project?.vongHienTai || 1),
+        delayLogs,
+      }));
       setNgayHoanThanhDuKienHienTai(currentEnd);
     }
-  }, [ngayBatDau, soNgayDuKien, delayLogs]);
+  }, [ngayBatDau, soNgayDuKien, delayLogs, tasks, soNgayThucHien, soNgayDuyetTP, soNgayDuyetBLD, project?.vongHienTai]);
+
+  /**
+   * HẠN BỘ PHẬN HIỆN TẠI — mốc việc con phải xong, ĐÃ cộng các phiếu gia hạn của vòng này.
+   *
+   * Phiếu dời hạn NEO VÀO MỐC NÀY, không neo vào hạn Phòng (chị Trâm chốt 15/09/2026):
+   * "Tiến độ dời hạn lấy căn cứ theo tiến độ Bộ phận, đừng lấy căn cứ theo tiến độ của chị. Nếu
+   *  tiến độ chị kiểm tra chị thêm 1 ngày thì chị phải thêm ghi chú dời hạn của chị riêng; còn nếu
+   *  không thay đổi cứ cộng 1 ngày thì tiến độ Bộ phận và chị chung 1 ghi chú thôi, và chỉ cần
+   *  Quản lý đăng ký thôi — do Bộ phận trễ kéo theo chị trễ."
+   *
+   * Hạn Phòng = hạn Bộ phận + số ngày Trưởng phòng kiểm tra, nên Bộ phận lùi bao nhiêu thì Phòng
+   * tự lùi bấy nhiêu — một phiếu là đủ cho cả hai. Trước đây phiếu ghi theo hạn PHÒNG nên đọc lên
+   * tưởng Quản lý đang xin dời cả phần ngày kiểm tra của Trưởng phòng.
+   */
+  /** Trưởng phòng đã TĂNG số ngày kiểm tra so với bản đã lưu → phải có phiếu riêng cho phần này. */
+  const tpTangNgayKiemTra = !!project
+    && soNgayDuyetTP > (project.soNgayDuyetTP ?? 1);
+
+  const hanBoPhanHienTai = useMemo(
+    () => (ngayBatDau ? ymdOf(getExecEnd({
+      ngayBatDau, tasks, soNgayThucHien, soNgayDuyetTP, soNgayDuyetBLD, soNgayDuKien,
+      vongHienTai: Math.max(1, project?.vongHienTai || 1), delayLogs,
+    })) : ''),
+    [ngayBatDau, tasks, soNgayThucHien, soNgayDuyetTP, soNgayDuyetBLD, soNgayDuKien, delayLogs, project?.vongHienTai],
+  );
+
+  /**
+   * Tổng số ngày XIN GIA HẠN của vòng hiện tại — đúng phần được cộng thêm vào hạn, không tính phần
+   * hạn tự lùi do kế hoạch việc con dài ra. Bằng đúng hiệu giữa "Hạn hiện tại" và "Hạn tự tính".
+   */
+  const tongNgayXinGiaHan = useMemo(
+    () => (delayLogs || [])
+      .filter(l => Math.max(1, l.vong || 1) === Math.max(1, project?.vongHienTai || 1))
+      .filter(l => l.khau !== 'PHONG')
+      .reduce((t, l) => t + Math.max(0, l.soNgayLech || 0), 0),
+    [delayLogs, project?.vongHienTai],
+  );
+
+  /**
+   * HẠN BỘ PHẬN THEO BẢN ĐÃ LƯU — tức hạn TRƯỚC KHI người dùng sửa việc con trên form.
+   *
+   * ⚠ ĐÂY MỚI LÀ "HẠN CŨ" CỦA PHIẾU (chị Trâm báo lỗi 19/09/2026):
+   * "Chị sửa tiến độ việc con thêm ngày, tiến độ mới dời khoảng 5 ngày... lúc làm phiếu thì ghi
+   *  chỉ trễ 3 ngày và tiến độ từ 21 => 24/9 hoàn toàn sai, chị xin dời từ 16/9 đến 21/9 cơ."
+   *
+   * Trước đây phiếu neo vào `hanBoPhanHienTai` — mà hàm đó tính trên việc con ĐANG SỬA TRÊN FORM,
+   * nên nó đã là hạn MỚI (21/09) rồi. Lấy hạn mới làm "hạn cũ" thì phiếu ghi 21/09 → 24/09, kể
+   * một câu chuyện không có thật, còn quãng dời thật 16/09 → 21/09 thì biến mất khỏi lịch sử.
+   * Vẫn là lỗi "hai vế lấy khác nguồn" đã gặp mấy lần — lần này vế CŨ lỡ lấy dữ liệu MỚI.
+   */
+  const hanBoPhanTheoBanLuu = useMemo(
+    () => (project ? ymdOf(getExecEnd({ ...project })) : ''),
+    [project],
+  );
+
+  /**
+   * HẠN PHÒNG TRƯỚC / SAU khi Trưởng phòng đổi số ngày kiểm tra.
+   *
+   * Phiếu khâu PHÒNG chỉ để GHI LẠI một việc đã xảy ra: Trưởng phòng vừa tăng ô "TP duyệt", hạn
+   * Phòng do đó đã dịch ra. Hai mốc này app tính được, KHÔNG bắt người lập phiếu tự chọn — bắt
+   * chọn tay thì họ chọn một ngày, app tính ra ngày khác, phiếu ghi một đằng hạn chạy một nẻo.
+   */
+  const hanPhongTruocKhiDoi = useMemo(
+    () => (ngayBatDau && project ? ymdOf(getDeptDeadline({
+      ngayBatDau, tasks, soNgayThucHien, soNgayDuyetTP: project.soNgayDuyetTP ?? 1,
+      soNgayDuyetBLD, soNgayDuKien,
+      vongHienTai: Math.max(1, project?.vongHienTai || 1), delayLogs,
+    })) : ''),
+    [ngayBatDau, tasks, soNgayThucHien, soNgayDuyetBLD, soNgayDuKien, delayLogs, project],
+  );
+
+  /**
+   * HẠN PHÒNG SAU khi đổi số ngày kiểm tra — tính bằng CHÍNH công thức đã dùng cho `hanPhongTruocKhiDoi`,
+   * chỉ khác đúng một tham số `soNgayDuyetTP`.
+   *
+   * ⚠ TRƯỚC ĐÂY LẤY TỪ STATE `ngayHoanThanhDuKienHienTai` — và đó là lỗi chị Trâm báo 19/09/2026:
+   * "Khi chị bấm thêm ngày do Phòng duyệt trễ thêm 1 ngày thì phiếu bị lùi ngày."
+   * State đó do một useEffect khác tính, nên ngay sau khi vừa lập một phiếu Bộ phận thì nó còn là
+   * giá trị của chu kỳ render trước (chưa cộng phiếu vừa thêm). Vế trái tính tươi, vế phải đọc số
+   * cũ → hiệu ra ÂM, phiếu ghi hạn mới SỚM hơn hạn cũ.
+   * Nay hai vế cùng một nguồn, cùng một thời điểm nên không thể lệch — đúng nguyên tắc đã áp cho
+   * phiếu dời hạn (14/09) và cho cửa chặn lưu (16/09).
+   */
+  const hanPhongSauKhiDoi = useMemo(
+    () => (ngayBatDau ? ymdOf(getDeptDeadline({
+      ngayBatDau, tasks, soNgayThucHien, soNgayDuyetTP, soNgayDuyetBLD, soNgayDuKien,
+      vongHienTai: Math.max(1, project?.vongHienTai || 1), delayLogs,
+    })) : ''),
+    [ngayBatDau, tasks, soNgayThucHien, soNgayDuyetTP, soNgayDuyetBLD, soNgayDuKien, delayLogs, project?.vongHienTai],
+  );
+
+  /** Mốc neo của phiếu đang lập: phiếu Bộ phận neo vào hạn Bộ phận, phiếu Phòng neo vào hạn Phòng. */
+  const mocNeoPhieu = newDelayKhau === 'PHONG' ? hanPhongTruocKhiDoi : hanBoPhanTheoBanLuu;
+
+  // ===== CẢNH BÁO PHẢI TẮT NGAY KHI NGƯỜI DÙNG ĐÃ SỬA (Sếp báo lỗi 14/09/2026) =====
+  // Các ô nhập đều tự xoá lỗi của mình khi gõ lại, nhưng hai lỗi suy ra TỪ BẢNG VIỆC CON thì không
+  // ai dọn: `tasksWeight` (chia đủ 100%) và `ngayBatDau` (ngày bắt đầu lấy từ việc con sớm nhất).
+  // Hệ quả giống hệt ca Sếp vừa gặp với phiếu dời tiến độ: người dùng làm đúng yêu cầu rồi mà chữ
+  // đỏ vẫn nằm lì, không biết còn thiếu gì. Sửa bảng việc con là tắt hai cảnh báo đó ngay; bấm Lưu
+  // thì validation vẫn chạy lại từ đầu nên không có chuyện lọt lỗi thật.
+  useEffect(() => {
+    setErrors(prev => {
+      if (!prev.tasksWeight && !prev.ngayBatDau) return prev;
+      const copy = { ...prev };
+      delete copy.tasksWeight;
+      delete copy.ngayBatDau;
+      return copy;
+    });
+    setLoiAn([]);
+  }, [tasks]);
 
   // Vòng làm việc đang chạy của hồ sơ (mỗi lần trả về làm lại & gửi CĐT lần nữa là 1 vòng).
   const vongHienTai = Math.max(1, project?.vongHienTai || 1);
@@ -420,10 +624,18 @@ export default function ProjectForm({
 
   // If a new delay log is being added, pre-fill its New End Date suggestion
   useEffect(() => {
-    if (showAddDelay && ngayHoanThanhDuKienHienTai) {
-      setNewDelayNewEnd(addDaysToDate(ngayHoanThanhDuKienHienTai, 3)); // suggest 3 days extra
+    if (showAddDelay && mocNeoPhieu) {
+      // Phiếu Phòng: hạn mới KHÔNG cho chọn — chính là hạn Phòng sau khi đã đổi số ngày TP duyệt.
+      // Phiếu Bộ phận: gợi ý +3 ngày để người lập sửa lại theo nhu cầu thật.
+      // Phiếu Bộ phận: nếu việc con vừa bị kéo dài thì hạn mới CHÍNH LÀ hạn theo kế hoạch vừa sửa —
+      // điền sẵn đúng con số đó, người lập chỉ việc xem lại. Chưa sửa gì thì mới gợi ý +3 ngày.
+      setNewDelayNewEnd(newDelayKhau === 'PHONG'
+        ? hanPhongSauKhiDoi
+        : (hanBoPhanHienTai && hanBoPhanHienTai > mocNeoPhieu
+            ? hanBoPhanHienTai
+            : addDaysToDate(mocNeoPhieu, 3)));
     }
-  }, [showAddDelay, ngayHoanThanhDuKienHienTai]);
+  }, [showAddDelay, mocNeoPhieu, newDelayKhau, hanPhongSauKhiDoi, hanBoPhanHienTai]);
 
   // Smart Delay & KPI Evaluation Logic
   const isOverdue = (): boolean => {
@@ -448,8 +660,41 @@ export default function ProjectForm({
   // tiến độ — chỉ coi là "trễ" khi hạn đã TRÔI QUA (isOverdue), còn hạn tương lai bị đẩy xa hơn thì
   // lọt qua hoàn toàn. So sánh NGAY TẠI FORM (không phân biệt vai trò lưu — TP hay QL lưu cũng đều
   // bị bắt) nên không lặp lại lỗ hổng "chỉ nhánh Quản lý ở App.tsx mới so sánh".
-  const daBiDayXaHan = !!project && !!project.ngayHoanThanhDuKienGoc && !!ngayHoanThanhDuKienGoc
-    && ngayHoanThanhDuKienGoc > project.ngayHoanThanhDuKienGoc;
+  //
+  // ===== HAI VẾ SO SÁNH PHẢI LẤY CÙNG MỘT NGUỒN (chị Trâm báo lỗi 16/09/2026) =====
+  // "Quản lý kéo về Bước 1, hạn của Quản lý đã tăng 4 ngày, Trưởng phòng vẫn 1 ngày như cũ. Sau khi
+  //  bấm lưu thì lại yêu cầu nhập tiến độ Phòng là sao — chị đâu có tăng ngày kiểm lên ngày nào."
+  //
+  // Nguyên nhân: vế trái là hạn TÍNH LẠI trên form, vế phải là TRƯỜNG ĐÃ LƯU. Mà khi Quản lý kéo hồ
+  // sơ về Bước 1 (handlePullBackApply), app chỉ cập nhật `ngayHoanThanhDuKienHienTai`, KHÔNG cập
+  // nhật `ngayHoanThanhDuKienGoc` — nên trường đó nằm lại ở giá trị của kế hoạch cũ. Trưởng phòng mở
+  // ra, không sửa gì, bấm lưu: form tính ra hạn theo kế hoạch MỚI, so với trường cũ thì đương nhiên
+  // lớn hơn → app đòi khai phiếu, dù phiếu đã có sẵn trong bảng và đã giải thích đúng 4 ngày đó.
+  //
+  // Nay vế phải cũng TÍNH LẠI bằng chính công thức, từ dữ liệu ĐÃ LƯU (việc con cũ, phiếu cũ). Hai
+  // vế cùng thước đo nên chênh lệch chỉ còn phản ánh đúng thứ người dùng vừa sửa trên form — đúng
+  // bài học đã rút ra ngày 14/09 khi phiếu ghi "+0 ngày".
+  // CỐ Ý không đi sửa trường đã lưu: chỉ đổi CÁCH ĐỌC thì không phải rà lại mọi luồng ghi, và hồ sơ
+  // cũ đọc lên vẫn đúng.
+  const gocTheoBanDaLuu = useMemo(
+    () => (project ? ymdOf(getDeptDeadline({ ...project, delayLogs: [] })) : ''),
+    [project],
+  );
+  // ===== VÒNG MỚI = LÀM LẠI TỪ ĐẦU, KHÔNG CÓ "DỜI HẠN" (chị Trâm chốt 19/09/2026) =====
+  // "Vòng mới tính là làm lại báo giá, không còn liên quan tới tiến độ của vòng cũ nữa em, cho nên
+  //  nó như là 1 công việc lặp lại từ đầu rồi, thì làm gì còn dời hạn chứ."
+  // Bản ĐÃ LƯU chưa có việc con nào thuộc vòng đang chạy → vòng vừa mở, lần lưu này là LẬP kế hoạch
+  // cho vòng mới. Hạn "cũ" lúc đó vẫn là hạn của vòng trước — một kế hoạch đã khép lại — nên đem so
+  // thì ngày nào cũng ra "bị đẩy xa". Đó là lý do hồ sơ sang vòng 2 bị đòi khai phiếu dời tiến độ
+  // và bảng Lịch sử các vòng hiện "+6n · 1 phiếu" trong khi không ai làm chậm ngày nào.
+  const laLapKeHoachVongMoi = useMemo(() => {
+    const vong = Math.max(1, project?.vongHienTai || 1);
+    if (!project || vong <= 1) return false;
+    return !(project.tasks || []).some(t => Math.max(1, t.vong || 1) === vong);
+  }, [project]);
+
+  const daBiDayXaHan = !!project && !laLapKeHoachVongMoi && !!gocTheoBanDaLuu && !!ngayHoanThanhDuKienGoc
+    && ngayHoanThanhDuKienGoc > gocTheoBanDaLuu;
 
   // SỬA 08/09/2026 (Sếp chỉnh lại): lý do dời tiến độ phải nhập ĐÚNG Ở MỤC "5. Lịch Sử Dời Tiến Độ"
   // (bấm "+ Đăng ký dời tiến độ" — đã có sẵn phiếu riêng: hạn mới, lý do, người phê duyệt), KHÔNG
@@ -462,6 +707,14 @@ export default function ProjectForm({
   // của project) — tức Quản lý/TP đã dùng đúng phiếu "Đăng ký dời tiến độ" để khai lý do + người duyệt.
   const daCoLogDoiTienDo = delayLogs.length > (project?.delayLogs || []).length;
 
+  /**
+   * Đã có phiếu MỚI thuộc khâu PHÒNG chưa — dùng để buộc Trưởng phòng ghi chú khi tự tăng số ngày
+   * kiểm tra (chị Trâm chốt 15/09/2026: "nếu tiến độ chị kiểm tra chị thêm 1 ngày thì chị phải thêm
+   * ghi chú dời hạn của chị riêng").
+   */
+  const daCoLogPhieuPhong = delayLogs.filter(l => l.khau === 'PHONG').length
+    > (project?.delayLogs || []).filter(l => l.khau === 'PHONG').length;
+
   // Quản lý (Level 2) CHỈ XEM thông tin chung & thông tin gốc phòng kinh doanh —
   // chỉ Trưởng phòng (Level 1) khởi tạo & chỉnh sửa các mục này.
   const infoLocked = currentUserRole === 'MANAGER';
@@ -473,6 +726,21 @@ export default function ProjectForm({
   const duAnLockNote = (
     <span className="ml-1 normal-case text-[9px] font-bold text-brand-accent dark:text-brand-accent-300">
       🔒 Thông tin dự án — sửa tại hồ sơ Dự án
+    </span>
+  );
+
+  // ===== Ô SẼ NHẬN DỮ LIỆU TỪ APP THÔNG TIN DỰ ÁN (chị Trâm chốt 12/09/2026) =====
+  // Chị khoanh đúng các ô này và yêu cầu ghi chú ngay trên nhãn, để người nhập biết ô nào rồi đây
+  // App Thông tin dự án sẽ đổ dữ liệu về (không nên gõ tay lệch chuẩn), ô nào là của Phòng tự quản.
+  // HIỆN TẠI chưa nối app nên vẫn nhập tay hết; ghi chú này là để chuẩn bị và để đối chiếu khi nối.
+  // KHÔNG gắn cho: Mã Phòng đặt, Mô tả, Hình thức đấu thầu, Tình trạng dự án, Quản lý chính/phụ —
+  // đó là dữ liệu của riêng Phòng Đấu thầu.
+  const ghiChuNguonAppDuAn = (
+    <span
+      className="ml-1 normal-case text-[9px] font-bold text-slate-400 dark:text-slate-500"
+      title="Ô này sẽ được App Thông tin dự án đổ dữ liệu về khi hai app nối với nhau. Hiện tại nhập tay."
+    >
+      (App thông tin dự án)
     </span>
   );
 
@@ -507,12 +775,19 @@ export default function ProjectForm({
     const errs: { [key: string]: string } = {};
     if (!newDelayNewEnd) errs.newEnd = 'Vui lòng chọn ngày hoàn thành mới';
     if (!newDelayReason.trim()) errs.reason = 'Vui lòng nhập lý do dời hạn';
-    if (!newDelayApprover.trim()) errs.approver = 'Vui lòng nhập người phê duyệt';
 
-    if (newDelayNewEnd && ngayHoanThanhDuKienHienTai) {
-      const diff = getDaysDifference(ngayHoanThanhDuKienHienTai, newDelayNewEnd);
+    // Phiếu Phòng: hạn mới do app tự tính từ ô "TP duyệt". Chưa tăng số ngày đó thì hạn Phòng không
+    // dịch, phiếu ghi ra 0 ngày — một dòng trống nghĩa nằm trong lịch sử. Chặn ngay và nói rõ phải
+    // làm gì, thay vì để lập rồi mới thấy vô nghĩa.
+    if (newDelayKhau === 'PHONG' && mocNeoPhieu && newDelayNewEnd
+        && getDaysDifference(mocNeoPhieu, newDelayNewEnd) <= 0) {
+      errs.newEnd = 'Chưa tăng ô "Trưởng phòng duyệt (ngày)" nên hạn Phòng không dịch — không có gì để ghi phiếu. Tăng số ngày kiểm tra ở mục 3 trước, rồi quay lại lập phiếu này.';
+    }
+
+    if (newDelayKhau !== 'PHONG' && newDelayNewEnd && mocNeoPhieu) {
+      const diff = getDaysDifference(mocNeoPhieu, newDelayNewEnd);
       if (diff <= 0) {
-        errs.newEnd = 'Ngày hoàn thành mới phải sau hạn hoàn thành hiện tại';
+        errs.newEnd = 'Hạn Bộ phận mới phải sau hạn Bộ phận hiện tại';
       }
     }
 
@@ -521,22 +796,43 @@ export default function ProjectForm({
       return;
     }
 
-    const calculatedShift = getDaysDifference(ngayHoanThanhDuKienHienTai, newDelayNewEnd);
+    // ===== SỐ NGÀY GHI VÀO PHIẾU CHỈ LÀ PHẦN XIN THÊM NGOÀI KẾ HOẠCH =====
+    // Phần hạn lùi do việc con dài ra thì getExecEnd đã tự thấy từ chính kế hoạch — ghi vào
+    // `soNgayLech` nữa là cộng hai lần (đúng bug chị Trâm báo 29/07/2026). Nên đo từ hạn THEO KẾ
+    // HOẠCH ĐANG CÓ TRÊN FORM tới ngày người lập chọn: bằng nhau ⇒ 0, chọn xa hơn ⇒ phần dư đó mới
+    // là xin gia hạn thật.
+    // Cặp ngày cũ/mới của phiếu vẫn ghi đúng quãng dời thật để đọc lịch sử thấy chuyện đã xảy ra.
+    const mocTheoKeHoach = newDelayKhau === 'PHONG' ? mocNeoPhieu : (hanBoPhanHienTai || mocNeoPhieu);
+    const calculatedShift = Math.max(0, getDaysDifference(mocTheoKeHoach, newDelayNewEnd));
 
     const newLog: DelayLog = {
       id: `L${Date.now()}`,
       ngayThayDoi: newDelayDate,
-      ngayCu: ngayHoanThanhDuKienHienTai,
+      // Cặp hạn cũ/mới ghi theo mốc neo của khâu — xem ghi chú ở `hanBoPhanHienTai` và `khau`.
+      ngayCu: mocNeoPhieu,
       ngayMoi: newDelayNewEnd,
+      // Phiếu KHAI TAY ở mục 5 mang số ngày THẬT: đây đúng là phần xin thêm ngoài kế hoạch việc con,
+      // và getExecEnd() bên App.tsx sẽ cộng đúng số này vào hạn Bộ phận (chị Trâm chốt 12/09/2026).
       soNgayLech: calculatedShift,
+      khau: newDelayKhau,
       lyDo: newDelayReason,
-      nguoiDuyet: newDelayApprover
+      // Không hỏi người duyệt nữa — xem ghi chú ở chỗ đã bỏ ô nhập trong phiếu.
+      nguoiDuyet: '',
+      // Gắn VÒNG đang chạy — mở vòng mới thì hạn tính lại từ bộ việc con của vòng đó, không cộng
+      // tiếp phiếu của vòng trước (bằng không hồ sơ sang vòng 2 là tự nhảy hạn thêm bấy nhiêu ngày).
+      vong: Math.max(1, project?.vongHienTai || 1),
+      // KHÂU GÂY TRỄ — chấm theo kế hoạch việc con và tiến độ ĐANG có trên form (chị Trâm 15/09/2026).
+      khauTre: khauDangTre({
+        ngayBatDau, tasks, soNgayThucHien, soNgayDuyetTP, soNgayDuyetBLD, soNgayDuKien,
+        vongHienTai: Math.max(1, project?.vongHienTai || 1),
+        delayLogs, tienDoBoPhan, tienDoPhong,
+      }),
     };
 
     setDelayLogs([...delayLogs, newLog]);
     setShowAddDelay(false);
     setNewDelayReason('');
-    setNewDelayApprover('');
+    
     
     // Clear log errors
     setErrors(prev => {
@@ -544,16 +840,68 @@ export default function ProjectForm({
       delete copy.newEnd;
       delete copy.reason;
       delete copy.approver;
+      // ⚠ PHẢI xoá luôn `delayLogRequired` (Sếp báo lỗi 14/09/2026).
+      // Đây là cờ "bắt buộc khai phiếu dời tiến độ trước khi lưu", được đặt lúc bấm Lưu. Người dùng
+      // làm đúng yêu cầu — bấm "+ Đăng ký dời tiến độ" và khai xong — nhưng cờ cũ không được dọn nên
+      // dòng đỏ vẫn nằm lì trên màn hình, trông như app vẫn chưa chấp nhận. Thực tế bấm Lưu lần nữa
+      // là lưu được (validation tính lại từ đầu), nhưng không ai đoán ra điều đó khi đang nhìn chữ
+      // đỏ "Bắt buộc…". Vừa khai xong là cờ phải tắt ngay.
+      delete copy.delayLogRequired;
       return copy;
     });
+    // Khối lỗi gom ở cuối form cũng phải dọn theo, bằng không nó lặp lại đúng câu vừa được giải quyết.
+    setLoiAn([]);
   };
 
   const handleRemoveDelayLog = (logId: string) => {
     setDelayLogs(delayLogs.filter(log => log.id !== logId));
   };
 
+  /**
+   * ===== SỬA LẠI PHIẾU ĐÃ LẬP (chị Trâm chốt 19/09/2026) =====
+   * "Mấy cái này nhiều khi chị bấm nhanh quá thành bấm nhầm, do Phòng chỉnh mà thành Bộ phận
+   *  chỉnh. Em cho chị cây bút LV1 tự chỉnh lại được nhé em, không cho chỉnh ngày, chỉ cho chỉnh
+   *  lý do."
+   *
+   * CHỈ cho sửa KHÂU và LÝ DO. Ngày và số ngày KHOÁ CỨNG: chúng là kết quả app tự tính từ kế
+   * hoạch tại thời điểm lập phiếu — cho gõ tay vào là phiếu nói một đằng, hạn chạy một nẻo, đúng
+   * lớp lỗi đã phải sửa mấy lần.
+   *
+   * ⚠ Đổi khâu có ĐỔI HẠN: phiếu Bộ phận cộng ngày vào hạn, phiếu Phòng thì không (số ngày đó đã
+   * nằm trong ô "TP duyệt"). Nên sửa nhầm khâu là hạn sai theo — chính vì vậy mới cần sửa được.
+   * Hộp sửa nói rõ điều này để người sửa biết mình đang làm gì.
+   */
+  const formRef = useRef<HTMLFormElement>(null);
+  const [suaPhieuId, setSuaPhieuId] = useState<string | null>(null);
+  const [suaPhieuKhau, setSuaPhieuKhau] = useState<'BO_PHAN' | 'PHONG'>('BO_PHAN');
+  const [suaPhieuLyDo, setSuaPhieuLyDo] = useState('');
+
+  const moSuaPhieu = (log: DelayLog) => {
+    setSuaPhieuId(log.id);
+    setSuaPhieuKhau(log.khau === 'PHONG' ? 'PHONG' : 'BO_PHAN');
+    setSuaPhieuLyDo(log.lyDo || '');
+  };
+  const luuSuaPhieu = () => {
+    if (!suaPhieuId) return;
+    setDelayLogs(prev => prev.map(l => l.id === suaPhieuId
+      ? { ...l, khau: suaPhieuKhau, lyDo: suaPhieuLyDo.trim() || l.lyDo }
+      : l));
+    setSuaPhieuId(null);
+    // ===== SỬA XONG LÀ GHI LUÔN (chị Trâm chốt 19/09/2026: "sửa phải cho lưu nha") =====
+    // Trước đây nút này chỉ đổi dữ liệu trong form, phải nhớ bấm tiếp "Lưu Hồ Sơ" ở cuối trang —
+    // quên một cái là công sửa mất sạch khi đóng form. Nay tự bấm lưu hồ sơ luôn.
+    // Dùng requestSubmit() (không phải submit()) để form vẫn chạy qua handleSubmit — tức vẫn đi
+    // hết các cửa kiểm tra, không lách validation.
+    // setTimeout 0: đợi React ghi xong state delayLogs rồi mới submit, bằng không lưu lại đúng
+    // bản cũ — chính lớp lỗi "đọc state của chu kỳ render trước" đã gặp ở phiếu khâu Phòng.
+    setTimeout(() => formRef.current?.requestSubmit(), 0);
+  };
+
   // Modal cảnh báo trễ hẹn CĐT (thay cho confirm() mặc định)
   const [showCdtWarning, setShowCdtWarning] = useState(false);
+  // Lỗi validation rơi vào ô KHÔNG hiện trên màn hình (mục bị ẩn theo chế độ form) — hiện cạnh nút
+  // Lưu để không bao giờ có cảnh "bấm Lưu mà không thấy gì xảy ra" (Sếp báo 12/09/2026).
+  const [loiAn, setLoiAn] = useState<string[]>([]);
   // Trap bàn phím cho modal cảnh báo trễ hẹn CĐT (render có điều kiện bên trong form)
   const cdtWarningRef = useModalA11y(() => setShowCdtWarning(false), showCdtWarning);
 
@@ -588,14 +936,32 @@ export default function ProjectForm({
     if (!ngayBatDau) errs.ngayBatDau = 'Chưa có ngày bắt đầu — hãy đặt ngày cho ít nhất một công việc con ở mục Sơ đồ phân rã (hệ thống tự lấy ngày sớm nhất).';
     // Thời hạn có thể để trống (0 ngày) khi tạo — Trưởng phòng sẽ vào thiết lập sau (báo qua chuông)
     
-    // Conditionally check Delay Reason requirement
-    if (delayReasonRequired && !nguyenNhanTreHan.trim()) {
+    // ===== HAI RÀNG BUỘC TIẾN ĐỘ KHÔNG ÁP CHO DỰ ÁN CHA (Sếp báo lỗi 12/09/2026) =====
+    // "Cây bút đó bấm vô, sửa xong, không cho lưu."
+    // Bản ghi DU_AN chỉ là hồ sơ đăng ký tên dự án + Chủ đầu tư: không có việc con, không tiến độ,
+    // không lên Kanban, và soNgayDuKien = 0 nên hạn hoàn thành trùng luôn ngày bắt đầu. Qua ngày đó
+    // là isOverdue() trả true → form đòi "nguyên nhân trễ hạn". Nhưng ô nhập nguyên nhân nằm ở mục 6
+    // và phiếu dời tiến độ nằm ở mục 5 — HAI MỤC NÀY ĐỀU BỊ ẨN khi sửa dự án cha (xem isParentEdit ở
+    // phần render). Kết quả: lỗi được đặt vào một ô không tồn tại trên màn hình, scrollIntoView không
+    // tìm thấy gì để cuộn tới, nên bấm "Lưu Hồ Sơ" trông như không có phản ứng — kẹt cứng vĩnh viễn.
+    // Khái niệm trễ hạn / dời tiến độ chỉ có nghĩa với bản ghi CÔNG VIỆC, nên bỏ hẳn cho dự án cha —
+    // cùng cách đã làm với ràng buộc tỉ trọng 100% ngay bên dưới.
+    if (!isParentEdit && delayReasonRequired && !nguyenNhanTreHan.trim()) {
       errs.nguyenNhanTreHan = 'Bắt buộc: Dự án đang trễ hạn thầu! Vui lòng điền nguyên nhân để thẩm định KPI.';
     }
 
     // Hạn hoàn thành Phòng bị đẩy xa so với lần lưu trước mà CHƯA khai phiếu ở mục 5 — bắt buộc bấm
     // "+ Đăng ký dời tiến độ" (đúng chỗ có sẵn: hạn mới, lý do, người phê duyệt), không cho lưu thẳng.
-    if (daBiDayXaHan && !daCoLogDoiTienDo) {
+    // ===== TRƯỞNG PHÒNG TỰ TĂNG NGÀY KIỂM TRA → PHẢI CÓ PHIẾU RIÊNG (chị Trâm chốt 15/09/2026) =====
+    // "Nếu tiến độ chị kiểm tra chị thêm 1 ngày thì chị phải thêm ghi chú dời hạn của chị riêng."
+    // Số ngày Trưởng phòng kiểm tra đẩy hạn Phòng và hạn thầu ra xa mà KHÔNG để lại dấu vết nào
+    // trong lịch sử dời tiến độ — đọc báo cáo cuối kỳ chỉ thấy hạn tự nhiên lùi, không rõ vì đâu.
+    // Phiếu khâu PHÒNG chỉ để GHI LẠI lý do, số ngày không cộng thêm lần nữa (xem `khau` ở types.ts).
+    if (!isParentEdit && tpTangNgayKiemTra && !daCoLogPhieuPhong) {
+      errs.delayLogRequired = 'Bắt buộc: Số ngày Trưởng phòng kiểm tra đã tăng so với lần lưu trước. Bấm "+ Đăng ký dời tiến độ" ở mục 5, chọn khâu "Phòng (ngày TP kiểm tra)" và khai lý do trước khi lưu.';
+    }
+
+    if (!isParentEdit && daBiDayXaHan && !daCoLogDoiTienDo) {
       errs.delayLogRequired = 'Bắt buộc: Hạn hoàn thành Phòng đã bị đẩy xa so với lần lưu trước! Bấm "+ Đăng ký dời tiến độ" ở mục 5 (Lịch Sử Dời Tiến Độ) để khai lý do trước khi lưu.';
     }
 
@@ -615,8 +981,17 @@ export default function ProjectForm({
       const firstErrorKey = Object.keys(errs)[0];
       const element = document.getElementById(`field-${firstErrorKey}`);
       if (element) element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // ===== KHÔNG BAO GIỜ CHẶN LƯU MÀ IM LẶNG (Sếp báo lỗi 12/09/2026) =====
+      // Nếu ô chứa lỗi KHÔNG có trên màn hình (bị ẩn theo chế độ form), người dùng bấm Lưu chỉ thấy
+      // form đứng im, không biết vì sao — đúng cảnh đã xảy ra với form sửa Dự án cha. Gom các lỗi
+      // "vô hình" lại và hiện ngay cạnh nút Lưu để luôn có thứ đọc được.
+      const loiKhongThayDuoc = Object.keys(errs)
+        .filter(k => !document.getElementById(`field-${k}`))
+        .map(k => errs[k]);
+      setLoiAn(loiKhongThayDuoc);
       return;
     }
+    setLoiAn([]);
 
     // CẢNH BÁO trước khi Trưởng phòng bấm duyệt: tiến độ tính ra VƯỢT thời hạn đã hẹn CĐT.
     // Thay confirm() mặc định của trình duyệt bằng modal web (đẹp hơn) — mở modal rồi dừng lại.
@@ -633,8 +1008,10 @@ export default function ProjectForm({
     // trong form là tự động coi là xong. Trước đây tienDoPhong === 100 một mình là đủ, nên sửa
     // hồ sơ đang ở Bước 1-3 (chưa hề trình BLĐ/gửi CĐT) mà thanh trượt sẵn ở 100% là hồ sơ bị đánh
     // dấu "đã hoàn thành" ngay dù thẻ Kanban vẫn còn nằm ở bước sớm — mâu thuẫn (chị Trâm báo 28/07/2026).
-    const daGuiCDT = (project?.kanbanStep || 1) >= 5;
-    const isCompleted = (tienDoPhong === 100 && daGuiCDT) || ngayHoanThanhThucTe !== '';
+    // MỐC HOÀN THÀNH NAY LÀ BƯỚC 4 (trình BLĐ), không phải Bước 5 (đã gửi CĐT) — chị Trâm chốt
+    // 12/09/2026: phần từ trình BLĐ tới lúc gửi CĐT là tiến độ chiến lược, không tính cho Phòng.
+    const xongPhanPhong = (project?.kanbanStep || 1) >= BUOC_XONG_PHAN_PHONG;
+    const isCompleted = (tienDoPhong === 100 && xongPhanPhong) || ngayHoanThanhThucTe !== '';
     
     if (isCompleted) {
       const completionDate = ngayHoanThanhThucTe || new Date().toISOString().split('T')[0];
@@ -698,7 +1075,8 @@ export default function ProjectForm({
       thucHienId: loaiBanGhi === 'DU_AN' ? '' : (taskAssignees[0] || thucHienId),
       thucHienIds: loaiBanGhi === 'DU_AN' ? [] : (taskAssignees.length > 0 ? taskAssignees : thucHienIds),
       hangMuc,
-      moTa,
+      // Người dùng không điền gì vào khung dựng sẵn → lưu rỗng, đừng để hồ sơ đầy khung trống.
+      moTa: chiLaKhungTrong(moTa, MAU_MO_TA_DU_AN) ? '' : moTa,
       ngayBatDau,
       soNgayDuKien,
       soNgayThucHien,
@@ -720,10 +1098,15 @@ export default function ProjectForm({
       delayLogs: finalDelayLogs,
       ngayHoanThanhThucTe: isCompleted ? (ngayHoanThanhThucTe || new Date().toISOString().split('T')[0]) : undefined,
       nguyenNhanTreHan: delayReasonRequired ? nguyenNhanTreHan : undefined,
+      // Lý do trễ theo khâu KHÔNG phụ thuộc delayReasonRequired: đó là lịch sử đã xảy ra, phải
+      // giữ lại kể cả khi hồ sơ hiện không còn trong trạng thái trễ.
+      lyDoTreBoPhan: lyDoTreBoPhan.trim() || undefined,
+      lyDoTrePhong: lyDoTrePhong.trim() || undefined,
       trangThai,
       tasks: loaiBanGhi === 'DU_AN' ? [] : tasks, // Dự án cha không có cây công việc (không lên Kanban)
       tpDaDuyet: project?.tpDaDuyet, // Cờ TP duyệt — App quyết định giá trị cuối theo vai trò người lưu
       choDuyetLai: project?.choDuyetLai, // Cờ chờ duyệt lại khi delay — App xóa khi TP lưu
+      maNoiBo: maNoiBo.trim().toUpperCase() || undefined,
       hanHenCDT: hanHenCDT || undefined,
       soLanGuiCDTTruocApp: (() => {
         const n = parseInt(soLanGuiCDTTruocApp, 10);
@@ -758,7 +1141,7 @@ export default function ProjectForm({
       <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-850 pb-4 mb-6">
         <div>
           <span className="text-xs bg-brand-accent/10 dark:bg-brand-accent/15 text-brand-accent-700 dark:text-brand-accent-300 px-2.5 py-1 rounded-full font-bold uppercase tracking-wider">
-            {formMode === 'CREATE_TENDER' ? 'Đăng Ký Dự Án Mới (Level 1)' :
+            {formMode === 'CREATE_TENDER' ? 'Đăng Ký Dự Án Mới' :
              formMode === 'ADD_WORK' ? 'Thêm Công Việc Vào Dự Án (Level 1 & 2)' :
              isEditing ? 'Hồ Sơ Đang Chỉnh Sửa' : 'Khởi Tạo Hồ Sơ Mới'}
           </span>
@@ -781,7 +1164,7 @@ export default function ProjectForm({
         </button>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
 
         {/* Modal CẢNH BÁO trễ hẹn CĐT — thay cho confirm() mặc định của trình duyệt */}
         {showCdtWarning && (
@@ -869,7 +1252,7 @@ export default function ProjectForm({
                   {selectedProject ? (
                     <>
                       <span className="text-[9px] font-mono font-black px-1 py-0.5 rounded shrink-0 bg-slate-100 dark:bg-dark-card text-slate-500 dark:text-slate-400">
-                        {maHienThi(selectedProject.projectId)}
+                        {maHoSo(selectedProject)}
                       </span>
                       <span className="text-xs font-bold truncate flex-1 text-slate-800 dark:text-slate-100" title={selectedProject.tenDuAn}>
                         {selectedProject.tenDuAn}
@@ -940,9 +1323,17 @@ export default function ProjectForm({
                         >
                           <div className="flex items-center gap-2">
                             <span className={`text-[9px] font-mono font-black px-1 py-0.5 rounded shrink-0 ${chon ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-dark-card text-slate-500 dark:text-slate-400'}`}>
-                              {maHienThi(p.projectId)}
+                              {maHoSo(p)}
                             </span>
                             <span className="text-xs font-bold truncate flex-1" title={p.tenDuAn}>{p.tenDuAn}</span>
+                            {/* Đánh dấu mục lấy từ Danh mục dự án (App Thông tin dự án) mà app này
+                                chưa có hồ sơ — chọn xong app sẽ tự dựng hồ sơ dự án rồi gắn công
+                                việc vào, nên người dùng cần biết trước là sắp tạo cái mới. */}
+                            {p.id.startsWith('DM::') && (
+                              <span className={`text-[9px] font-black px-1.5 py-0.5 rounded shrink-0 ${chon ? 'bg-white/20 text-white' : 'bg-brand-primary/10 text-brand-primary dark:text-brand-primary-300'}`}>
+                                TỪ DANH MỤC
+                              </span>
+                            )}
                             {chon && <span className="text-[10px] font-black shrink-0">✓ Đã chọn</span>}
                           </div>
                           {(p.chuDauTu || daXong) && (
@@ -1038,7 +1429,7 @@ export default function ProjectForm({
             // cho chị nút xổ xuống và thêm chỗ gõ tên"). Trong bảng xổ mới có ô gõ để lọc.
             const q = duAnMauTimKiem.trim().toLowerCase();
             const ds = [...(projectsListForSelect || [])]
-              .filter(m => !q || `${m.projectId} ${m.tenDuAn} ${m.chuDauTu || ''}`.toLowerCase().includes(q))
+              .filter(m => !q || `${maHoSo(m)} ${m.tenDuAn} ${m.chuDauTu || ''}`.toLowerCase().includes(q))
               .sort((a, b) => (b.projectId || '').localeCompare(a.projectId || ''))
               .slice(0, 40);
             const dangChon = (projectsListForSelect || []).find(m => m.id === duAnMauId);
@@ -1057,7 +1448,7 @@ export default function ProjectForm({
                   >
                     {dangChon ? (
                       <>
-                        <span className="text-[10px] font-mono font-black text-slate-500 dark:text-slate-400 shrink-0">{maHienThi(dangChon.projectId)}</span>
+                        <span className="text-[10px] font-mono font-black text-slate-500 dark:text-slate-400 shrink-0">{maHoSo(dangChon)}</span>
                         <span className="text-sm font-bold text-slate-700 dark:text-slate-200 truncate">{dangChon.tenDuAn}</span>
                       </>
                     ) : (
@@ -1095,7 +1486,7 @@ export default function ProjectForm({
                             <button type="button"
                               onClick={() => { chepTuDuAnMau(m.id); setDuAnMauTimKiem(''); setMoDsDuAnMau(false); }}
                               className="w-full text-left px-3 py-1.5 hover:bg-brand-accent/10 flex items-center gap-2 min-w-0">
-                              <span className="text-[10px] font-mono font-black text-slate-500 dark:text-slate-400 shrink-0">{maHienThi(m.projectId)}</span>
+                              <span className="text-[10px] font-mono font-black text-slate-500 dark:text-slate-400 shrink-0">{maHoSo(m)}</span>
                               <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{m.tenDuAn}</span>
                               {m.chuDauTu && <span className="text-[10px] text-slate-400 truncate shrink">· {m.chuDauTu}</span>}
                             </button>
@@ -1119,30 +1510,134 @@ export default function ProjectForm({
 
           <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
             {/* Project_ID */}
+            {/* ===== MÃ HỒ SƠ TÁCH LÀM HAI Ô (chị Trâm chốt 12/09/2026) =====
+                Chuẩn bị nối dữ liệu từ App Thông tin dự án: mã bên đó và mã Phòng tự đặt là hai
+                thứ khác nhau, để chung một ô thì lúc đổ dữ liệu về sẽ ghi đè lẫn nhau.
+                Hiện chưa nối app nên NHẬP TAY cả hai ô; nối xong thì ô 1 do App Thông tin dự án cấp.
+                Mã thuộc về DỰ ÁN: công việc con dùng chung mã cha → khóa tại hồ sơ công việc,
+                sửa ở hồ sơ Dự án là mọi công việc con đổi theo. */}
             <div className="md:col-span-3" id="field-projectId">
-              {/* Mã thuộc về DỰ ÁN: công việc con dùng chung mã cha → khóa tại hồ sơ công việc,
-                  sửa ở hồ sơ Dự án là mọi công việc con đổi theo. */}
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
-                Mã Project_ID *{duAnInfoLocked && duAnLockNote}
+                Mã dự án *{ghiChuNguonAppDuAn}{duAnInfoLocked && duAnLockNote}
+              </label>
+              {/* Ô mã dự án: VỪA gõ tay được VỪA chọn từ danh mục App Thông tin dự án.
+                  Chọn xong là các ô còn lại tự điền — nhưng chỉ là GỢI Ý, gõ đè thoải mái. */}
+              <div className="relative">
+                <input
+                  type="text"
+                  disabled={duAnInfoLocked}
+                  value={projectId}
+                  onChange={(e) => {
+                    setProjectId(e.target.value);
+                    setDuAnTongDaChon(null); // gõ tay thì thôi coi là "đã chọn từ danh mục"
+                    if (errors.projectId) setErrors(prev => { const copy = { ...prev }; delete copy.projectId; return copy; });
+                  }}
+                  placeholder="260034-HPCS"
+                  title="Gõ tay, hoặc bấm nút bên phải để chọn từ App Thông tin dự án."
+                  className={`w-full ${canDanhMucDuAn ? 'pr-9' : ''} px-3 py-2 border rounded-lg text-sm font-bold text-slate-700 dark:text-slate-100 bg-white dark:bg-dark-elevated uppercase disabled:opacity-60 disabled:cursor-not-allowed ${errors.projectId ? 'border-brand-danger/50' : 'border-slate-200 dark:border-slate-700'}`}
+                />
+                {canDanhMucDuAn && !duAnInfoLocked && (
+                  <button type="button" onClick={() => setMoDsMaDuAn(v => !v)}
+                    title="Chọn mã dự án từ App Thông tin dự án"
+                    className="absolute inset-y-0 right-0 w-9 flex items-center justify-center text-slate-400 hover:text-brand-accent cursor-pointer">
+                    <ChevronDown className={`w-4 h-4 transition-transform ${moDsMaDuAn ? 'rotate-180' : ''}`} />
+                  </button>
+                )}
+
+                {moDsMaDuAn && (
+                  <div className="absolute z-30 mt-1 w-[min(30rem,80vw)] bg-white dark:bg-dark-card border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+                    <div className="p-2 border-b border-slate-100 dark:border-slate-800">
+                      <input autoFocus type="text" value={timMaDuAn} onChange={e => setTimMaDuAn(e.target.value)}
+                        placeholder="Tìm theo mã, tên dự án hoặc chủ đầu tư..."
+                        className="w-full px-2.5 py-1.5 text-xs border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-dark-elevated text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-accent" />
+                    </div>
+
+                    {tinhTrangDuAnTong === 'dangTai' && (
+                      <p className="px-3 py-3 text-[11px] text-slate-400 italic">Đang lấy danh mục dự án…</p>
+                    )}
+                    {(tinhTrangDuAnTong === 'chuaNoi' || tinhTrangDuAnTong === 'loi') && (
+                      <div className="px-3 py-3 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                        <p className="font-bold text-brand-warning mb-0.5">Chưa lấy được danh mục dự án</p>
+                        <p>{thongBaoDuAnTong || 'Chưa nối App Thông tin dự án.'}</p>
+                        <p className="mt-1">Cứ <b>gõ tay mã dự án</b> vào ô trên và nhập các thông tin còn lại như bình thường.</p>
+                      </div>
+                    )}
+                    {tinhTrangDuAnTong === 'xong' && (() => {
+                      const q = timMaDuAn.trim().toLowerCase();
+                      const ds = q
+                        ? dsDuAnTong.filter(d => `${d.maDuAn} ${d.tenDuAn} ${d.chuDauTu || ''}`.toLowerCase().includes(q))
+                        : dsDuAnTong;
+                      if (ds.length === 0) {
+                        return <p className="px-3 py-3 text-[11px] text-slate-400 italic">
+                          {dsDuAnTong.length === 0 ? 'App Thông tin dự án chưa có dự án nào.' : `Không có dự án nào khớp "${timMaDuAn}".`}
+                        </p>;
+                      }
+                      return (
+                        <ul className="max-h-60 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800">
+                          {ds.slice(0, 80).map(d => (
+                            <li key={d.maDuAn}>
+                              <button type="button" onClick={() => chonMaDuAnTong(d)}
+                                className="w-full text-left px-3 py-2 hover:bg-brand-accent/10 min-w-0">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-[10.5px] font-mono font-black text-brand-accent dark:text-brand-accent-300 shrink-0">{d.maDuAn}</span>
+                                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">{d.tenDuAn}</span>
+                                </div>
+                                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400 dark:text-slate-500 min-w-0">
+                                  {d.chuDauTu && <span className="truncate">{d.chuDauTu}</span>}
+                                  {typeof d.tienDoThietKe === 'number' && (
+                                    <span className="shrink-0 font-bold text-brand-success">TK {d.tienDoThietKe}%</span>
+                                  )}
+                                </div>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      );
+                    })()}
+
+                    <div className="px-3 py-1.5 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                      <button type="button" onClick={() => setMoDsMaDuAn(false)}
+                        className="text-[11px] font-bold text-slate-500 dark:text-slate-400 hover:text-brand-accent">Đóng</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              {errors.projectId && <span className="text-[10px] text-brand-danger mt-1 block font-medium">{errors.projectId}</span>}
+            </div>
+
+            <div className="md:col-span-3" id="field-maNoiBo">
+              <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
+                Mã Phòng đặt{duAnInfoLocked && duAnLockNote}
               </label>
               <input
                 type="text"
                 disabled={duAnInfoLocked}
-                value={projectId}
-                onChange={(e) => {
-                  setProjectId(e.target.value);
-                  if (errors.projectId) setErrors(prev => { const copy = { ...prev }; delete copy.projectId; return copy; });
-                }}
-                placeholder="2026.01"
-                className={`w-full px-3 py-2 border rounded-lg text-sm font-bold text-slate-700 dark:text-slate-100 bg-white dark:bg-dark-elevated uppercase disabled:opacity-60 disabled:cursor-not-allowed ${errors.projectId ? 'border-brand-danger/50' : 'border-slate-200 dark:border-slate-700'}`}
+                value={maNoiBo}
+                onChange={(e) => setMaNoiBo(e.target.value)}
+                placeholder="BG-COL"
+                title="Ô 2 — mã Phòng Đấu thầu tự đặt theo quy định công ty và quy định nội bộ. Bỏ trống được."
+                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-bold text-slate-700 dark:text-slate-100 bg-white dark:bg-dark-elevated uppercase disabled:opacity-60 disabled:cursor-not-allowed"
               />
-              {errors.projectId && <span className="text-[10px] text-brand-danger mt-1 block font-medium">{errors.projectId}</span>}
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 block font-medium">
+                Mã đầy đủ: <b className="text-slate-600 dark:text-slate-300 font-mono">{maHoSo({ projectId, maNoiBo }) || '—'}</b>
+              </span>
             </div>
 
+            {/* Nhắc rõ: thông tin vừa điền là GỢI Ý, sửa tay thoải mái (chị Trâm 15/09/2026) */}
+            {duAnTongDaChon && (
+              <div className="md:col-span-12 -mt-1">
+                <p className="text-[10.5px] font-medium text-slate-500 dark:text-slate-400">
+                  ℹ️ Đã lấy thông tin dự án <b className="font-mono text-slate-600 dark:text-slate-300">{duAnTongDaChon.maDuAn}</b> từ
+                  App Thông tin dự án. Các ô vừa điền chỉ là <b>gợi ý</b> — thấy chỗ nào chưa đúng thì
+                  sửa tay thoải mái, hồ sơ bên này lưu theo đúng những gì bạn nhập.
+                </p>
+              </div>
+            )}
+
             {/* Tên dự án — thuộc DỰ ÁN, khoá khi đang ở hồ sơ công việc */}
-            <div className="md:col-span-9" id="field-tenDuAn">
+            <div className="md:col-span-6" id="field-tenDuAn">
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
-                Tên dự án thầu *{duAnInfoLocked && duAnLockNote}
+                Tên dự án thầu *{ghiChuNguonAppDuAn}{duAnInfoLocked && duAnLockNote}
               </label>
               <input
                 type="text"
@@ -1163,7 +1658,7 @@ export default function ProjectForm({
             {/* Chủ đầu tư */}
             <div>
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
-                Chủ đầu tư (CĐT){duAnInfoLocked && duAnLockNote}
+                Chủ đầu tư (CĐT){ghiChuNguonAppDuAn}{duAnInfoLocked && duAnLockNote}
               </label>
               <input
                 type="text"
@@ -1178,7 +1673,7 @@ export default function ProjectForm({
             {/* Địa chỉ dự án */}
             <div>
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
-                Địa chỉ dự án / Công trình{duAnInfoLocked && duAnLockNote}
+                Địa chỉ dự án / Công trình{ghiChuNguonAppDuAn}{duAnInfoLocked && duAnLockNote}
               </label>
               <input
                 type="text"
@@ -1197,7 +1692,7 @@ export default function ProjectForm({
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
-                Quốc tịch CĐT{duAnInfoLocked && duAnLockNote}
+                Quốc tịch CĐT{ghiChuNguonAppDuAn}{duAnInfoLocked && duAnLockNote}
               </label>
               <input
                 type="text"
@@ -1211,7 +1706,7 @@ export default function ProjectForm({
 
             <div>
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
-                Hình thức xây dựng{duAnInfoLocked && duAnLockNote}
+                Hình thức xây dựng{ghiChuNguonAppDuAn}{duAnInfoLocked && duAnLockNote}
               </label>
               <select
                 disabled={duAnInfoLocked}
@@ -1228,7 +1723,7 @@ export default function ProjectForm({
 
             <div>
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
-                Hồ sơ mời thầu thiết kế bởi{duAnInfoLocked && duAnLockNote}
+                Hồ sơ mời thầu thiết kế bởi{ghiChuNguonAppDuAn}{duAnInfoLocked && duAnLockNote}
               </label>
               <select
                 disabled={duAnInfoLocked}
@@ -1244,7 +1739,7 @@ export default function ProjectForm({
 
             <div>
               <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">
-                Diện tích đất (m²){duAnInfoLocked && duAnLockNote}
+                Diện tích đất (m²){ghiChuNguonAppDuAn}{duAnInfoLocked && duAnLockNote}
               </label>
               <input
                 type="number"
@@ -1512,7 +2007,15 @@ export default function ProjectForm({
                 <Clock className="w-4 h-4" />
                 {fmtDateVN(ngayHoanThanhDuKienHienTai) || 'N/A'}
               </div>
-              <p className="text-[9px] text-brand-accent dark:text-brand-accent-300 mt-1 font-semibold">Tự động cộng các khoảng dời hạn</p>
+              {/* Ghi thẳng phép tính ra màn hình để đối chiếu được với bảng ở mục 5 (chị Trâm báo
+                  15/09/2026: "tại sao không bao giờ khớp em nhỉ"). Hiệu của hai ô hạn LUÔN bằng
+                  tổng cột "Do xin gia hạn"; phần hạn lùi do kế hoạch việc con dài ra đã nằm sẵn
+                  trong ô "Hạn hoàn thành Phòng (tự tính)" nên không cộng lần nữa. */}
+              <p className="text-[9px] text-brand-accent dark:text-brand-accent-300 mt-1 font-semibold">
+                {tongNgayXinGiaHan > 0
+                  ? `= ${fmtDateVN(ngayHoanThanhDuKienGoc)} + ${tongNgayXinGiaHan} ngày xin gia hạn (mục 5)`
+                  : 'Chưa có phiếu xin gia hạn nào — bằng đúng hạn tự tính'}
+              </p>
             </div>
           </div>
 
@@ -1672,7 +2175,7 @@ export default function ProjectForm({
                             type="button"
                             onClick={async () => {
                               const ok = await taiAnhVe(project?.id || 'moi', name);
-                              if (!ok) setLoiAnh(`Ảnh "${name}" chỉ được khai TÊN từ trước (bản cũ chưa lưu nội dung tệp) nên không tải về được. Nhờ chị dán lại ảnh để app lưu tệp thật.`);
+                              if (!ok) setLoiAnh(`Ảnh "${name}" chỉ được khai TÊN từ trước (bản cũ chưa lưu nội dung tệp) nên không tải về được. Vui lòng dán lại ảnh để hệ thống lưu tệp.`);
                             }}
                             className="shrink-0 text-brand-accent dark:text-brand-accent-300 hover:underline cursor-pointer"
                             title={`Tải ảnh "${name}" về máy`}
@@ -1891,6 +2394,38 @@ export default function ProjectForm({
                 <AlertTriangle className="w-4 h-4 text-brand-warning" />
                 Phiếu yêu cầu xin dời tiến độ
               </h4>
+              {/* Nói rõ phiếu này dời hạn của KHÂU NÀO, và vì sao không phải khai thêm phiếu cho
+                  phần Trưởng phòng (chị Trâm chốt 15/09/2026). */}
+              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-relaxed -mt-2">
+                Phiếu này dời <b>hạn Bộ phận</b> (mốc việc con phải xong). Hạn Phòng và hạn thầu tự lùi
+                theo đúng bấy nhiêu ngày, <b>không phải khai thêm phiếu</b> — Bộ phận trễ kéo theo Phòng trễ.
+                Chỉ khi Trưởng phòng tự tăng số ngày kiểm tra thì mới lập phiếu riêng cho phần đó.
+              </p>
+
+              {/* Chọn khâu — CHỈ Trưởng phòng thấy, vì chỉ Trưởng phòng mới tăng được số ngày kiểm
+                  tra. Quản lý luôn lập phiếu cho Bộ phận, không cần bày thêm lựa chọn. */}
+              {currentUserRole === 'BOOD' && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Phiếu này dời hạn của:</span>
+                  {([
+                    { v: 'BO_PHAN' as const, nhan: 'Bộ phận (việc con)' },
+                    { v: 'PHONG' as const, nhan: 'Phòng (ngày TP kiểm tra)' },
+                  ]).map(x => (
+                    <button
+                      key={x.v}
+                      type="button"
+                      onClick={() => { setNewDelayKhau(x.v); setNewDelayNewEnd(''); }}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors ${
+                        newDelayKhau === x.v
+                          ? 'bg-brand-warning/20 border-brand-warning/50 text-brand-warning'
+                          : 'bg-white dark:bg-dark-card border-slate-200 dark:border-slate-700 text-slate-500 hover:border-brand-warning/40'
+                      }`}
+                    >
+                      {x.nhan}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div>
@@ -1903,14 +2438,22 @@ export default function ProjectForm({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Hạn hoàn thành cũ</label>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">{newDelayKhau === 'PHONG' ? 'Hạn Phòng cũ' : 'Hạn Bộ phận cũ'}</label>
                   <div className="px-2.5 py-1.5 bg-slate-100 dark:bg-dark-elevated border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 rounded text-xs font-bold">
-                    {fmtDateVN(ngayHoanThanhDuKienHienTai)}
+                    {fmtDateVN(mocNeoPhieu)}
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Hạn hoàn thành mới *</label>
+                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">{newDelayKhau === 'PHONG' ? 'Hạn Phòng mới' : 'Hạn Bộ phận mới *'}</label>
+                  {/* Phiếu khâu PHÒNG: hạn mới là HỆ QUẢ của số ngày TP duyệt vừa đổi, app tự tính —
+                      cho chọn tay thì người lập chọn một ngày, hạn chạy theo một ngày khác. */}
+                  {newDelayKhau === 'PHONG' ? (
+                    <div className="px-2.5 py-1.5 bg-brand-accent/10 border border-brand-accent/25 text-brand-accent dark:text-brand-accent-300 rounded text-xs font-bold">
+                      {fmtDateVN(newDelayNewEnd) || '—'}
+                      <span className="block text-[9px] font-medium text-slate-400 mt-0.5">Tự tính theo ô &quot;TP duyệt&quot;</span>
+                    </div>
+                  ) : (
                   <DateInput
                     value={newDelayNewEnd}
                     onChange={(v) => {
@@ -1919,15 +2462,20 @@ export default function ProjectForm({
                     }}
                     className={`w-full px-2.5 py-1.5 border rounded text-xs font-bold bg-white dark:bg-dark-card text-slate-800 dark:text-slate-100 ${errors.newEnd ? 'border-brand-danger/50' : 'border-slate-200 dark:border-slate-700'}`}
                   />
+                  )}
                   {errors.newEnd && <span className="text-[10px] text-brand-danger block mt-0.5">{errors.newEnd}</span>}
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Số ngày lệch ước tính</label>
                   <div className="px-2.5 py-1.5 bg-brand-warning/10 dark:bg-brand-warning/10 border border-brand-warning/25 dark:border-brand-warning/30 text-brand-warning dark:text-brand-warning rounded text-xs font-extrabold">
-                    {newDelayNewEnd && ngayHoanThanhDuKienHienTai 
-                      ? `${getDaysDifference(ngayHoanThanhDuKienHienTai, newDelayNewEnd)} Ngày trễ thêm` 
-                      : '0 Ngày'}
+                    {(() => {
+                      // Không in số âm kèm chữ "trễ thêm" — vô nghĩa khi hạn không dịch ra
+                      // (chị Trâm 19/09/2026: phiếu Phòng từng hiện "-1 Ngày trễ thêm").
+                      if (!newDelayNewEnd || !mocNeoPhieu) return '0 Ngày';
+                      const n = getDaysDifference(mocNeoPhieu, newDelayNewEnd);
+                      return n > 0 ? `${n} Ngày trễ thêm` : 'Hạn không dịch';
+                    })()}
                   </div>
                 </div>
               </div>
@@ -1948,20 +2496,12 @@ export default function ProjectForm({
                   {errors.reason && <span className="text-[10px] text-brand-danger block mt-0.5">{errors.reason}</span>}
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Cấp trên phê duyệt ký duyệt *</label>
-                  <input 
-                    type="text"
-                    value={newDelayApprover}
-                    onChange={(e) => {
-                      setNewDelayApprover(e.target.value);
-                      if (errors.approver) setErrors(prev => { const copy = { ...prev }; delete copy.approver; return copy; });
-                    }}
-                    placeholder="VD: Trưởng phòng Nguyễn Minh Đức"
-                    className={`w-full px-2.5 py-1.5 border rounded text-xs font-semibold bg-white dark:bg-dark-card text-slate-800 dark:text-slate-100 ${errors.approver ? 'border-brand-danger/50' : 'border-slate-200 dark:border-slate-700'}`}
-                  />
-                  {errors.approver && <span className="text-[10px] text-brand-danger block mt-0.5">{errors.approver}</span>}
-                </div>
+                {/* ===== BỎ Ô "CẤP TRÊN PHÊ DUYỆT" (chị Trâm chốt 16/09/2026) =====
+                    "Quy định công ty báo lên Zalo xong mới xin dời, cho nên không cần người duyệt —
+                     chắc chắn Phó Tổng duyệt mới lên."
+                    Việc duyệt đã xong ở ngoài app trước khi vào đây lập phiếu, nên bắt gõ lại tên
+                    người duyệt chỉ là chép tay một thông tin app không kiểm chứng được — vừa mất
+                    công vừa tạo cảm giác app đang "duyệt" trong khi thật ra không. */}
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
@@ -1989,14 +2529,98 @@ export default function ProjectForm({
               Không có ghi chú dời tiến độ thầu. Dự án đang bám sát mốc hoàn thành gốc.
             </p>
           ) : (
+            /* Nhánh này giờ có HAI khối (hộp sửa phiếu + bảng) nên phải bọc Fragment. */
+            <>
+            {/* ===== HỘP SỬA PHIẾU (chị Trâm chốt 19/09/2026) — chỉ khâu & lý do, KHÔNG động tới ngày ===== */}
+            {suaPhieuId && (() => {
+              const log = delayLogs.find(l => l.id === suaPhieuId);
+              if (!log) return null;
+              const doiKhau = (log.khau === 'PHONG' ? 'PHONG' : 'BO_PHAN') !== suaPhieuKhau;
+              return (
+                <div className="bg-white dark:bg-dark-bg p-4 rounded-lg border border-brand-accent/30 dark:border-brand-accent/50 shadow-inner space-y-3 mb-3">
+                  <h4 className="text-xs font-extrabold text-brand-accent dark:text-brand-accent-300 uppercase tracking-wider flex items-center gap-1">
+                    <Pencil className="w-3.5 h-3.5" />
+                    Sửa phiếu lập ngày {fmtDateVN(log.ngayThayDoi)}
+                  </h4>
+                  <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                    Hạn <b>{fmtDateVN(log.ngayCu)} → {fmtDateVN(log.ngayMoi)}</b> giữ nguyên, không sửa được —
+                    đó là số app tự tính từ kế hoạch lúc lập phiếu. Chỉ sửa được khâu và lý do.
+                  </p>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">Phiếu này dời hạn của:</span>
+                    {([
+                      { v: 'BO_PHAN' as const, nhan: 'Bộ phận (việc con)' },
+                      { v: 'PHONG' as const, nhan: 'Phòng (ngày TP kiểm tra)' },
+                    ]).map(x => (
+                      <button
+                        key={x.v}
+                        type="button"
+                        onClick={() => setSuaPhieuKhau(x.v)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-colors ${
+                          suaPhieuKhau === x.v
+                            ? 'bg-brand-accent/20 border-brand-accent/50 text-brand-accent dark:text-brand-accent-300'
+                            : 'bg-white dark:bg-dark-card border-slate-200 dark:border-slate-700 text-slate-500 hover:border-brand-accent/40'
+                        }`}
+                      >
+                        {x.nhan}
+                      </button>
+                    ))}
+                  </div>
+
+                  {doiKhau && (
+                    <p className="text-[11px] font-bold text-brand-warning bg-brand-warning/10 border border-brand-warning/25 rounded-lg px-2.5 py-2">
+                      ⚠ Đổi khâu sẽ làm <b>hạn tính lại</b>: phiếu Bộ phận cộng ngày vào hạn, phiếu Phòng thì không
+                      (số ngày đó đã nằm trong ô &quot;Trưởng phòng duyệt&quot; ở mục 3).
+                    </p>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Lý do</label>
+                    <input
+                      type="text"
+                      value={suaPhieuLyDo}
+                      onChange={(e) => setSuaPhieuLyDo(e.target.value)}
+                      className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded text-xs font-medium bg-white dark:bg-dark-card text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setSuaPhieuId(null)}
+                      className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                    >
+                      Huỷ
+                    </button>
+                    <button
+                      type="button"
+                      onClick={luuSuaPhieu}
+                      className="px-4 py-2 rounded-xl text-xs font-black bg-brand-accent hover:bg-brand-accent-700 text-white transition-colors"
+                    >
+                      Lưu sửa phiếu &amp; lưu hồ sơ
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
             <div className="bg-white dark:bg-dark-bg rounded-lg border border-slate-200 dark:border-slate-800 overflow-hidden">
               {/* Mobile <768px: Card List thay bảng 7 cột (luật 9) */}
               <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
                 {delayLogs.map((log) => (
                   <div key={log.id} className="p-3 space-y-1.5 text-xs text-slate-600 dark:text-slate-400">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-slate-700 dark:text-slate-200">{fmtDateVN(log.ngayThayDoi)}</span>
-                      <span className="font-extrabold text-brand-warning dark:text-brand-warning">+{Math.max(0, getDaysDifference(log.ngayCu, log.ngayMoi))} ngày</span>
+                      <span className="font-semibold text-slate-700 dark:text-slate-200">
+                        {fmtDateVN(log.ngayThayDoi)}
+                        <span className="ml-1.5 text-[10px] font-black text-slate-400">· {log.khau === 'PHONG' ? 'Phòng' : 'Bộ phận'}</span>
+                      </span>
+                      <span className="font-extrabold text-brand-warning dark:text-brand-warning">
+                        {(() => {
+                          const n = getDaysDifference(log.ngayCu, log.ngayMoi);
+                          return n > 0 ? `+${n} ngày` : n < 0 ? `sớm ${-n} ngày` : '—';
+                        })()}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="line-through text-slate-400 dark:text-slate-500">{fmtDateVN(log.ngayCu)}</span>
@@ -2004,8 +2628,17 @@ export default function ProjectForm({
                       <span className="font-bold text-brand-accent dark:text-brand-accent-300">{fmtDateVN(log.ngayMoi)}</span>
                     </div>
                     <p className="italic text-slate-600 dark:text-slate-300">{log.lyDo}</p>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-slate-700 dark:text-slate-200">Duyệt: {log.nguoiDuyet}</span>
+                    <div className="flex items-center justify-end gap-2">
+                      {currentUserRole === 'BOOD' && (
+                        <button
+                          type="button"
+                          onClick={() => moSuaPhieu(log)}
+                          title="Sửa khâu / lý do của phiếu này"
+                          className="min-w-[44px] min-h-[44px] inline-flex items-center justify-center text-slate-400 hover:text-brand-accent rounded transition-all"
+                        >
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => handleRemoveDelayLog(log.id)}
@@ -2022,11 +2655,15 @@ export default function ProjectForm({
                 <thead>
                   <tr className="bg-brand-warning/5 dark:bg-brand-warning/10 text-brand-warning dark:text-brand-warning uppercase text-[9px] font-bold border-b border-brand-warning/25 dark:border-brand-warning/30">
                     <th className="p-2">Ngày Đăng Ký</th>
+                    <th className="p-2">Khâu</th>
                     <th className="p-2">Hạn Cũ</th>
                     <th className="p-2">Hạn Mới</th>
-                    <th className="p-2 text-center">Trễ Thêm (Offset)</th>
-                    <th className="p-2">Lý Do Đề Xuất</th>
-                    <th className="p-2">Người Duyệt</th>
+                    <th className="p-2 text-center">Hạn Lùi</th>
+                    {/* ĐÃ BỎ hai cột "Do xin gia hạn" và "Lúc lập phiếu" (chị Trâm chốt 19/09/2026:
+                        "bỏ cột ghi chú Do xin gia hạn + Lúc lập phiếu", "đưa cột lý do rộng ra ghi
+                        cho dễ đọc"). Muốn đối chiếu số ngày xin gia hạn thì xem dòng ghi ngay dưới
+                        ô "Hạn hiện tại" ở mục 3 — chỗ đó ghi thẳng phép tính. */}
+                    <th className="p-2 w-1/3">Lý Do Đề Xuất</th>
                     <th className="p-2 text-center">Xóa</th>
                   </tr>
                 </thead>
@@ -2034,16 +2671,57 @@ export default function ProjectForm({
                   {delayLogs.map((log) => (
                     <tr key={log.id} className="hover:bg-brand-warning/5 dark:hover:bg-brand-warning/10">
                       <td className="p-2">{fmtDateVN(log.ngayThayDoi)}</td>
+                      {/* KHÂU phiếu này dời hạn — Bộ phận (cộng vào hạn, kéo Phòng lùi theo) hay
+                          Phòng (chỉ ghi lại lý do Trưởng phòng tăng ngày kiểm tra). */}
+                      <td className="p-2">
+                        <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-black whitespace-nowrap ${
+                          log.khau === 'PHONG'
+                            ? 'bg-brand-accent/15 text-brand-accent dark:text-brand-accent-300'
+                            : 'bg-slate-100 text-slate-600 dark:bg-slate-700/40 dark:text-slate-300'
+                        }`} title={log.khau === 'PHONG'
+                          ? 'Trưởng phòng tăng số ngày kiểm tra — phiếu chỉ để ghi lý do, số ngày đã nằm trong ô "TP duyệt".'
+                          : 'Quản lý xin thêm ngày cho việc con — số ngày này cộng vào hạn Bộ phận, hạn Phòng và hạn thầu tự lùi theo.'}>
+                          {log.khau === 'PHONG' ? 'Phòng' : 'Bộ phận'}
+                        </span>
+                      </td>
                       <td className="p-2 line-through text-slate-400 dark:text-slate-500">{fmtDateVN(log.ngayCu)}</td>
                       <td className="p-2 font-bold text-brand-accent dark:text-brand-accent-300">{fmtDateVN(log.ngayMoi)}</td>
-                      {/* Số ngày lệch hiển thị tính từ cặp hạn cũ/mới (log tự động có soNgayLech=0 để không cộng trùng offset) */}
-                      <td className="p-2 text-center font-extrabold text-brand-warning dark:text-brand-warning">+{Math.max(0, getDaysDifference(log.ngayCu, log.ngayMoi))} ngày</td>
+                      {/* ===== TÁCH LÀM HAI CỘT (chị Trâm báo 15/09/2026: "tại sao không bao giờ khớp") =====
+                          Trước đây chỉ có MỘT cột "Trễ thêm (offset)" in ra `ngayMới − ngayCũ`, tức
+                          TOÀN BỘ quãng hạn bị lùi. Nhưng hạn lùi đến từ hai nguồn khác nhau:
+                            · XIN GIA HẠN (soNgayLech) — cộng thêm vào hạn, ngoài kế hoạch.
+                            · KẾ HOẠCH VIỆC CON DÀI RA — hạn tự tính lại, KHÔNG cộng thêm lần nữa.
+                          Cộng cả cột đó lại rồi so với hai ô hạn ở mục 3 thì không bao giờ khớp, vì
+                          phần do kế hoạch việc con đã nằm sẵn trong "Hạn hoàn thành Phòng (tự tính)".
+                          Nay tách rõ: cột "Do xin gia hạn" cộng lại đúng bằng hiệu của hai ô hạn đó. */}
+                      {/* Hạn có thể RÚT VÀO (kế hoạch làm nhanh hơn) — chị Trâm chốt 19/09/2026 ghi
+                          cả hai chiều vào lịch sử. Math.max(0,...) cũ nuốt mất chiều rút, in ra
+                          "+0 ngày" như thể không có gì xảy ra. */}
+                      <td className={`p-2 text-center font-bold ${getDaysDifference(log.ngayCu, log.ngayMoi) < 0 ? 'text-brand-success' : 'text-slate-500 dark:text-slate-400'}`}>
+                        {(() => {
+                          const n = getDaysDifference(log.ngayCu, log.ngayMoi);
+                          if (n > 0) return `+${n} ngày`;
+                          if (n < 0) return `sớm ${-n} ngày`;
+                          return '—';
+                        })()}
+                      </td>
                       <td className="p-2 italic max-w-xs truncate text-slate-600 dark:text-slate-300" title={log.lyDo}>{log.lyDo}</td>
-                      <td className="p-2 font-semibold text-slate-700 dark:text-slate-200">{log.nguoiDuyet}</td>
-                      <td className="p-2 text-center">
+                      <td className="p-2 text-center whitespace-nowrap">
+                        {/* Cây bút CHỈ Trưởng phòng thấy — sửa khâu / lý do khi bấm nhầm. */}
+                        {currentUserRole === 'BOOD' && (
+                          <button
+                            type="button"
+                            onClick={() => moSuaPhieu(log)}
+                            title="Sửa khâu / lý do của phiếu này (không sửa được ngày)"
+                            className="p-1 mr-1 text-slate-400 hover:text-brand-accent dark:hover:text-brand-accent-300 rounded transition-all"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleRemoveDelayLog(log.id)}
+                          title="Xoá phiếu này"
                           className="p-1 text-slate-400 hover:text-brand-danger dark:hover:text-brand-danger rounded transition-all"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -2054,6 +2732,7 @@ export default function ProjectForm({
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </div>
         )}
@@ -2080,7 +2759,7 @@ export default function ProjectForm({
                 onChange={setNgayHoanThanhThucTe}
                 className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated disabled:opacity-60 disabled:cursor-not-allowed"
               />
-              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Tự chốt khi kéo thẻ lên bước 5 (Hồ sơ đã gửi CĐT) — Trưởng phòng sửa tay nếu ngày gửi thật khác ngày kéo thẻ.</p>
+              <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">Tự chốt khi kéo thẻ từ Bước 3 sang Bước 4 (Phòng xong phần mình) — Trưởng phòng sửa tay nếu ngày đóng thật khác ngày kéo thẻ.</p>
             </div>
 
             {/* Indicator status box */}
@@ -2132,6 +2811,50 @@ export default function ProjectForm({
               />
               {errors.nguyenNhanTreHan && <span className="text-[11px] text-brand-danger dark:text-brand-danger mt-1 block font-bold">{errors.nguyenNhanTreHan}</span>}
             </motion.div>
+          )}
+
+          {/* ===== LỊCH SỬ TRỄ HẠN THEO KHÂU (chị Trâm chốt 19/09/2026) =====
+              "Chỗ ghi chú lịch sử trễ hạn của Bộ phận và Phòng ở đây nhé."
+              Hai ô khai ở hai mốc khác nhau, do hai người khác nhau:
+                · Bộ phận — Quản lý khai khi kéo Bước 2 → 3 mà đã quá hạn Bộ phận.
+                · Phòng   — Trưởng phòng khai khi kéo Bước 3 → 4 mà đã quá hạn Phòng.
+              Để CẠNH NHAU ở đây để cuối kỳ đọc một chỗ là biết khâu nào chậm và chậm vì sao —
+              trước đây chỉ có một ô chung, không phân biệt được ai.
+              Trưởng phòng sửa lại được (bấm nhầm, hoặc viết rõ thêm); Quản lý chỉ xem. */}
+          {(lyDoTreBoPhan || lyDoTrePhong || currentUserRole === 'BOOD') && (
+            <div className="border-t border-slate-200/60 dark:border-slate-800/85 pt-4">
+              <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 block mb-2">
+                Lịch sử trễ hạn theo khâu
+              </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-brand-warning mb-1">
+                    Bộ phận ghi <span className="font-medium text-slate-400">(khai lúc rời Bước 2)</span>
+                  </label>
+                  <AutoGrowTextarea
+                    value={lyDoTreBoPhan}
+                    onChange={(e) => setLyDoTreBoPhan(e.target.value)}
+                    disabled={currentUserRole !== 'BOOD'}
+                    minRows={2}
+                    placeholder="Chưa có — Bộ phận chưa trễ hạn, hoặc chưa khai."
+                    className="w-full px-2.5 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs bg-white dark:bg-dark-elevated text-slate-800 dark:text-slate-100 disabled:bg-slate-50 dark:disabled:bg-dark-card disabled:text-slate-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-brand-danger mb-1">
+                    Phòng ghi <span className="font-medium text-slate-400">(khai lúc rời Bước 3)</span>
+                  </label>
+                  <AutoGrowTextarea
+                    value={lyDoTrePhong}
+                    onChange={(e) => setLyDoTrePhong(e.target.value)}
+                    disabled={currentUserRole !== 'BOOD'}
+                    minRows={2}
+                    placeholder="Chưa có — Phòng chưa trễ hạn, hoặc chưa khai."
+                    className="w-full px-2.5 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs bg-white dark:bg-dark-elevated text-slate-800 dark:text-slate-100 disabled:bg-slate-50 dark:disabled:bg-dark-card disabled:text-slate-500"
+                  />
+                </div>
+              </div>
+            </div>
           )}
 
           {/* Audit KPI theo tiến độ */}
@@ -2192,6 +2915,21 @@ export default function ProjectForm({
             </div>
           </div>
         </div>
+        )}
+
+        {/* Lỗi rơi vào ô đang bị ẩn — hiện ngay tại đây, bằng không bấm Lưu sẽ không thấy gì xảy ra */}
+        {loiAn.length > 0 && (
+          <div
+            role="alert"
+            className="mt-4 rounded-xl border border-brand-danger/40 bg-brand-danger/10 p-3.5 space-y-1.5"
+          >
+            <p className="text-xs font-black text-brand-danger">Chưa lưu được hồ sơ:</p>
+            <ul className="list-disc list-inside space-y-1">
+              {loiAn.map((m, i) => (
+                <li key={i} className="text-[11px] font-medium text-slate-700 dark:text-slate-200">{m}</li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {/* Action buttons */}

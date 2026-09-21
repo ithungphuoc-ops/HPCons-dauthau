@@ -38,7 +38,7 @@ const gioPhutNgay = (iso?: string) => {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return '';
   const hai = (n: number) => String(n).padStart(2, '0');
-  return `${hai(d.getHours())}:${hai(d.getMinutes())} ${hai(d.getDate())}-${hai(d.getMonth() + 1)}-${d.getFullYear()}`;
+  return `${hai(d.getHours())}:${hai(d.getMinutes())} ${hai(d.getDate())}/${hai(d.getMonth() + 1)}/${d.getFullYear()}`;
 };
 
 interface ThongBaoNoiBoPanelProps {

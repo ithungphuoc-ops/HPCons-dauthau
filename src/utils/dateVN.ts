@@ -125,10 +125,10 @@ export const fmtDateVN = (d?: string | Date | null): string => {
   if (!d) return '';
   const date = d instanceof Date ? d : new Date(d);
   if (isNaN(date.getTime())) return typeof d === 'string' ? d : '';
-  return `${pad(date.getDate())}-${pad(date.getMonth() + 1)}-${date.getFullYear()}`;
+  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
 };
 
-/** ISO datetime | "YYYY-MM-DD HH:mm:ss" | Date → "10-07-2026 14:30". */
+/** ISO datetime | "YYYY-MM-DD HH:mm:ss" | Date → "10/07/2026 14:30". */
 export const fmtDateTimeVN = (d?: string | Date | null): string => {
   if (!d) return '';
   const date = d instanceof Date ? d : new Date(d);

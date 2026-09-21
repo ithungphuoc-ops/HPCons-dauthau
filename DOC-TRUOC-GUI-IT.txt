@@ -1,32 +1,54 @@
 ========================================================================
   APP BÁO CÁO TIẾN ĐỘ — PHÒNG ĐẤU THẦU HP-CONS  (mã nguồn gửi IT)
-  Gói ngày: 18-08-2026   ·   Người gửi: Ngô Trâm (ngotram@hpcons.com.vn)
+  Gói ngày: 14-09-2026   ·   Người gửi: Ngô Trâm (ngotram@hpcons.com.vn)
+  Nhánh chuẩn: ver4  (= toàn bộ master + cấu hình CodeRabbit)
 ========================================================================
 
 ĐÂY LÀ GÌ
   Mã nguồn đầy đủ của app "Báo cáo tiến độ Phòng Đấu thầu" (Next.js 15 +
-  React 19 + TypeScript + Tailwind v4), bản mới nhất đã sửa xong 60 góp ý
-  của Phòng. Đã kiểm TypeScript sạch (npx tsc --noEmit → 0 lỗi).
+  React 19 + TypeScript + Tailwind v4), bản mới nhất tới 14-09-2026.
+  Đã kiểm TypeScript sạch (npx tsc --noEmit → 0 lỗi).
 
 ĐỌC FILE NÀO TRƯỚC
-  1. HUONG-DAN-CHO-IT.md   ← hướng dẫn triển khai đầy đủ, ĐỌC FILE NÀY.
-  2. README.md             ← giới thiệu ngắn về dự án.
-  3. docs/KE-HOACH-SUA-2026-08-17.md ← chi tiết những gì vừa sửa (tham khảo).
+  1. BAN-GIAO-2026-09-12.md  ← ĐỌC FILE NÀY TRƯỚC. Liệt kê 41 thay đổi từ
+     gói 18-08 tới nay, 4 việc hạ tầng cần làm thêm, và 11 điểm cần kiểm
+     sau khi deploy.
+     >>> ĐẶC BIỆT ĐỌC MỤC 3B: ba thay đổi làm ĐỔI CÁCH HIỂU SỐ LIỆU
+         (mốc hoàn thành chuyển sang Bước 4, hạn nộp gộp về một công thức,
+         cờ chờ duyệt không còn khoá việc con). Số liệu thống kê sẽ nhảy
+         ngay sau khi deploy — đó là có chủ ý, không phải lỗi.
+  2. HUONG-DAN-CHO-IT.md     ← hướng dẫn triển khai đầy đủ (vẫn còn hiệu lực).
+  3. README.md               ← giới thiệu ngắn về dự án.
+  4. BAN-GIAO-2026-07-27.md  ← bàn giao các mốc cũ (tham khảo).
 
 BA VIỆC IT CẦN LÀM
   1. Cài & chạy thử:      npm install   →   npm run build   →   npm start
-  2. Khai 4 biến môi trường bí mật (xem mục 2 của HUONG-DAN-CHO-IT.md).
-     File .env.example là mẫu; KHÓA THẬT xin trực tiếp từ Sếp, không gửi qua chat.
-  3. Deploy lên subdomain  dauthau.hpcore.vn  (bắt buộc — xem mục 1 của
-     HUONG-DAN-CHO-IT.md: cookie phiên của App Tổng không gửi sang domain khác).
+  2. Khai biến môi trường — gói này CÓ 7 BIẾN MỚI so với lần trước
+     (5 biến Cloudflare R2, 1 API Key cho App Tổng, 1 secret báo sự cố).
+     File .env.example đã cập nhật đầy đủ kèm giải thích từng biến.
+     KHÓA THẬT xin trực tiếp từ Sếp, không gửi qua chat.
+  3. Deploy lên subdomain  dauthau.hpcore.vn  (bắt buộc — cookie phiên của
+     App Tổng không gửi sang domain khác).
 
-VIỆC MỚI PHÁT SINH TRONG BẢN NÀY (nhờ IT làm giúp)
-  • Mở quyền Firestore cho collection "templates" (danh mục biểu mẫu dùng chung),
-    đặt cùng điều kiện với collection "notifications". Không mở thì mục
-    "Template mẫu" trong app sẽ báo lỗi quyền.
+VIỆC HẠ TẦNG MỚI PHÁT SINH TRONG BẢN NÀY (nhờ IT làm giúp)
+  • Tạo bucket Cloudflare R2 tên "hpcons-dauthau" + tên miền public cho
+    bucket. Ảnh đính kèm nay lưu trên R2, Firestore chỉ giữ metadata.
+    Chưa có thì mục "Ảnh báo cáo đã gửi báo giá" báo lỗi khi tải ảnh lên.
+  • Mở quyền Firestore cho collection "anhDinhKem" (metadata ảnh).
+  • Mở quyền Firestore cho collection "templates" — việc này đã nêu ở gói
+    18-08, nhờ IT xác nhận lại đã mở chưa.
+  • Sinh một chuỗi ngẫu nhiên cho HPCONS_PORTAL_API_KEY và khai GIỐNG NHAU
+    ở cả app này lẫn App Tổng (dùng cho route /api/summary).
+  Chi tiết từng việc: xem mục 2 của BAN-GIAO-2026-09-12.md.
+
+DỮ LIỆU CÓ CẦN CHUYỂN ĐỔI KHÔNG?
+  KHÔNG. Đợt này thêm 3 trường mới (maNoiBo · vong của phiếu dời hạn ·
+  doneDates của lịch lặp) nhưng cả 3 đều TÙY CHỌN, hồ sơ cũ đọc lên không
+  đổi nghĩa. Không phải chạy script chuyển dữ liệu, không phải ghi đè gì
+  trên Firestore.
 
 GÓI NÀY KHÔNG CÓ (cố ý, vì lý do bảo mật / dung lượng)
-  • .env.local và mọi khóa thật (service account Firebase).
+  • .env.local và mọi khóa thật (service account Firebase, khóa R2, API Key).
   • node_modules, .next, dist-desktop  → chạy npm install để tự sinh.
   • Các file Excel dữ liệu thật của Phòng.
 

@@ -3,9 +3,11 @@ import { Project, ProjectTask, Staff } from '../types';
 import { fmtDateVN } from '../utils/dateVN';
 import { Clock, Info, X, AlertTriangle } from 'lucide-react';
 import SubtaskGantt, { DEFAULT_TASK_DAYS } from './SubtaskGantt';
+import { khoangKeHoachViecCon } from '../utils/keHoachViecCon';
 import { TenViecConThuongDung } from '../utils/thuVienViecCon';
 import { AutoGrowTextarea } from './ui';
 import { weightIssue } from '../utils/taskTree';
+import { maHoSo } from '../lib/utils';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -26,7 +28,12 @@ interface PullBackDelayModalProps {
   /** Thư viện tên việc con (đếm từ mọi hồ sơ) — gợi ý ở thanh "Thêm việc con" (góp ý #62). */
   thuVienTenViecCon?: TenViecConThuongDung[];
   onCancel: () => void;
-  /** Áp dụng: danh sách việc con đã chỉnh, số ngày dời THỰC (0 khi giữ nguyên hạn), lý do. */
+  /**
+   * Áp dụng. `delayDays` = số ngày dời, suy từ lịch việc con (xem ghi chú "CHỈ MỘT ĐƯỜNG" bên dưới).
+   * bằng phiếu, tức phần KHÔNG nằm trong kế hoạch việc con — đây mới là số ghi vào `soNgayLech`
+   * của phiếu và được getExecEnd cộng thêm. Phần do việc con dài ra thì công thức tự thấy, ghi
+   * vào phiếu nữa là cộng trùng (chị Trâm chốt 12/09/2026).
+   */
   onApply: (tasks: ProjectTask[], delayDays: number, reason: string) => void;
 }
 
@@ -46,6 +53,48 @@ export default function PullBackDelayModal({ project, staff, isBOOD, doiTienDo, 
   // là tính dời — không xét chồng lấn lịch. Ngày Trưởng phòng duyệt (soNgayDuyetTP) không nằm trong
   // tasks[] nên không lẫn vào phép tính này.
   const soNgayTangThem = useMemo(() => Math.max(0, newDays - origDays), [newDays, origDays]);
+
+  // ===== HẠN CÓ BỊ ĐẨY RA KHÔNG — ĐO BẰNG MỐC KẾT THÚC, KHÔNG PHẢI TỔNG NGÀY (14/09/2026) =====
+  // Chị Trâm hỏi: "Bấm giữ nguyên hạn thầu nhưng cố tình tăng số ngày lên thì vẫn cho lưu phải không?"
+  // Đúng là vẫn cho lưu — và đó là lỗi: hạn Phòng suy từ MỐC KẾT THÚC MUỘN NHẤT của việc con
+  // (getExecEnd bên App.tsx), nên kéo dài một việc là hạn tự dịch ra, trong khi bảng vẫn hứa
+  // "giữ nguyên". App nói một đằng, số liệu ngoài kia một nẻo.
+  //
+  // `soNgayTangThem` ở trên đo bằng TỔNG NGÀY nên không dùng để trả lời câu "hạn có dịch không":
+  //   · Thêm việc CHẠY SONG SONG → tổng ngày tăng nhưng mốc cuối không đổi ⇒ hạn GIỮ NGUYÊN thật.
+  //   · Dời ngày bắt đầu ra xa mà giữ số ngày → tổng không đổi nhưng mốc cuối đẩy ra ⇒ hạn TĂNG.
+  // Nên tính riêng mốc kết thúc, đúng cách getExecEnd làm, để biết hạn có thật sự dịch hay không.
+  // ⚠ DÙNG CHUNG `khoangKeHoachViecCon` — KHÔNG tự duyệt việc con ở đây (chị Trâm 15/09/2026:
+  // "tại sao không bao giờ khớp em nhỉ"). Trước đây chỗ này có bản tính riêng, chỉ xét việc cấp 1
+  // và đơn vị ngày tròn, nên hồ sơ có việc con cấp 2 hoặc nửa ngày thì modal nói hạn không dịch
+  // trong khi Dashboard/Gantt lại thấy dịch.
+  const mocKetThuc = (list: ProjectTask[]): number => {
+    const k = khoangKeHoachViecCon(list, Math.max(1, project.vongHienTai || 1), project.ngayBatDau);
+    return k ? new Date(k.maxDate).getTime() : new Date(project.ngayBatDau).getTime();
+  };
+  // Hạn dịch bao nhiêu ngày do sửa việc con. GIỮ DẤU: dương = đẩy ra, ÂM = rút vào (kế hoạch mới
+  // xong sớm hơn), 0 = vẫn kết thúc đúng ngày cũ.
+  const soNgayHanDich = useMemo(() => {
+    const cu = mocKetThuc(project.tasks || []);
+    const moi = mocKetThuc(tasks);
+    return Math.round((moi - cu) / DAY);
+  }, [tasks, project.tasks, project.ngayBatDau, project.vongHienTai]);
+  const soNgayHanBiDay = Math.max(0, soNgayHanDich);
+  /** Kế hoạch mới xong SỚM hơn kế hoạch cũ bao nhiêu ngày (0 = không sớm hơn). */
+  const soNgayHanRutVao = Math.max(0, -soNgayHanDich);
+
+  // ===== CHỈ MỘT ĐƯỜNG DỜI TIẾN ĐỘ: SỬA VIỆC CON (chị Trâm chốt 19/09/2026) =====
+  // "Bỏ cơ chế này đi, bị lỗi logic."
+  //
+  // Bản 12/09 có thêm ô "Xin gia hạn thêm cho tiến độ Bộ phận" để Quản lý khai thẳng N ngày mà
+  // không phải nhét ngày vào việc con của nhân viên. Nhưng hai nguồn số ngày cùng đẩy một cái hạn
+  // thì hạn nộp hiện trên bảng không còn suy được từ lịch việc con: sơ đồ Gantt vẽ tới ngày A,
+  // phiếu lại ghi hạn A+N, và mọi phép so "đúng hạn / trễ hạn" sau đó đọc hai con số khác nhau.
+  //
+  // Nay chỉ còn MỘT đường: số ngày dời = số ngày lịch việc con dài thêm. Phần việc của riêng Quản
+  // lý kẹt thì kéo dài chính việc con của mình trong bảng bên dưới — vừa ra đúng số ngày, vừa thấy
+  // được trên Gantt là ai đang giữ hồ sơ.
+  const daSuaViecCon = soNgayTangThem > 0;
   // Chế độ "giữ nguyên hạn": dù việc con có tăng ngày thì hạn nộp vẫn không đổi — Quản lý đã
   // khẳng định tiến độ không đổi, tự thu xếp trong khoảng thời gian cũ.
   const actualDelay = doiTienDo ? soNgayTangThem : 0;
@@ -61,8 +110,27 @@ export default function PullBackDelayModal({ project, staff, isBOOD, doiTienDo, 
   const vong = Math.max(1, project.vongHienTai || 1);
   const loiTiTrong = useMemo(() => weightIssue(tasks, vong), [tasks, vong]);
 
-  // Giữ nguyên hạn thì KHÔNG đòi số ngày dời — chỉ cần khai lý do làm bằng chứng phân công.
-  const canApply = (doiTienDo ? actualDelay > 0 : true) && reason.trim().length > 0 && !loiTiTrong;
+  // ===== "GIỮ NGUYÊN HẠN" PHẢI ĐÚNG LÀ GIỮ NGUYÊN — CẢ HAI CHIỀU (chị Trâm báo lỗi 19/09/2026) =====
+  // "Khi LV2 kéo từ 2 về 1, bấm không thay đổi tiến độ, nhưng chị cố tình giảm đi 1 ngày, thì tự
+  //  động đưa về Bước 1 là sao nhỉ? Đáng nhẽ phải báo là chọn có thay đổi tiến độ và không cho lưu
+  //  khi chọn trường không làm thay đổi tiến độ chứ?"
+  //
+  // Luật cũ chỉ chặn chiều ĐẨY RA. Rút vào thì lọt: người dùng chọn "không thay đổi tiến độ" mà
+  // hạn vẫn đổi — app đành kéo hồ sơ về Bước 1 (vì hạn đổi là phải trình lại), nên màn hình làm
+  // một đằng, ô vừa chọn nói một nẻo.
+  // Nay chặn cả hai chiều: đã chọn "giữ nguyên hạn" thì hạn phải y nguyên, lệch ngày nào cũng
+  // không cho lưu — và chỉ thẳng sang đường đúng là chọn "Có thay đổi tiến độ".
+  const viPhamGiuNguyenHan = !doiTienDo && soNgayHanDich !== 0;
+  // ===== RÚT NGẮN TIẾN ĐỘ VẪN PHẢI LƯU ĐƯỢC (chị Trâm hỏi 19/09/2026) =====
+  // "Kiểm tra bước này, nếu làm tiến độ ngắn hơn thì có cần Trưởng phòng duyệt lại không."
+  // Luật cũ đòi `actualDelay > 0` mới cho lưu ở nhánh "Có thay đổi tiến độ", nên Quản lý rút ngắn
+  // lịch xong là nút Lưu khoá cứng, mà dòng nhắc chỉ nói "tăng ngày / thêm việc" — đang rút ngắn
+  // đọc câu đó thì không hiểu app muốn gì.
+  // Rút ngắn KHÔNG cần Trưởng phòng duyệt lại: hạn không bị đẩy ra, không ai phải gác thêm gì —
+  // cùng lẽ với luật "đổi phân bổ giữ nguyên hạn thì hồ sơ đứng nguyên" chị Trâm chốt 15/09/2026.
+  // handlePullBackApply đã xử đúng (delayDays = 0 → giữ nguyên bước, không gắn cờ chờ duyệt);
+  // chỗ duy nhất sai là cửa chặn ở đây.
+  const canApply = reason.trim().length > 0 && !loiTiTrong && !viPhamGiuNguyenHan;
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={onCancel}>
@@ -80,7 +148,7 @@ export default function PullBackDelayModal({ project, staff, isBOOD, doiTienDo, 
               <h3 className="text-sm font-black text-slate-800 dark:text-slate-100">
                 {doiTienDo ? 'Dời hạn & sửa việc con' : 'Phân bổ lại việc con — giữ nguyên hạn'}
               </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono truncate">{project.projectId} — {project.hangMuc}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono truncate">{maHoSo(project)} — {project.hangMuc}</p>
             </div>
           </div>
           <button type="button" onClick={onCancel} className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-dark-elevated cursor-pointer">
@@ -109,10 +177,21 @@ export default function PullBackDelayModal({ project, staff, isBOOD, doiTienDo, 
         <div className="flex items-start gap-2 text-[11px] bg-brand-accent/5 dark:bg-brand-accent/10 border border-brand-accent/20 rounded-lg px-3 py-2 text-slate-600 dark:text-slate-300">
           <Info className="w-3.5 h-3.5 shrink-0 mt-0.5 text-brand-accent dark:text-brand-accent-300" />
           {doiTienDo ? (
-            <span>Bạn chỉ cần chỉnh việc con bên dưới — hệ thống <b>tự tính số ngày dời</b> theo tổng số ngày việc con tăng thêm so với kế hoạch cũ (hiện <b className="text-brand-warning">+{actualDelay} ngày</b>). Trưởng phòng sẽ tự thêm ngày kiểm tra của Phòng khi duyệt.</span>
+            <span>Chỉnh việc con bên dưới — hệ thống <b>tự tính số ngày dời</b> theo tổng số ngày việc con tăng thêm. Phần việc của riêng bạn còn kẹt thì <b>kéo dài chính việc con đó</b>, đừng cộng ngày ở chỗ khác. Hiện dời <b className="text-brand-warning">+{actualDelay} ngày</b>. Trưởng phòng sẽ tự thêm ngày kiểm tra của Phòng khi duyệt — việc đó <b>không đụng</b> tới số ngày này.</span>
           ) : (
-            <span>Chế độ <b>giữ nguyên hạn nộp</b>: chia lại tỉ trọng, đổi người, thêm/xoá việc con thoải mái — hạn nộp <b className="text-brand-success">không đổi</b> và <b>không ghi nhật ký dời hạn</b>.
-              {soNgayTangThem > 0 && <> Việc con hiện nhiều hơn kế hoạch cũ <b className="text-brand-warning">{soNgayTangThem} ngày</b>, nhưng vẫn giữ hạn theo lựa chọn của bạn — cần dời hạn thì quay lại chọn <b>“Có thay đổi tiến độ”</b>.</>}
+            <span>Chế độ <b>giữ nguyên hạn nộp</b>: chia lại tỉ trọng, đổi người, thêm/xoá việc con thoải mái — miễn là kế hoạch mới vẫn <b>kết thúc đúng ngày cũ</b> thì hạn nộp <b className="text-brand-success">không đổi</b> và <b>không ghi nhật ký dời hạn</b>.
+              {/* Đo bằng MỐC KẾT THÚC chứ không phải tổng ngày: thêm việc chạy song song thì tổng
+                  ngày tăng nhưng hạn vẫn giữ nguyên thật — báo động ở đó chỉ làm người dùng hoang
+                  mang rồi bỏ cuộc (xem soNgayHanBiDay ở đầu file). */}
+              {soNgayHanBiDay > 0 && (
+                <> <b className="text-brand-danger">Nhưng kế hoạch mới đang kết thúc muộn hơn {soNgayHanBiDay} ngày</b>, nên hạn nộp <b>không thể giữ nguyên</b> — hạn suy ra từ chính lịch việc con. Muốn giữ đúng hạn thì rút lịch việc con lại; còn thật sự cần dời thì quay lại chọn <b>“Có thay đổi tiến độ”</b> để hệ thống ghi nhật ký dời hạn cho đúng.</>
+              )}
+              {soNgayHanRutVao > 0 && (
+                <> <b className="text-brand-danger">Nhưng kế hoạch mới đang kết thúc sớm hơn {soNgayHanRutVao} ngày</b>, nên hạn nộp <b>không còn giữ nguyên</b>. Làm nhanh hơn cũng là đổi kế hoạch Phòng — Trưởng phòng đã sắp lịch kiểm theo mốc cũ. Muốn giữ đúng hạn thì để lại lịch việc con như cũ; còn thật sự làm sớm hơn thì quay lại chọn <b>“Có thay đổi tiến độ”</b> để ghi vào lịch sử dời tiến độ.</>
+              )}
+              {soNgayHanBiDay === 0 && soNgayTangThem > 0 && (
+                <> Việc con cộng lại nhiều hơn kế hoạch cũ <b>{soNgayTangThem} ngày</b> nhưng vẫn kết thúc đúng ngày cũ (chạy song song), nên hạn nộp giữ nguyên — lưu bình thường.</>
+              )}
             </span>
           )}
         </div>
@@ -147,6 +226,24 @@ export default function PullBackDelayModal({ project, staff, isBOOD, doiTienDo, 
           <div className="flex items-start gap-2 text-[11px] bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2 text-brand-danger font-semibold">
             <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
             <span>{loiTiTrong.moTa} Chia đủ 100% mới lưu được.</span>
+          </div>
+        )}
+
+        {/* Nút lưu bị khoá vì "giữ nguyên hạn" không thực hiện được — phải nói rõ lý do ngay tại chỗ,
+            bằng không người dùng bấm mãi mà không hiểu vì sao không ăn (đúng kiểu lỗi đã gặp ở form
+            hồ sơ hôm 12/09: chặn im lặng). */}
+        {viPhamGiuNguyenHan && (
+          <div className="flex items-start gap-2 text-[11px] bg-brand-danger/10 border border-brand-danger/30 rounded-lg px-3 py-2 text-brand-danger font-semibold">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>
+              Chưa lưu được: bạn đang chọn <b>giữ nguyên hạn</b> nhưng kế hoạch việc con mới lại kết
+              thúc{' '}
+              {soNgayHanRutVao > 0
+                ? <><b>sớm hơn {soNgayHanRutVao} ngày</b></>
+                : <><b>muộn hơn {soNgayHanBiDay} ngày</b></>}. Hạn nộp được suy ra từ chính lịch việc
+              con nên không thể vừa đổi lịch vừa giữ hạn. Hãy sửa lịch việc con về đúng mốc cũ, hoặc
+              bấm Huỷ rồi chọn <b>“Có thay đổi tiến độ”</b> để hệ thống ghi vào lịch sử dời tiến độ.
+            </span>
           </div>
         )}
 
@@ -188,13 +285,16 @@ export default function PullBackDelayModal({ project, staff, isBOOD, doiTienDo, 
             className="flex-1 px-4 py-2.5 rounded-xl text-xs font-black bg-brand-warning hover:bg-brand-warning/85 text-black transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             title={loiTiTrong
               ? loiTiTrong.moTa
-              : doiTienDo && actualDelay === 0
-                ? 'Chỉnh việc con (tăng ngày / thêm việc) để phát sinh số ngày dời — hoặc quay lại chọn "Không thay đổi tiến độ"'
+              : viPhamGiuNguyenHan
+                ? `Đang chọn "Không thay đổi tiến độ" nhưng kế hoạch mới làm hạn ${soNgayHanRutVao > 0 ? `SỚM hơn ${soNgayHanRutVao}` : `MUỘN hơn ${soNgayHanBiDay}`} ngày. Quay lại chọn "Có thay đổi tiến độ", hoặc sửa lịch việc con về đúng mốc cũ.`
                 : (!reason.trim() ? (doiTienDo ? 'Nhập lý do dời hạn' : 'Nhập lý do phân bổ lại') : '')}
           >
+            {/* Giữ nguyên hạn thì hồ sơ đứng yên tại chỗ và KHÔNG phải trình duyệt lại (chị Trâm
+                chốt 15/09/2026) — nút phải nói đúng việc nó sắp làm, không thì Quản lý ngần ngại
+                bấm vì tưởng sắp bị kéo hồ sơ về đầu quy trình. */}
             {doiTienDo
               ? (isBOOD ? `Dời +${actualDelay} ngày & kéo về Bước 1` : `Gửi TP duyệt (+${actualDelay} ngày)`)
-              : (isBOOD ? 'Lưu phân bổ & kéo về Bước 1 (giữ hạn)' : 'Gửi TP duyệt (giữ nguyên hạn)')}
+              : 'Lưu phân bổ — giữ nguyên hạn, không đổi bước'}
           </button>
         </div>
       </div>

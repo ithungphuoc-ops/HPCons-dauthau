@@ -5,6 +5,8 @@ import StaffTaskResultPanel from './StaffTaskResultPanel';
 import TextWithLinks from './TextWithLinks';
 import { updateTaskInTree } from '../utils/taskTree';
 import { fmtDateVN, fmtHanViecVN, mocHanViec } from '../utils/dateVN';
+import { maHoSo } from '../lib/utils';
+import { dangTreHan } from './KanbanBoard';
 
 // Hạn nộp của một tác vụ: ngày bắt đầu + số ngày − 1 (ngày làm việc cuối, khớp sơ đồ Gantt).
 // Việc chưa đặt lịch riêng thì lấy hạn hiện tại của cả gói công việc (fallback).
@@ -68,11 +70,20 @@ const assigneeIdsInTasks = (tasks?: ProjectTask[]): string[] => {
 const KHOA_TU_BUOC = 3;
 export const hoSoDangKhoaViecCon = (p: { kanbanStep?: number }): boolean => (p.kanbanStep || 1) >= KHOA_TU_BUOC;
 
-// Kế hoạch Quản lý vừa lập, TRƯỞNG PHÒNG CHƯA DUYỆT (chị Trâm chốt 27/07/2026):
-// việc VẪN hiện trong danh sách để nhân sự biết trước mà thu xếp, nhưng khóa toàn bộ thao tác
-// cập nhật và KHÔNG tính vào thống kê/KPI — vì TP có thể duyệt lại đổi người / đổi hạn / đổi tỉ trọng,
-// làm sớm là công cốc. Duyệt xong nhân sự nhận thông báo "bắt đầu thực hiện" rồi mới mở khóa.
-// HAI trường hợp đều là "chưa được duyệt", phải khóa như nhau:
+// Kế hoạch Quản lý vừa lập, TRƯỞNG PHÒNG CHƯA DUYỆT.
+//
+// ⚠ LUẬT ĐÃ ĐỔI (chị Trâm chốt 12/09/2026): cờ này KHÔNG CÒN KHÓA việc con nữa.
+// "Công việc con của các bạn không cần gắn cờ chờ duyệt nữa, các bạn có công việc con được quyền
+//  cập nhật tiến độ hoặc hoàn thành luôn."
+// Luật cũ (27/07/2026) khóa sạch thao tác và loại khỏi KPI, vì sợ TP duyệt lại đổi người/đổi hạn/
+// đổi tỉ trọng làm công sức thành công cốc. Thực tế bắt nhân sự ngồi chờ duyệt mới được báo tiến độ
+// làm chậm cả dây chuyền, nên nay mở ra; đổi lại nhân sự tự liệu vì kế hoạch còn có thể được chỉnh.
+//
+// CỜ NÀY GIỜ CÒN DÙNG CHO: (1) nhãn "⏳ Chờ TP duyệt kế hoạch" — chỉ báo cho biết; (2) chặn ĐẨY THẺ
+// Kanban tiến lên, vì hồ sơ vẫn phải được TP duyệt kế hoạch mới lên Bước 2 (xem handleKanbanMove);
+// (3) giới hạn quyền SỬA KẾ HOẠCH lúc chờ duyệt về đúng Quản lý phụ trách (xem handleUpdateTasks).
+//
+// HAI trường hợp đều tính là "chưa được duyệt":
 //   · tpDaDuyet === false  — Quản lý vừa lập kế hoạch LẦN ĐẦU, TP chưa duyệt.
 //   · choDuyetLai === true — hồ sơ đã chạy rồi bị kéo về Bước 1 / bị delay, Quản lý lập lại kế hoạch
 //     cho VÒNG mới. Cờ tpDaDuyet vẫn còn true từ vòng trước nên chỉ xét mình nó là lọt lưới:
@@ -158,7 +169,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
   const rows: Array<{ project: Project; task: ProjectTask }> = [];
   projects.forEach(p => {
     // Lọc theo ô tìm kiếm dự án (mã, tên dự án)
-    if (q && !(`${p.projectId} ${p.tenDuAn}`.toLowerCase().includes(q))) return;
+    if (q && !(`${maHoSo(p)} ${p.tenDuAn}`.toLowerCase().includes(q))) return;
     const pTasks = p.tasks && p.tasks.length > 0 ? p.tasks : DEFAULT_PROJECT_TASKS;
     const walk = (list: ProjectTask[]) => {
       list.forEach(t => {
@@ -241,14 +252,14 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
     });
 
     const now = new Date();
-    const nowText = `${pad2(now.getDate())}-${pad2(now.getMonth() + 1)}-${now.getFullYear()} ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+    const nowText = `${pad2(now.getDate())}/${pad2(now.getMonth() + 1)}/${now.getFullYear()} ${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
 
     // ===== QUẢN LÝ: 2 bảng về hồ sơ mình phụ trách (Phần A tổng hợp + Phần B chi tiết việc) =====
     const tenNhanSu = (id?: string) => (id && staffNames?.[id]) || '';
     const trangThaiHoSo = (p: Project) => {
       if (p.trangThai === 'HOAN_THANH_DUNG_HAN') return { text: 'Hoàn thành đúng hạn', style: 'color:#16a34a;font-weight:bold;' };
       if (p.trangThai === 'HOAN_THANH_TRE_HAN') return { text: 'Hoàn thành trễ hạn', style: 'color:#d97706;font-weight:bold;' };
-      if (p.trangThai === 'TRE_TIEN_DO') return { text: 'Trễ tiến độ', style: 'color:#dc2626;font-weight:bold;' };
+      if (dangTreHan(p)) return { text: 'Trễ tiến độ', style: 'color:#dc2626;font-weight:bold;' };
       const han = p.ngayHoanThanhDuKienHienTai;
       if (han) {
         const d = dayDiff(han, todayISO());
@@ -299,7 +310,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
         managerSections += `
           <tr>
             <td class="num">${i + 1}</td>
-            <td class="num">${esc(p.projectId)}</td>
+            <td class="num">${esc(maHoSo(p))}</td>
             <td style="font-weight: bold;">${esc(p.tenDuAn)}</td>
             <td>${esc(p.hangMuc)}</td>
             <td>${esc(p.chuDauTu || 'Chưa cập nhật')}</td>
@@ -349,7 +360,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
           managerSections += `
             <tr>
               <td class="num">${stt}</td>
-              <td class="num">${esc(p.projectId)}</td>
+              <td class="num">${esc(maHoSo(p))}</td>
               <td>${esc(p.tenDuAn)}</td>
               <td style="font-weight: bold;">${esc(t.name)}</td>
               <td>${esc(nguoiLam || 'Chưa gán')}</td>
@@ -439,7 +450,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
       html += `
         <tr>
           <td class="num">${i + 1}</td>
-          <td class="num">${esc(g.project.projectId)}</td>
+          <td class="num">${esc(maHoSo(g.project))}</td>
           <td style="font-weight: bold;">${esc(g.project.tenDuAn)}</td>
           <td>${esc(g.project.hangMuc)}</td>
           <td>${esc(g.project.chuDauTu || 'Chưa cập nhật')}</td>
@@ -483,7 +494,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
       html += `
         <tr>
           <td class="num">${i + 1}</td>
-          <td class="num">${esc(project.projectId)}</td>
+          <td class="num">${esc(maHoSo(project))}</td>
           <td>${esc(project.tenDuAn)}</td>
           <td style="font-weight: bold;">${esc(task.name)}</td>
           <td class="num">${task.vong || 1}</td>
@@ -606,11 +617,20 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
               // Khóa cập nhật việc con ở 2 tình huống:
               //   • Kế hoạch chưa được Trưởng phòng duyệt (xem trước, chưa được làm)
               //   • Hồ sơ đã sang bước 3 trở đi (Trưởng phòng đang duyệt)
+              // KẾ HOẠCH CHỜ TP DUYỆT KHÔNG CÒN KHÓA VIỆC CON (chị Trâm chốt 12/09/2026):
+              // "công việc con của các bạn không cần gắn cờ chờ duyệt nữa, các bạn có công việc con
+              //  được quyền cập nhật tiến độ hoặc hoàn thành luôn".
+              // Trước đây khóa vì sợ TP duyệt lại đổi người/đổi hạn làm công sức thành công cốc. Thực
+              // tế ngược lại: nhân sự biết việc của mình rồi, bắt ngồi chờ duyệt mới được báo tiến độ
+              // làm chậm cả dây chuyền. Cờ chờ duyệt nay CHỈ còn chi phối quy trình Kanban (hồ sơ vẫn
+              // phải được TP duyệt kế hoạch mới lên Bước 2 — xem handleKanbanMove bên App).
+              // Khóa DUY NHẤT còn lại: hồ sơ đã sang bước 3 trở đi, lúc TP đang duyệt giá cấp Phòng.
+              // Vẫn hiện NHÃN "chờ TP duyệt kế hoạch" — nhưng nay chỉ là thông tin, không còn khóa:
+              // nhân sự biết kế hoạch có thể còn được Trưởng phòng chỉnh (đổi người, đổi hạn, đổi
+              // tỉ trọng) mà liệu đường, chứ không bị cấm làm nữa.
               const choDuyet = hoSoChoTPDuyet(project);
-              const khoaBuoc = choDuyet || hoSoDangKhoaViecCon(project);
-              const lyDoKhoaBuoc = choDuyet
-                ? '⏳ Kế hoạch đang chờ Trưởng phòng duyệt — việc hiện sẵn để bạn thu xếp, chưa cập nhật được. Trưởng phòng duyệt xong bạn sẽ nhận thông báo "bắt đầu thực hiện".'
-                : `🔒 Hồ sơ đã sang bước ${project.kanbanStep} — Trưởng phòng đang duyệt, không cập nhật công việc con được nữa. Cần sửa thì đề nghị Trưởng phòng kéo hồ sơ về bước trước.`;
+              const khoaBuoc = hoSoDangKhoaViecCon(project);
+              const lyDoKhoaBuoc = `🔒 Hồ sơ đã sang bước ${project.kanbanStep} — Trưởng phòng đang duyệt, không cập nhật công việc con được nữa. Cần sửa thì đề nghị Trưởng phòng kéo hồ sơ về bước trước.`;
               const blockReason = task.isCompleted ? null : (khoaBuoc ? lyDoKhoaBuoc : getCompletionBlockReason(task));
               // Hạn nộp tác vụ + cảnh báo: đỏ = quá hạn, vàng = còn ≤3 ngày.
               // So theo MỐC MS (góp ý #20): việc con có giờ hạn thì quá 14:00 là trễ ngay trong ngày;
@@ -627,7 +647,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
                     <div className="space-y-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[8px] bg-slate-100 dark:bg-dark-elevated text-slate-600 dark:text-slate-400 px-1.5 py-0.5 rounded font-black font-mono">
-                          {project.projectId}
+                          {maHoSo(project)}
                         </span>
                         <span className="text-[10px] font-bold text-slate-800 dark:text-slate-200 truncate max-w-[180px]" title={project.tenDuAn}>
                           {project.tenDuAn}
@@ -635,13 +655,14 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
                         <span className="text-[8px] font-bold text-slate-400 dark:text-slate-500">
                           Tỉ trọng: {task.weight}%
                         </span>
-                        {/* Kế hoạch chưa được Trưởng phòng duyệt — báo rõ để nhân sự đừng bắt tay làm sớm */}
+                        {/* Kế hoạch chưa được Trưởng phòng duyệt — CHỈ BÁO CHO BIẾT, không chặn gì
+                            (chị Trâm chốt 12/09/2026). Bạn cứ làm và báo tiến độ bình thường. */}
                         {choDuyet && (
                           <span
                             className="text-[10px] font-black px-1.5 py-0.5 rounded bg-brand-warning/15 text-brand-warning dark:bg-brand-warning/15 dark:text-brand-warning"
-                            title={lyDoKhoaBuoc}
+                            title="Trưởng phòng chưa duyệt kế hoạch — bạn vẫn làm và cập nhật tiến độ bình thường, chỉ lưu ý kế hoạch còn có thể được chỉnh (người làm, hạn, tỉ trọng)."
                           >
-                            ⏳ Chờ TP duyệt
+                            ⏳ Chờ TP duyệt kế hoạch
                           </span>
                         )}
                         {/* Mini thanh tiến độ (khiêm tốn) — nằm ngay hàng thông tin để dòng gọn */}
@@ -719,7 +740,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
                         }`}
                         title={khoaBuoc ? lyDoKhoaBuoc : 'Cập nhật kết quả công việc, % tiến độ, ghi chú dời hạn'}
                       >
-                        {khoaBuoc ? (choDuyet ? '⏳ CẬP NHẬT KQ' : '🔒 CẬP NHẬT KQ') : '✍️ CẬP NHẬT KQ'}
+                        {khoaBuoc ? '🔒 CẬP NHẬT KQ' : '✍️ CẬP NHẬT KQ'}
                       </button>
 
                       {/* Nút đánh dấu hoàn thành: chỉ mở khóa khi đã có kết quả + tiến độ 100% */}
@@ -743,7 +764,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
                         ) : (
                           <>
                             <span className="w-3 h-3 border border-slate-400 dark:border-slate-600 rounded-sm" />
-                            {blockReason ? (choDuyet ? '⏳ ĐÁNH DẤU XONG' : '🔒 ĐÁNH DẤU XONG') : 'ĐÁNH DẤU XONG'}
+                            {blockReason ? (khoaBuoc ? '🔒 ĐÁNH DẤU XONG' : 'ĐÁNH DẤU XONG') : 'ĐÁNH DẤU XONG'}
                           </>
                         )}
                       </button>
@@ -770,7 +791,7 @@ export default function MyTasksPanel({ projects, currentUserId, personalOnly, ti
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-[11px]">
                         {([
-                          ['Mã hồ sơ', project.projectId],
+                          ['Mã hồ sơ', maHoSo(project)],
                           ['Tên dự án', cha?.tenDuAn || project.tenDuAn],
                           ['Chủ đầu tư', cha?.chuDauTu || project.chuDauTu || 'Chưa cập nhật'],
                           ['Địa chỉ công trình', cha?.diaChi || project.diaChi || 'Chưa cập nhật'],
