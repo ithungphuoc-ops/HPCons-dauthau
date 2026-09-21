@@ -370,7 +370,7 @@ export const duAnNhap = (): Project[] => [
     tenDuAn: '[NHÁP] Nhà xưởng Sunfiber GĐ2 — gói kết cấu',
     chuDauTu: 'Công ty TNHH Sunfiber Việt Nam',
     diaChi: 'KCN Bàu Bàng, TP HCM',
-    khuCongNghiep: 'KCN Phú An Thạnh', tinhThanh: 'Tây Ninh', dienTichDat: 24000,
+    dienTichDat: 24000,
     quocTich: 'Singapore',
     hangMuc: 'Báo giá chi tiết',
     moTa: 'Hồ sơ đã qua 3 VÒNG — CĐT trả về sửa 2 lần. Dùng để thử bảng Lịch sử các vòng và file xuất báo cáo.',
