@@ -30,6 +30,18 @@ function getAdminApp() {
 export function getAdminAuth() {
   return getAuth(getAdminApp());
 }
+
+// ignoreUndefinedProperties: webhook nhận dữ liệu từ 2 app khác (App Thông tin dự án, App Thiết
+// kế) — payload thiếu trường tuỳ chọn thì hàm chuẩn hoá vẫn tạo key giá trị `undefined`. Mặc định
+// Firestore từ chối `undefined` (kể cả lồng trong mảng hangMuc), nên nếu tắt cờ này 1 bản ghi lỗi
+// giữa danh sách có thể làm hỏng cả lô ghi dở (các batch trước đã commit vẫn giữ nguyên, phát hiện
+// khi rà PR #11 — CodeRabbit 21/09/2026). Chỉ cần đặt 1 lần, trước request Firestore đầu tiên.
+let daDatCauHinhDb = false;
 export function getAdminDb() {
-  return getFirestore(getAdminApp());
+  const db = getFirestore(getAdminApp());
+  if (!daDatCauHinhDb) {
+    db.settings({ ignoreUndefinedProperties: true });
+    daDatCauHinhDb = true;
+  }
+  return db;
 }

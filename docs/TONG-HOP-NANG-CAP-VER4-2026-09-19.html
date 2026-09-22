@@ -1,0 +1,413 @@
+<!doctype html>
+<title>Tổng hợp nâng cấp Ver4</title>
+<style>
+  @page { size: A4 landscape; margin: 10mm 12mm; }
+  :root{
+    --muc:#1f3a5f; --nhan:#8a94a6; --chu:#23262d; --nhat:#5a6274;
+    --vien:#d8dde5; --nen:#f4f6f9; --do:#c0392b; --xanh:#1e7a46;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:#eceff3; color:var(--chu);
+        font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; font-size:10pt; line-height:1.5; }
+  .trang{ background:#fff; width:297mm; height:210mm; margin:8mm auto; padding:10mm 12mm;
+          display:flex; flex-direction:column; box-shadow:0 2px 14px rgba(20,30,50,.13); overflow:hidden; }
+  .than{ flex:1; min-height:0; }
+  .eyebrow{ font-size:7.2pt; letter-spacing:.32em; text-transform:uppercase; color:var(--nhan);
+            font-weight:700; border-bottom:1px solid var(--vien); padding-bottom:4px; margin-bottom:11px; }
+  h2{ font-size:15pt; color:var(--muc); margin:0 0 2px; font-weight:700; letter-spacing:-.2px; }
+  .apdung{ font-size:8.6pt; color:var(--nhat); font-style:italic; margin:0 0 9px; }
+  ul{ margin:0 0 10px; padding-left:15px; }
+  li{ margin-bottom:5px; }
+  li b{ color:var(--muc); }
+  .chan{ border-top:1px solid var(--vien); padding-top:4px; margin-top:8px;
+         font-size:7.2pt; color:var(--nhan); display:flex; justify-content:space-between; }
+  /* hai cột: chữ trái — ảnh phải */
+  /* minmax(0,1fr) chứ KHÔNG phải 1fr: cột lưới mặc định có min-width:auto nên ảnh cao hơn cột sẽ
+     phình cột ra và ĐÈ LÊN cột chữ bên trái (chị Trâm báo 19/09/2026). Cùng lý do, figure và cột
+     ảnh đều phải min-width:0 thì ảnh mới chịu co lại cho vừa. */
+  .doi{ display:grid; grid-template-columns:37% minmax(0,1fr); gap:16px; height:100%; min-height:0; }
+  .doi.rong{ grid-template-columns:27% minmax(0,1fr); }
+  .cot-anh{ display:flex; flex-direction:column; gap:8px; justify-content:center;
+            min-height:0; min-width:0; overflow:hidden; }
+  figure{ margin:0; min-width:0; max-width:100%; }
+  /* Ảnh GIỮ TỈ LỆ và bị khoá chiều cao: vùng in khổ ngang chỉ cao 190mm, để ảnh tự do
+     theo tỉ lệ gốc là tràn sang trang phụ (bản đầu ra 14 trang thay vì 11). */
+  figure img{ max-width:100%; width:auto; height:auto; margin:0 auto;
+              border:1px solid var(--vien); border-radius:5px; display:block; }
+  .cot-anh.mot-anh figure img{ max-height:158mm; }
+  .cot-anh.hai-anh figure img{ max-height:78mm; }
+  /* Hai ảnh DỌC thì xếp CẠNH NHAU: chồng dọc trong khổ ngang làm mỗi ảnh chỉ còn ~78mm,
+     chữ trong ảnh bé không đọc nổi. Xếp ngang thì mỗi ảnh cao tới 150mm. */
+  .cot-anh.hai-anh.ngang{ flex-direction:row; align-items:center; gap:12px; }
+  .cot-anh.hai-anh.ngang figure{ flex:1 1 0; min-width:0; }
+  .cot-anh.hai-anh.ngang figure img{ max-height:150mm; }
+  figcaption{ font-size:7.6pt; color:var(--nhan); margin-top:4px; font-style:italic; }
+  .khung-anh{ border:1px dashed var(--vien); border-radius:6px; background:var(--nen);
+              padding:16px; text-align:center; color:var(--nhan); font-size:8.4pt; font-style:italic; }
+  /* bìa */
+  .bia{ justify-content:center; }
+  .bia .hang{ font-size:8pt; letter-spacing:.42em; color:var(--nhan); font-weight:700; text-transform:uppercase; }
+  .bia h1{ font-size:32pt; line-height:1.12; color:var(--muc); margin:18px 0 0; font-weight:700; letter-spacing:-.8px; }
+  .bia .phu{ font-size:11.5pt; color:var(--nhat); margin-top:9px; max-width:165mm; }
+  .bia .ke{ width:52mm; height:3px; background:var(--muc); margin:20px 0; }
+  .meta{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px 26px; max-width:210mm; }
+  .meta .o span{ display:block; font-size:7.2pt; letter-spacing:.26em; color:var(--nhan); font-weight:700; text-transform:uppercase; }
+  .meta .o b{ display:block; font-size:10.5pt; color:var(--chu); font-weight:600; margin-top:2px; }
+  /* bảng */
+  table{ width:100%; border-collapse:collapse; font-size:9.6pt; }
+  thead th{ background:var(--muc); color:#fff; text-align:left; padding:6px 10px;
+            font-size:7.6pt; letter-spacing:.14em; text-transform:uppercase; font-weight:700; }
+  tbody td{ border-bottom:1px solid var(--vien); padding:6px 10px; vertical-align:top; }
+  tbody tr:nth-child(even) td{ background:var(--nen); }
+  td.stt{ text-align:center; font-weight:700; color:var(--muc); }
+  td.ai{ color:var(--nhat); font-size:9pt; }
+  /* khối nhấn */
+  .luuy{ border-left:3px solid var(--do); background:#fdf3f2; padding:8px 11px; margin:0 0 10px; font-size:9.2pt; }
+  .luuy b{ color:var(--do); }
+  .ok{ border-left:3px solid var(--xanh); background:#f1f8f3; padding:8px 11px; margin:0 0 10px; font-size:9.2pt; }
+  .ok b{ color:var(--xanh); }
+  .mau{ font-family:Consolas,"Courier New",monospace; background:var(--nen); border:1px solid var(--vien);
+        border-radius:4px; padding:7px 10px; font-size:8.6pt; white-space:pre; margin:0 0 10px; }
+  /* CHỈ áp cho màn hình hẹp — phải ghi rõ `screen`, bằng không khi in (khổ ngang 297mm ≈ 1123px)
+     mà máy in thu nhỏ trang thì quy tắc này cướp mất khổ trang cố định và sinh trang thừa. */
+  @media screen and (max-width:900px){
+    .trang{ width:auto; height:auto; padding:18px; }
+    .doi,.doi.rong{ grid-template-columns:1fr; }
+    .meta{ grid-template-columns:1fr 1fr; }
+    .bia h1{ font-size:22pt; }
+  }
+  @media print{
+    @page { margin:0; }
+    body{ background:#fff; }
+    /* GIỮ NGUYÊN khổ trang khi in (không để height:auto): có vậy mỗi thẻ .trang mới đúng
+       bằng một trang giấy, bằng không nội dung tràn xuống và sinh ra trang thừa. */
+    .trang{ margin:0; box-shadow:none; width:297mm; height:210mm; padding:10mm 12mm; page-break-after:always; }
+    .trang:last-child{ page-break-after:auto; }
+  }
+</style>
+
+<!-- ============ 1 · BÌA ============ -->
+<section class="trang bia">
+  <div class="hang">HP-CONS · Phòng Đấu Thầu</div>
+  <h1>Tổng hợp thay đổi và nâng cấp Ver4</h1>
+  <p class="phu">Tài liệu dành cho Quản lý và Nhân viên Phòng Đấu Thầu. Chỉ trình bày những thay đổi
+     ảnh hưởng tới cách làm việc hằng ngày — kèm ảnh chụp thực tế trên phần mềm.</p>
+  <div class="ke"></div>
+  <div class="meta">
+    <div class="o"><span>Phần mềm</span><b>App Báo cáo tiến độ đấu thầu</b></div>
+    <div class="o"><span>Địa chỉ</span><b>dauthau.hpcore.vn</b></div>
+    <div class="o"><span>Phiên bản</span><b>Ver4</b></div>
+    <div class="o"><span>Ngày phát hành</span><b>19/09/2026</b></div>
+    <div class="o"><span>Căn cứ</span><b>Hướng dẫn sử dụng 20-08-2026</b></div>
+    <div class="o"><span>Biên soạn</span><b>Phòng Đấu Thầu</b></div>
+  </div>
+</section>
+
+<!-- ============ 2 · TỔNG QUAN ============ -->
+<section class="trang">
+  <div class="than">
+    <div class="eyebrow">Tổng quan</div>
+    <h2>Có gì thay đổi ở Ver4</h2>
+    <p class="apdung">11 thay đổi chính, chia theo bốn nhóm việc.</p>
+    <table>
+      <thead><tr><th style="width:6%">#</th><th>Nội dung</th><th style="width:26%">Dành cho</th></tr></thead>
+      <tbody>
+        <tr><td class="stt">1</td><td>Khung xem nhanh hồ sơ — sửa và lưu ngay trong popup</td><td class="ai">Tất cả</td></tr>
+        <tr><td class="stt">2</td><td>Mục mới <b>Liên kết phòng ban</b> — Danh mục dự án &amp; Tiến độ thiết kế</td><td class="ai">Tất cả</td></tr>
+        <tr><td class="stt">3</td><td>Bảng Kanban — thanh tiến độ trên thẻ, <b>Quản lý gửi CĐT và chốt kết quả thầu</b></td><td class="ai">Tất cả</td></tr>
+        <tr><td class="stt">4</td><td>Biểu đồ Gantt — bảng màu mới, tô sáng cột hôm nay</td><td class="ai">Trưởng phòng · Quản lý</td></tr>
+        <tr><td class="stt">5</td><td><b>Dự án khởi tạo bên App Thông tin dự án</b> — danh mục, dấu +, mã hồ sơ hai ô</td><td class="ai">Trưởng phòng · Quản lý</td></tr>
+        <tr><td class="stt">6</td><td>Các mốc hạn — hạn Bộ phận · hạn Phòng (bỏ <b>hạn thầu</b> khỏi khung xem nhanh)</td><td class="ai">Tất cả</td></tr>
+        <tr><td class="stt">7</td><td><b>Phiếu dời tiến độ</b> — chỉ căn cứ lịch việc con; <b>vòng mới không tính là dời hạn</b></td><td class="ai">Quản lý · Trưởng phòng</td></tr>
+        <tr><td class="stt">8</td><td>Kéo hồ sơ về Bước 1 — ba lựa chọn rõ ràng</td><td class="ai">Quản lý</td></tr>
+        <tr><td class="stt">9</td><td>Khai lý do trễ hạn theo khâu — Bộ phận ghi gì, Phòng ghi gì</td><td class="ai">Quản lý · Trưởng phòng</td></tr>
+        <tr><td class="stt">10</td><td>Đội Ngũ &amp; KPI — nhân sự thật từ App Tổng, tên đồng bộ sống</td><td class="ai">Trưởng phòng</td></tr>
+        <tr><td class="stt">11</td><td>Lịch cá nhân — đánh dấu xong theo buổi, nhắc hẹn cho lịch lặp</td><td class="ai">Tất cả</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="chan"><span>HP-CONS · Phòng Đấu Thầu — Tổng hợp nâng cấp Ver4 · 19/09/2026</span><span>Trang 2/12</span></div>
+</section>
+
+<!-- ============ 3 · MỤC 1 ============ -->
+<section class="trang">
+  <div class="than doi">
+    <div>
+      <div class="eyebrow">Phần A · Dành cho tất cả</div>
+      <h2>1. Khung xem nhanh hồ sơ</h2>
+      <p class="apdung">Áp dụng cho: toàn Phòng</p>
+      <ul>
+        <li>Bấm vào một hồ sơ ở <b>Dashboard · Kanban · Gantt</b> thì mở khung xem nhanh ngay tại chỗ, không phải rời màn hình đang làm.</li>
+        <li>Trong khung này <b>sửa và lưu được luôn</b> — trước đây chỉ xem rồi phải mở lại hồ sơ đầy đủ.</li>
+        <li>Có thêm bảng <b>Lịch sử các vòng</b>: mỗi lần gửi Chủ đầu tư và mỗi lần làm lại đều nằm trong đó.</li>
+        <li>Đóng khung bằng phím <b>Esc</b> hoặc bấm ra ngoài.</li>
+      </ul>
+    </div>
+    <div class="cot-anh mot-anh">
+      <figure>
+        <img src="anh-ver4/01-xem-nhanh.png" alt="Khung xem nhanh hồ sơ">
+        <figcaption>Khung xem nhanh mở ngay tại chỗ khi bấm vào một hồ sơ trên Kanban.</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="chan"><span>HP-CONS · Phòng Đấu Thầu — Tổng hợp nâng cấp Ver4 · 19/09/2026</span><span>Trang 3/12</span></div>
+</section>
+
+<!-- ============ 4 · MỤC 2 ============ -->
+<section class="trang">
+  <div class="than doi rong">
+    <div>
+      <div class="eyebrow">Phần A · Dành cho tất cả</div>
+      <h2>2. Mục mới — Liên kết phòng ban</h2>
+      <p class="apdung">Áp dụng cho: toàn Phòng (Nhân viên xem giới hạn)</p>
+      <ul>
+        <li><b>Danh mục dự án</b> — toàn bộ dự án đăng ký bên App Thông tin dự án: mã dự án, tên, chủ đầu tư, địa điểm, phân loại, hồ sơ phát thầu, diện tích, giai đoạn.</li>
+        <li><b>Tiến độ thiết kế</b> — tiến độ do Phòng Thiết kế cập nhật, tra theo đúng mã dự án. Bấm vào dòng dự án thì xổ ra các hạng mục con.</li>
+        <li>Hai bảng đều lọc theo năm (lấy theo <b>4 chữ số đầu của mã dự án</b>) và có ô tìm kiếm.</li>
+        <li>Bảng Tiến độ thiết kế <b>chỉ xem, không sửa</b> — số liệu do Phòng Thiết kế làm chủ.</li>
+        <li><b>Nhân viên</b> vào được mục này nhưng chỉ thấy gói thầu mình được giao việc.</li>
+      </ul>
+    </div>
+    <div class="cot-anh hai-anh">
+      <figure>
+        <img src="anh-ver4/02-danh-muc-du-an.png" alt="Bảng Danh mục dự án">
+        <figcaption>Bảng “Danh mục dự án — App Thông tin dự án”. Dòng chưa mở hồ sơ có nhãn “Chưa có hồ sơ”.</figcaption>
+      </figure>
+      <figure>
+        <img src="anh-ver4/02-tien-do-thiet-ke.png" alt="Bảng Tiến độ thiết kế">
+        <figcaption>Bảng “Tiến độ thiết kế — Phòng Thiết kế”. Bấm mũi tên ở đầu dòng để xổ hạng mục con.</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="chan"><span>HP-CONS · Phòng Đấu Thầu — Tổng hợp nâng cấp Ver4 · 19/09/2026</span><span>Trang 4/12</span></div>
+</section>
+
+<!-- ============ 5 · MỤC 3 ============ -->
+<section class="trang">
+  <div class="than doi rong">
+    <div>
+      <div class="eyebrow">Phần A · Dành cho tất cả</div>
+      <h2>3. Bảng Kanban</h2>
+      <p class="apdung">Áp dụng cho: toàn Phòng</p>
+      <ul>
+        <li>Thẻ hồ sơ có thêm <b>thanh tiến độ</b> — nhìn cột là biết hồ sơ chạy tới đâu, không phải mở ra.</li>
+        <li>Thêm bộ lọc <b>Phân loại hạng mục</b>, bộ lọc <b>năm</b> và khoảng ngày; mặc định mở ra là năm hiện tại.</li>
+        <li>Quản lý nay <b>kéo hồ sơ về Bước 1</b> được (trước chỉ Trưởng phòng làm được) — xem mục 8.</li>
+        <li><b>Quản lý làm thêm được hai việc:</b> đưa hồ sơ <b>Bước 4 → Bước 5</b> (gửi Chủ đầu tư) và từ Bước 5 bấm <b>Trúng thầu / Rớt thầu</b>. Ba thao tác này đều <b>báo chuông ngay cho Trưởng phòng</b>, nói rõ ai vừa làm.</li>
+        <li>Cửa <b>Bước 3 → 4</b> (trình Ban lãnh đạo) vẫn chỉ Trưởng phòng — đó là chỗ chốt tiến độ Phòng 100%. Ổ khoá nay chỉ còn treo ở đúng cột đó.</li>
+      </ul>
+    </div>
+    <div class="cot-anh mot-anh">
+      <figure>
+        <img src="anh-ver4/05-kanban.png" alt="Bảng Kanban 7 bước">
+        <figcaption>Bảng Kanban quy trình thầu 7 bước — thanh tiến độ nằm ngay trên thẻ.</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="chan"><span>HP-CONS · Phòng Đấu Thầu — Tổng hợp nâng cấp Ver4 · 19/09/2026</span><span>Trang 5/12</span></div>
+</section>
+
+<!-- ============ 6 · MỤC 4 ============ -->
+<section class="trang">
+  <div class="than doi rong">
+    <div>
+      <div class="eyebrow">Phần A · Dành cho tất cả</div>
+      <h2>4. Biểu đồ Gantt — bảng màu mới</h2>
+      <p class="apdung">Áp dụng cho: Trưởng phòng · Quản lý</p>
+      <ul>
+        <li><b>Xanh lá</b> — đang triển khai.</li>
+        <li><b>Xanh dương</b> — hoàn thành đúng hạn.</li>
+        <li><b>Cam</b> — hoàn thành trễ hạn.</li>
+        <li><b>Đỏ</b> — quá hạn hoặc cận hạn thầu.</li>
+        <li>Màu chấm theo <b>tiến độ của cả Phòng</b>, không chấm theo tiến độ Bộ phận. Bộ phận xong mà Phòng chưa duyệt thì chưa tính là xong.</li>
+        <li>Cột ngày hôm nay được tô sáng; hôm nay nằm ngoài khoảng đang vẽ thì app nói rõ.</li>
+      </ul>
+    </div>
+    <div class="cot-anh mot-anh">
+      <figure>
+        <img src="anh-ver4/06-gantt.png" alt="Biểu đồ Gantt">
+        <figcaption>Biểu đồ Gantt — xem theo ngày hoặc theo tuần, cột hôm nay được tô sáng.</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="chan"><span>HP-CONS · Phòng Đấu Thầu — Tổng hợp nâng cấp Ver4 · 19/09/2026</span><span>Trang 6/12</span></div>
+</section>
+
+<!-- ============ 7 · MỤC 5 ============ -->
+<section class="trang">
+  <div class="than doi rong">
+    <div>
+      <div class="eyebrow">Phần B · Dự án &amp; hồ sơ</div>
+      <h2>5. Dự án khởi tạo bên App Thông tin dự án</h2>
+      <p class="apdung">Áp dụng cho: Trưởng phòng · Quản lý — <b>thay đổi cách làm</b></p>
+      <div class="luuy">
+        <b>Quy định mới:</b> dự án phải đăng ký bên <b>App Thông tin dự án</b> trước, rồi mới về app đấu thầu thao tác —
+        để mọi phòng ban cùng thấy một thông tin, tránh khởi tạo nhầm hai lần. Nút <b>“DỰ ÁN MỚI”</b> đã được bỏ.
+      </div>
+      <ul>
+        <li>Mỗi dòng dự án có <b>một dấu +</b>; rà chuột vào hiện chữ <i>“Thêm thông tin dự án của Đấu thầu”</i>. Bấm vào là mở form cộng thêm phần của riêng Phòng: mã Phòng tự đặt, mô tả, hình thức đấu thầu, Quản lý phụ trách.</li>
+        <li>Nút <b>“Tạo thủ công”</b> là lối dự phòng khi App Thông tin dự án chưa nối xong. <b>Cả Trưởng phòng và Quản lý</b> đều dùng được; Quản lý khai thì Trưởng phòng nhận thông báo ngay để kiểm tra trùng mã.</li>
+        <li><b>Mã hồ sơ tách hai ô</b>: ô 1 là mã dự án lấy từ App Thông tin dự án (khoá ghép giữa các app, không tự đặt); ô 2 là mã Phòng tự đặt.</li>
+        <li>Ô <b>Chọn dự án cha</b> khi tạo công việc nay xổ ra cả danh mục công ty; chọn dự án chưa có hồ sơ thì app tự lập hồ sơ cha rồi mới gắn việc vào.</li>
+      </ul>
+    </div>
+    <div class="cot-anh mot-anh">
+      <figure>
+        <img src="anh-ver4/02-danh-muc-du-an.png" alt="Danh mục dự án với dấu cộng và nút Tạo thủ công">
+        <figcaption>Dấu <b>+</b> ở cuối mỗi dòng và nút <b>Tạo thủ công</b> ở góc phải bảng Danh mục dự án.</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="chan"><span>HP-CONS · Phòng Đấu Thầu — Tổng hợp nâng cấp Ver4 · 19/09/2026</span><span>Trang 7/12</span></div>
+</section>
+
+<!-- ============ 8 · MỤC 6 + 7 ============ -->
+<section class="trang">
+  <div class="than">
+    <div class="eyebrow">Phần C · Tiến độ &amp; dời hạn</div>
+    <h2>6. Các mốc hạn — nhớ đúng thứ tự</h2>
+    <p class="apdung">Áp dụng cho: toàn Phòng</p>
+    <table>
+      <thead><tr><th style="width:18%">Mốc</th><th>Là ngày gì</th><th style="width:20%">Ai chịu trách nhiệm</th></tr></thead>
+      <tbody>
+        <tr><td><b>Hạn Bộ phận</b></td><td>Ngày cuối của lịch việc con — Bộ phận làm xong phần mình</td><td class="ai">Quản lý</td></tr>
+        <tr><td><b>Hạn Phòng</b></td><td>Hạn Bộ phận cộng số ngày Trưởng phòng duyệt</td><td class="ai">Trưởng phòng</td></tr>
+        <tr><td><b>Hạn thầu</b><br><span style="font-size:8pt;color:#8a94a6">(mốc nội bộ)</span></td><td>Hạn Phòng cộng số ngày Ban lãnh đạo duyệt — dùng để chấm đúng hạn / trễ hạn, <b>không hiện trong khung xem nhanh nữa</b></td><td class="ai">Ban lãnh đạo</td></tr>
+      </tbody>
+    </table>
+    <figure style="margin:9px 0 6px; max-width:170mm">
+      <img src="anh-ver4/06-ba-moc-han.png" alt="Khối mốc thời gian trong khung xem nhanh" style="max-height:42mm">
+      <figcaption>Khối Mốc thời gian trong khung xem nhanh — nay chỉ còn Bắt đầu · Hạn Bộ phận · Hạn Phòng · Hẹn CĐT.</figcaption>
+    </figure>
+    <p style="margin:6px 0 12px; font-size:9.6pt">Ba mốc nối nhau: <b>đổi lịch việc con là cả ba mốc dịch theo</b>.
+       Đây là lý do mọi thay đổi lịch đều phải trình duyệt lại. Phiếu dời tiến độ <b>neo theo hạn Bộ phận</b>, không neo theo hạn Phòng.</p>
+  </div>
+  <div class="chan"><span>HP-CONS · Phòng Đấu Thầu — Tổng hợp nâng cấp Ver4 · 19/09/2026</span><span>Trang 8/12</span></div>
+</section>
+
+<!-- ============ MỤC 7 — TRANG RIÊNG ============ -->
+<section class="trang">
+  <div class="than doi">
+    <div>
+    <h2>7. Phiếu dời tiến độ — chỉ căn cứ lịch việc con</h2>
+      <p class="apdung">Áp dụng cho: Quản lý · Trưởng phòng — <b>thay đổi cách làm</b></p>
+      <div class="luuy">
+        <b>Quy định mới:</b> hạn Bộ phận thay đổi là <b>phải trình Trưởng phòng duyệt lại</b> — kể cả khi <b>rút ngắn</b> tiến độ.
+        Hồ sơ tự quay về Bước 1 và ghi vào lịch sử dời tiến độ.
+      </div>
+      <ul>
+        <li><b>Vòng mới không tính là dời hạn.</b> Hồ sơ bị Chủ đầu tư trả về, mở vòng mới là <b>làm lại báo giá từ đầu</b> — không còn liên quan tiến độ vòng cũ. Lần lập kế hoạch đầu tiên của vòng mới <b>không bị đòi khai phiếu</b> và cột “Dời hạn” của vòng đó để trống. Từ lần sửa thứ hai trong cùng vòng mà kéo dài lịch thì vẫn phải khai như thường.</li>
+        <li>Ô <b>“Xin gia hạn thêm cho tiến độ Bộ phận”</b> đã được <b>bỏ</b>. Số ngày dời nay chỉ có <b>một nguồn</b>: lịch việc con dài thêm bao nhiêu thì hạn dời bấy nhiêu. Phần việc của riêng Quản lý còn kẹt thì <b>kéo dài chính việc con đó</b>, đừng cộng ngày ở chỗ khác.</li>
+        <li>Sửa lịch ở <b>Kanban hay Dashboard</b> đều như nhau: hồ sơ về Bước 1 và báo chuông cho Trưởng phòng, nói rõ <b>dời ra hay rút vào bao nhiêu ngày</b>.</li>
+        <li>Phiếu không còn ô “Cấp trên phê duyệt” — theo quy định công ty, việc xin dời hạn đã báo Zalo và có Phó tổng duyệt trước khi khai vào app.</li>
+        <li>Trưởng phòng thêm ngày duyệt của mình thì ghi <b>ghi chú riêng</b>; do Bộ phận trễ kéo theo thì hai bên <b>dùng chung một ghi chú</b>.</li>
+        <li>Trưởng phòng sửa được <b>lý do</b> trong phiếu đã khai (không sửa được ngày), sửa xong lưu ngay.</li>
+      </ul>
+  </div>
+    <div class="cot-anh mot-anh">
+      <figure>
+        <img src="anh-ver4/07-bang-doi-han.png" alt="Bảng dời hạn và sửa việc con">
+        <figcaption>Bảng <b>Dời hạn &amp; sửa việc con</b> — hạn mới suy thẳng từ lịch việc con, không còn ô xin gia hạn.</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="chan"><span>HP-CONS · Phòng Đấu Thầu — Tổng hợp nâng cấp Ver4 · 19/09/2026</span><span>Trang 9/12</span></div>
+</section>
+
+
+<!-- ============ 9 · MỤC 8 ============ -->
+<section class="trang">
+  <div class="than doi">
+    <div>
+      <div class="eyebrow">Phần C · Tiến độ &amp; dời hạn</div>
+      <h2>8. Kéo hồ sơ về Bước 1 — ba lựa chọn</h2>
+      <p class="apdung">Áp dụng cho: Quản lý</p>
+      <ul>
+        <li><b>Không thay đổi tiến độ</b> — chỉ chia lại tỉ trọng, đổi người, thêm việc con. Hồ sơ đứng nguyên tại bước hiện tại.</li>
+        <li><b>Có thay đổi tiến độ</b> — lịch đổi nên hạn nộp đổi theo, dài thêm hay rút ngắn đều chọn mục này. App tự tính số ngày, ghi lịch sử và đưa hồ sơ về Bước 1.</li>
+        <li><b>Huỷ — kéo nhầm.</b></li>
+        <li>Hồ sơ đã gửi Chủ đầu tư (Bước 5) thì hai lựa chọn đổi thành <b>Đổi phân bổ</b> hoặc <b>Tạo vòng mới</b>.</li>
+      </ul>
+      <div class="luuy">
+        Chọn <b>“Không thay đổi tiến độ”</b> mà lịch việc con lại lệch ngày — dù <b>sớm hơn</b> hay muộn hơn —
+        thì app <b>không cho lưu</b> và nhắc quay lại chọn “Có thay đổi tiến độ”. Làm nhanh hơn cũng là đổi kế hoạch.
+      </div>
+      <ul>
+        <li>Trong bảng phân bổ có thêm nút <b>⚖ Chia đều</b> cạnh <b>Thêm việc con</b>: bấm một cái là chia đều 100% cho mọi việc con của vòng (thêm việc thứ tư vào bộ ba việc thì ra 25 · 25 · 25 · 25), khỏi phải sửa tay từng việc phía trên.</li>
+      </ul>
+    </div>
+    <div class="cot-anh hai-anh ngang">
+      <figure>
+        <img src="anh-ver4/16-ba-lua-chon.png" alt="Hộp ba lựa chọn khi kéo hồ sơ về Bước 1">
+        <figcaption>Hồ sơ <b>chưa gửi CĐT</b>: ba lựa chọn như trên.</figcaption>
+      </figure>
+      <figure>
+        <img src="anh-ver4/08-buoc5-hai-lua-chon.png" alt="Hai lựa chọn khi hồ sơ đã gửi Chủ đầu tư">
+        <figcaption>Hồ sơ <b>đã gửi CĐT (Bước 5)</b>: đổi thành <b>Đổi phân bổ</b> hoặc <b>Tạo vòng mới</b>.</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="chan"><span>HP-CONS · Phòng Đấu Thầu — Tổng hợp nâng cấp Ver4 · 19/09/2026</span><span>Trang 10/12</span></div>
+</section>
+
+<!-- ============ 10 · MỤC 9 ============ -->
+<section class="trang">
+  <div class="than doi rong">
+    <div>
+      <div class="eyebrow">Phần C · Tiến độ &amp; dời hạn</div>
+      <h2>9. Khai lý do trễ hạn theo khâu</h2>
+      <p class="apdung">Áp dụng cho: Quản lý · Trưởng phòng — <b>thay đổi cách làm</b></p>
+      <ul>
+        <li><b>Quản lý</b> đẩy hồ sơ từ <b>Bước 2 sang Bước 3</b> khi đã quá hạn Bộ phận: phải khai lý do mới cho lưu.</li>
+        <li><b>Trưởng phòng</b> đưa hồ sơ từ <b>Bước 3 sang Bước 4</b> khi đã quá hạn Phòng: khai lý do <b>ngay trong bảng “Nhập tiến độ &amp; kết quả cấp Phòng”</b> — một bảng, một lần bấm Lưu.</li>
+        <li>Hai lý do <b>lưu riêng</b>: mở hồ sơ, mục 6 sẽ thấy rõ Bộ phận ghi gì và Phòng ghi gì.</li>
+        <li>Ô lý do chỉ hiện khi tiến độ Phòng đủ 100% — lưu dở dang thì không bị hỏi.</li>
+      </ul>
+    </div>
+    <div class="cot-anh hai-anh ngang">
+      <figure>
+        <img src="anh-ver4/17-bang-tien-do-phong.png" alt="Bảng nhập tiến độ và kết quả cấp Phòng">
+        <figcaption>Ô “Trễ hạn Phòng — lý do” nằm ngay trong bảng nhập tiến độ cấp Phòng.</figcaption>
+      </figure>
+      <figure>
+        <img src="anh-ver4/08-chan-luu.png" alt="Cảnh báo chặn lưu khi giữ nguyên hạn mà lịch lệch ngày">
+        <figcaption>App chặn lưu khi chọn giữ nguyên hạn mà lịch việc con lại lệch ngày.</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="chan"><span>HP-CONS · Phòng Đấu Thầu — Tổng hợp nâng cấp Ver4 · 19/09/2026</span><span>Trang 11/12</span></div>
+</section>
+
+<!-- ============ 11 · MỤC 10 + 11 ============ -->
+<section class="trang">
+  <div class="than doi rong">
+    <div>
+      <div class="eyebrow">Phần D · Nhân sự &amp; lịch</div>
+      <h2>10. Đội Ngũ &amp; KPI</h2>
+      <p class="apdung">Áp dụng cho: Trưởng phòng</p>
+      <ul>
+        <li>Chọn nhân sự thật <b>từ App Tổng</b>, không gõ tay nữa.</li>
+        <li>Họ tên <b>đồng bộ sống</b>: đổi bên App Tổng là bên này đổi theo.</li>
+        <li>Thẻ nhân sự không còn hiện ID và mật khẩu.</li>
+      </ul>
+
+      <h2 style="margin-top:14px">11. Lịch cá nhân</h2>
+      <p class="apdung">Áp dụng cho: toàn Phòng</p>
+      <ul>
+        <li>Đánh dấu xong <b>theo từng buổi</b> (sáng / chiều), không phải cả ngày như trước.</li>
+        <li>Lịch lặp lại đã nhận <b>nhắc hẹn</b> trở lại.</li>
+      </ul>
+</div>
+    <div class="cot-anh hai-anh">
+      <figure>
+        <img src="anh-ver4/10-doi-ngu.png" alt="Mục Đội Ngũ và KPI">
+        <figcaption>Mục Đội Ngũ &amp; KPI — nhân sự lấy từ App Tổng.</figcaption>
+      </figure>
+      <figure>
+        <img src="anh-ver4/11-lich-ca-nhan.png" alt="Lịch cá nhân">
+        <figcaption>Lịch cá nhân — đánh dấu xong theo buổi.</figcaption>
+      </figure>
+    </div>
+  </div>
+  <div class="chan"><span>HP-CONS · Phòng Đấu Thầu — Tổng hợp nâng cấp Ver4 · 19/09/2026</span><span>Trang 12/12</span></div>
+</section>

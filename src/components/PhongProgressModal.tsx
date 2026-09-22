@@ -8,15 +8,29 @@ import { AutoGrowTextarea } from './ui';
 import { parseAttachments, joinAttachments } from '../utils/attachments';
 import { tongSoLanGuiCDT } from '../utils/guiCDT';
 import { luuAnh, taiAnhVe, CAU_NHAC_CHUA_MO_QUYEN } from '../utils/anhDinhKem';
+import { MAU_KET_QUA_PHONG, dungMauNeuTrong, chiLaKhungTrong } from '../utils/mauNhapLieu';
 
 interface PhongProgressModalProps {
   project: Project;
   /** Vai trò người đang thao tác — ghi vào `nguoiThem` của ảnh lưu, khớp cách ProjectForm.tsx đang làm. */
   currentUserRole?: string;
-  /** Lưu tiến độ Phòng + kết quả công việc (mô tả và/hoặc tệp). */
-  onSave: (tienDoPhong: number, ketQuaPhong: string, taiLieuKetQuaPhong?: string) => void;
+  /**
+   * HẠN PHÒNG đã quá (yyyy-mm-dd) — truyền vào thì bảng này hiện luôn ô khai LÝ DO TRỄ HẠN PHÒNG
+   * và bắt buộc điền trước khi lưu (chị Trâm chốt 19/09/2026: "ở B3 qua B4 thì khai 1 lần lúc đưa
+   * bảng KH lên thôi, báo chung trong bảng cập nhật kế hoạch").
+   * Không truyền (undefined) = hồ sơ còn trong hạn, hoặc đã khai lý do rồi → ẩn ô này.
+   */
+  hanPhongDaQua?: string;
+  /** Lưu tiến độ Phòng + kết quả công việc (mô tả và/hoặc tệp) + lý do trễ hạn Phòng (nếu có ô). */
+  onSave: (tienDoPhong: number, ketQuaPhong: string, taiLieuKetQuaPhong?: string, lyDoTrePhong?: string) => void;
   onClose: () => void;
 }
+
+/** yyyy-mm-dd → dd/mm/yyyy, đúng quy định định dạng dữ liệu của công ty (memo 19/08/2026). */
+const fmtNgayVN = (ymd?: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd || '');
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : (ymd || '');
+};
 
 // Bảng nhập TIẾN ĐỘ PHÒNG + KẾT QUẢ CÔNG VIỆC của Trưởng phòng.
 // Bật lên ở HAI chỗ: khi TP bị chặn ở cửa chốt vì tiến độ Phòng chưa đủ 100%, và khi hồ sơ vừa
@@ -29,13 +43,17 @@ interface PhongProgressModalProps {
 // tệp đính kèm ở cửa này TRƯỚC ĐÂY chỉ ghi TÊN tệp (giống lỗi vừa vá ở AnhBaoCaoModal.tsx, cửa
 // Bước 2→3) — nay gọi `luuAnh()` để lưu NỘI DUNG ảnh thật (nén trong trình duyệt), có nút Tải về,
 // và hỗ trợ Ctrl+V dán ảnh chụp màn hình như cửa 2→3. Tệp không phải ảnh vẫn chỉ ghi tên như cũ.
-export default function PhongProgressModal({ project, currentUserRole, onSave, onClose }: PhongProgressModalProps) {
+export default function PhongProgressModal({ project, currentUserRole, hanPhongDaQua, onSave, onClose }: PhongProgressModalProps) {
   const panelRef = useModalA11y(onClose);
   const [tienDo, setTienDo] = useState<number>(project.tienDoPhong || 0);
-  const [ketQua, setKetQua] = useState<string>(project.ketQuaPhong || '');
+  // KHUNG KẾT QUẢ dựng sẵn "01. BOQ: / 02. Subcontractors:" (chị Trâm chốt 19/09/2026) — chỉ điền
+  // khi hồ sơ CHƯA có kết quả, không ghi đè nhận xét Trưởng phòng đã viết.
+  const [ketQua, setKetQua] = useState<string>(dungMauNeuTrong(project.ketQuaPhong, MAU_KET_QUA_PHONG));
   const [tepList, setTepList] = useState<string[]>(parseAttachments(project.taiLieuKetQuaPhong));
   const [vuaDanAnh, setVuaDanAnh] = useState(false);
   const [loiAnh, setLoiAnh] = useState<string | null>(null);
+  const [lyDoTre, setLyDoTre] = useState<string>(project.lyDoTrePhong || '');
+  const [nhacLyDoTre, setNhacLyDoTre] = useState(false);
 
   // DÁN ẢNH BẰNG Ctrl+V (cùng cách làm với AnhBaoCaoModal.tsx / ProjectForm.tsx) — chỉ bắt khi
   // clipboard có ẢNH, nên dán chữ vào ô mô tả kết quả công việc không bị ảnh hưởng.
@@ -73,9 +91,24 @@ export default function PhongProgressModal({ project, currentUserRole, onSave, o
   const dangOBuoc3 = (project.kanbanStep || 1) <= 3;
   const buocKeTiep = dangOBuoc3 ? 'bước 4 (trình BLĐ / Giám đốc)' : 'bước 5 (đã gửi CĐT)';
 
+  // Chỉ đòi lý do khi lần lưu này THỰC SỰ đẩy hồ sơ rời khâu Phòng (đủ 100%). Lưu dở 60% rồi để
+  // mai làm tiếp thì chưa có gì để giải trình, bắt khai lúc đó là làm phiền vô cớ.
+  const phaiKhaiLyDoTre = !!hanPhongDaQua && tienDo >= 100;
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    onSave(tienDo, ketQua, joinAttachments(tepList));
+    if (phaiKhaiLyDoTre && !lyDoTre.trim()) {
+      setNhacLyDoTre(true);
+      return;
+    }
+    // Bỏ trống khung dựng sẵn thì lưu rỗng — kết quả công việc vốn KHÔNG bắt buộc, ghi nguyên cái
+    // khung vào hồ sơ sẽ làm báo cáo hiện ra hai dòng trống trông như đã nhận xét mà thật ra chưa.
+    onSave(
+      tienDo,
+      chiLaKhungTrong(ketQua, MAU_KET_QUA_PHONG) ? '' : ketQua,
+      joinAttachments(tepList),
+      phaiKhaiLyDoTre ? lyDoTre.trim() : undefined,
+    );
   };
 
   return (
@@ -147,6 +180,34 @@ export default function PhongProgressModal({ project, currentUserRole, onSave, o
               )}
             </div>
           </div>
+
+          {/* ===== LÝ DO TRỄ HẠN PHÒNG — KHAI NGAY TẠI ĐÂY (chị Trâm chốt 19/09/2026) =====
+              "Ở B3 qua B4 thì khai 1 lần lúc đưa bảng KH lên thôi, báo chung trong bảng cập nhật
+               kế hoạch."
+              Trước đây đây là một HỘP RIÊNG bật lên sau khi lưu bảng này, nên Trưởng phòng phải
+              qua hai cửa cho cùng một việc. Nay gộp vào đây: một bảng, một lần bấm Lưu. */}
+          {phaiKhaiLyDoTre && (
+            <div className="space-y-1 p-2.5 rounded-xl border border-brand-danger/40 bg-brand-danger/5">
+              <label htmlFor="phong-late-reason" className="block text-[10px] font-black uppercase tracking-wider text-brand-danger">
+                Trễ hạn Phòng — lý do <span className="normal-case">(bắt buộc)</span>
+              </label>
+              <p className="text-[10px] font-medium text-slate-500 dark:text-slate-400 leading-relaxed">
+                Hôm nay đã quá hạn Phòng <b className="text-brand-danger">{fmtNgayVN(hanPhongDaQua)}</b>.
+                Lưu bảng này là hồ sơ sang {dangOBuoc3 ? 'bước 4' : 'bước 5'} — ghi lý do để cuối kỳ còn thẩm định KPI.
+                Lý do của Bộ phận và của Phòng lưu riêng, xem lại ở mục 6 của hồ sơ.
+              </p>
+              <AutoGrowTextarea
+                id="phong-late-reason"
+                value={lyDoTre}
+                onChange={(e) => { setLyDoTre(e.target.value); if (nhacLyDoTre) setNhacLyDoTre(false); }}
+                placeholder="VD: Chủ đầu tư bổ sung bản vẽ kết cấu ngày 15/09, phải bóc tách lại khối lượng phần móng."
+                className={`w-full p-2 text-xs bg-white dark:bg-dark-bg border rounded-lg font-medium text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-brand-danger ${nhacLyDoTre ? 'border-brand-danger' : 'border-slate-200 dark:border-slate-800'}`}
+              />
+              {nhacLyDoTre && (
+                <p className="text-[10px] font-black text-brand-danger">Nhập lý do trễ hạn Phòng rồi mới lưu được.</p>
+              )}
+            </div>
+          )}
 
           {/* Kết quả công việc: mô tả */}
           <div className="space-y-1">

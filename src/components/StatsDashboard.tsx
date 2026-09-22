@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { hoSoChoTPDuyet } from './MyTasksPanel';
+import { dangTreHan } from './KanbanBoard';
 import { KpiCard } from './ui';
 
 interface StatsDashboardProps {
@@ -36,11 +37,12 @@ export default function StatsDashboard({
   // --- 1. STAFF PERSONAL WORKSPACE STATISTICS ---
   const myProfile = staff.find(s => s.id === currentUserId);
   
-  // Kế hoạch Trưởng phòng CHƯA duyệt thì không tính vào số liệu của nhân viên (chị Trâm chốt
-  // 27/07/2026): việc vẫn hiện ở danh sách để thu xếp trước nhưng mọi thao tác bị khóa, nên không
-  // thể có tiến độ — đưa vào thống kê chỉ làm "Hiệu suất tiến độ" tụt oan cho nhân viên.
-  // (hoSoChoTPDuyet tính cả kế hoạch của VÒNG mới đang chờ duyệt lại, không chỉ lần lập đầu tiên)
-  const projectsTinhSoLieu = isStaff ? projects.filter(p => !hoSoChoTPDuyet(p)) : projects;
+  // TÍNH CẢ KẾ HOẠCH ĐANG CHỜ TRƯỞNG PHÒNG DUYỆT (chị Trâm chốt 12/09/2026).
+  // Luật cũ (27/07/2026) loại nhóm này ra vì hồi đó việc con bị KHÓA, không thao tác được nên không
+  // thể có tiến độ — đưa vào thống kê chỉ làm "Hiệu suất tiến độ" tụt oan. Nay khóa đó đã bỏ: nhân
+  // sự báo tiến độ và hoàn thành việc được ngay, nên loại ra thì ngược lại — công đã làm mà không
+  // được ghi nhận vào KPI.
+  const projectsTinhSoLieu = projects;
 
   // Gather all tasks assigned to this staff member recursively (WBS hierarchy style)
   const myAssignedTasks: ProjectTask[] = [];
@@ -74,8 +76,8 @@ export default function StatsDashboard({
     ? Math.round((onTimeCompleted.length / completedProjects.length) * 100) 
     : 100;
 
-  const activeProjects = projects.filter(p => p.trangThai === 'DANG_THUC_HIEN' || p.trangThai === 'TRE_TIEN_DO');
-  const delayedProjects = projects.filter(p => p.trangThai === 'TRE_TIEN_DO' || p.trangThai === 'HOAN_THANH_TRE_HAN');
+  const activeProjects = projects.filter(p => p.trangThai === 'DANG_THUC_HIEN' || dangTreHan(p));
+  const delayedProjects = projects.filter(p => dangTreHan(p) || p.trangThai === 'HOAN_THANH_TRE_HAN');
   
   // KPI trung bình tạm bỏ tính — KPI đang xây dựng trọng số, thẻ "KPI đội ngũ" hiển thị "Đang xây dựng"
   // thay vì con số (chị Trâm chốt 27/07/2026). Giữ lại chú thích để khi có công thức thì khôi phục.
@@ -101,7 +103,7 @@ export default function StatsDashboard({
     if (list.length <= 1) {
       // If a project has 0 or 1 task, count as 1 task representing the project itself.
       const isCompleted = p.trangThai === 'HOAN_THANH_DUNG_HAN' || p.trangThai === 'HOAN_THANH_TRE_HAN';
-      const isOverdue = p.trangThai === 'TRE_TIEN_DO' || p.trangThai === 'HOAN_THANH_TRE_HAN';
+      const isOverdue = dangTreHan(p) || p.trangThai === 'HOAN_THANH_TRE_HAN';
       calculatedTasksList.push({
         isCompleted,
         isOverdue,
@@ -110,7 +112,7 @@ export default function StatsDashboard({
     } else {
       list.forEach(t => {
         const isCompleted = t.isCompleted;
-        const isOverdue = !!t.overdueReason || (!t.isCompleted && (p.trangThai === 'TRE_TIEN_DO' || p.trangThai === 'HOAN_THANH_TRE_HAN'));
+        const isOverdue = !!t.overdueReason || (!t.isCompleted && (dangTreHan(p) || p.trangThai === 'HOAN_THANH_TRE_HAN'));
         const isOnTime = t.isCompleted && (p.trangThai === 'HOAN_THANH_DUNG_HAN' || !t.overdueReason);
         calculatedTasksList.push({
           isCompleted,
@@ -203,10 +205,13 @@ export default function StatsDashboard({
 
   const totalCompletedTasksCount = taskCompletedOnTime + taskCompletedLate;
   // Hiện trạng GÓI THẦU (dự án) — để vẽ biểu đồ tròn thứ hai; dùng cùng 4 nhóm với công việc
-  const projectPending = projects.filter(p => p.trangThai === 'DANG_THUC_HIEN').length;
+  // Hồ sơ mang dấu TRE_TIEN_DO nhưng ĐÃ qua mốc Phòng xong phần mình (chờ Ban lãnh đạo ký) thì
+  // KHÔNG còn tính là trễ — xem dangTreHan(). Nhóm đó dồn về "đang thực hiện" để 4 nhóm vẫn cộng
+  // lại đủ tổng số gói thầu, không bị hụt mất mấy hồ sơ đang chờ ký (chị Trâm 12/09/2026).
+  const projectOverdue = projects.filter(dangTreHan).length;
   const projectDoneOnTime = projects.filter(p => p.trangThai === 'HOAN_THANH_DUNG_HAN').length;
   const projectDoneLate = projects.filter(p => p.trangThai === 'HOAN_THANH_TRE_HAN').length;
-  const projectOverdue = projects.filter(p => p.trangThai === 'TRE_TIEN_DO').length;
+  const projectPending = projects.length - projectOverdue - projectDoneOnTime - projectDoneLate;
   const taskCompletionRate = totalCalculatedTasks > 0 ? Math.round((totalCompletedTasksCount / totalCalculatedTasks) * 100) : 0;
 
   return (

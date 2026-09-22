@@ -1,5 +1,6 @@
 import { Project } from '../types';
 import { soLanGuiTruocApp, tongSoLanGuiCDT } from './guiCDT';
+import { fmtDateVN } from './dateVN';
 
 // ===== BẢNG THỐNG KÊ DỰ ÁN ĐẤU THẦU (hồ sơ ISO) — chị Trâm, góp ý #13 =====
 // Dựng ĐÚNG mẫu sheet 3 "Bang thong ke du an - Ky 1" trong file
@@ -293,7 +294,7 @@ export const dungBangThongKeISO = (
 </table>
 <p class="ghichu">Phạm vi: KHÔNG tính gói thầu hạng mục ${HANG_MUC_LOAI_KHOI_BANG_ISO.join(' / ')} (theo mục tiêu ISO của Phòng Đấu thầu).<br>
 Ký hiệu: ✔ = 1 (gửi đúng hoặc sớm hạn cam kết) · ✘ = 0 (gửi trễ hạn) · để trống = không tính. Ô là SỐ nên cộng được — dòng TỔNG HỢP dùng công thức SUM, sửa ô nào thì tổng tự chạy lại.<br>
-Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}${tenNguoiXuat ? ` · Người xuất: ${tenNguoiXuat}` : ''}</p>
+Ngày xuất: ${fmtDateVN(new Date())}${tenNguoiXuat ? ` · Người xuất: ${tenNguoiXuat}` : ''}</p>
 </body></html>`;
 
   return { html, soHoSo: hoSo.length, soDong: soDongThan };

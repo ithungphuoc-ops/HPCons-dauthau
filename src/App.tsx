@@ -11,13 +11,15 @@ import ProjectForm from './components/ProjectForm';
 import HpConsLogo from './components/HpConsLogo';
 import StaffEditModal from './components/StaffEditModal';
 import TenderMindmap from './components/TenderMindmap';
-import KanbanBoard, { KANBAN_STEPS, KANBAN_L1_ONLY_FROM, deriveKanbanStep } from './components/KanbanBoard';
+import KanbanBoard, { KANBAN_STEPS, KANBAN_L1_ONLY_FROM, BUOC_XONG_PHAN_PHONG, dangTreHan, deriveKanbanStep } from './components/KanbanBoard';
 import NotificationFeed from './components/NotificationFeed';
 import MyTasksPanel, { DEFAULT_PROJECT_TASKS, taskDeadlineISO, taskHanText, todayISO, hoSoChoTPDuyet, laNuaNgayViec } from './components/MyTasksPanel';
 import StaffTaskResultPanel from './components/StaffTaskResultPanel';
-import SubtaskGantt, { DEFAULT_TASK_DAYS } from './components/SubtaskGantt';
+import SubtaskGantt from './components/SubtaskGantt';
+import { khoangKeHoachViecCon } from './utils/keHoachViecCon';
 import { AppLauncher } from './components/AppLauncher';
 import GiftPopup from './components/GiftPopup';
+import ProjectQuickView from './components/ProjectQuickView';
 import TextWithLinks from './components/TextWithLinks';
 import { Badge, TimelineProgress, EmptyState, AutoGrowTextarea } from './components/ui';
 import { updateTaskInTree, calculateProjectProgress, getTaskProgress, progressOfRound, weightIssue, weightSumAllRounds, soVongCoViec, tasksOfRound } from './utils/taskTree';
@@ -59,7 +61,6 @@ import {
   AlertTriangle,
   RefreshCw,
   Camera,
-  ExternalLink,
   History,
   LayoutGrid,
   Clock,
@@ -79,9 +80,13 @@ import ThongBaoNoiBoPanel from './components/ThongBaoNoiBoPanel';
 import TemplateMauPanel from './components/TemplateMauPanel';
 import DateInput from './components/DateInput';
 import { subscribeCollection, pushCollection, watchAuth, authEmailFor, signInWithHpcoreToken, signInAnonymouslyFb, signOutFb, fbAuth, projectIdDangChay, PROJECT_THAT } from './lib/firebase';
-import { maHienThi } from './lib/utils';
+import { maHienThi, maHoSo, nhanHoSo, dinhDangSo } from './lib/utils';
 import { reportActivity } from './lib/reportActivity';
 import { sandboxStaff, duAnNhap } from './data/sandboxData';
+import TienDoThietKePanel from './components/TienDoThietKePanel';
+import DanhMucDuAnPanel from './components/DanhMucDuAnPanel';
+import { tienDoThietKeNhap, danhMucDuAnNhap } from './data/sandboxData';
+import type { DuAnTong as DuAnTongItemApp } from './lib/duAnTongTypes';
 
 // ===== BẢN THỬ (chỉ chạy trên máy cá nhân) =====
 // Bật bằng cách thêm NEXT_PUBLIC_DEV_SANDBOX=1 vào .env.local (file này KHÔNG lên git).
@@ -128,6 +133,15 @@ const NHAN_CHE_DO_CLOUD = DEMO_WEB_DUOC_YEU_CAU ? 'BẢN DEMO' : 'Thử-cloud';
 
 // Hai chế độ dev đều KHÔNG đăng nhập SSO và đều dùng màn chọn vai trò của Bản thử.
 const DEV_CHON_VAI_TRO = DEV_SANDBOX || DEV_CLOUD_TEST;
+
+// Tiến độ thiết kế mẫu cho Bản thử — tính MỘT LẦN ở cấp module, không gọi trong JSX.
+// Gọi trong JSX sẽ sinh mảng mới mỗi lần render, làm effect trong TienDoThietKePanel chạy lại
+// liên tục (setState → render → mảng mới → effect → ...), treo màn hình.
+const TIEN_DO_TKE_BAN_THU = DEV_SANDBOX ? tienDoThietKeNhap() : undefined;
+const DANH_MUC_DU_AN_BAN_THU = DEV_SANDBOX ? danhMucDuAnNhap() : undefined;
+
+/** Tiền tố id của mục lấy từ Danh mục dự án (App Thông tin dự án) nhưng app này CHƯA có bản ghi. */
+const TIEN_TO_DANH_MUC = 'DM::';
 
 // Giờ Việt Nam dùng hàm chung `nowVN` trong src/utils/dateVN.ts (xem lý do cố định múi giờ ở đó).
 
@@ -217,7 +231,7 @@ export const getInitialsColor = (name: string) => {
 export const REPEAT_LABEL: Record<string, string> = {
   none: 'Không lặp lại', daily: 'Hàng ngày', weekly: 'Hàng tuần', monthly: 'Hàng tháng', yearly: 'Hàng năm',
 };
-const ymdOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+export const ymdOf = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 // Việc `t` có xảy ra vào ngày `cd` không (theo kiểu lặp lại; bắt đầu từ dueDate)?
 export function ptOccursOn(t: PersonalTask, cd: Date): boolean {
   const [by, bm, bd] = t.dueDate.split('-').map(Number);
@@ -236,6 +250,19 @@ export function ptOccursOn(t: PersonalTask, cd: Date): boolean {
     default: return ymdOf(cell) === t.dueDate; // none
   }
 }
+/**
+ * MỘT BUỔI CỤ THỂ đã xong chưa (chị Trâm báo lỗi 12/09/2026).
+ * Việc lặp lại đọc theo `doneDates` — đánh dấu riêng từng buổi; việc không lặp thì vẫn dùng cờ
+ * `done` như cũ nên dữ liệu cũ không đổi nghĩa.
+ * Trước đây mọi việc đều xét chung một cờ `done`, nên bấm xong buổi tháng này là các buổi tháng
+ * trước cũng bị gạch ngang theo.
+ */
+export const ptBuoiDaXong = (t: PersonalTask, ngayYMD?: string): boolean => {
+  if ((t.repeat || 'none') === 'none') return !!t.done;
+  if (!ngayYMD) return false;
+  return !!t.doneDates?.includes(ngayYMD);
+};
+
 // Ngày xảy ra kế tiếp (YYYY-MM-DD) tính từ fromYMD; quét tối đa 400 ngày; null nếu hết.
 export function ptNextOccurrence(t: PersonalTask, fromYMD: string): string | null {
   if ((t.repeat || 'none') === 'none') return t.dueDate;
@@ -308,8 +335,13 @@ export const nhanLevelSo = (role?: string): string =>
 //   · L1 (Trưởng phòng/Phó phòng) và L4 (Ban giám đốc, "cho xem hết") → mặc định 'ALL'.
 //   · L2/L3 giữ 'ACTIVE' cho danh sách gọn, đúng phần việc đang phải làm.
 // Người dùng vẫn tự bấm đổi được; đây chỉ là điểm khởi đầu.
-export const macDinhLocTrangThai = (role?: string): 'ACTIVE' | 'DONE' | 'ALL' =>
-  (role === 'BOOD' || role === 'VIEWER') ? 'ALL' : 'ACTIVE';
+// ⚠ ĐÃ ĐỔI 12/09/2026 — chị Trâm: "luôn mặc định giúp c là hiển thị ở tab đang làm nhé em, dù có
+// bấm F5". Nay MỌI cấp đều mở app lên ở "Đang làm": đó là việc cần xử lý hôm nay, còn hồ sơ đã
+// xong thì chỉ tra khi cần. Luật cũ (17/08/2026) để L1 và L4 mặc định 'ALL' cho thấy cả lịch sử,
+// nhưng thực tế danh sách bị loãng ngay từ lúc mở app.
+// Người dùng vẫn tự bấm đổi sang "Đã xong" / "Tất cả" bất cứ lúc nào — đây chỉ là điểm khởi đầu,
+// và vì không lưu lựa chọn nên F5 là quay về "Đang làm", đúng ý chị.
+export const macDinhLocTrangThai = (_role?: string): 'ACTIVE' | 'DONE' | 'ALL' => 'ACTIVE';
 
 // ===== CHỐT TIẾN ĐỘ PHÒNG 100% TRƯỚC KHI ĐI TIẾP =====
 // Liệt kê các bước mà khi RỜI khỏi bước đó để TIẾN lên bước kế tiếp, hồ sơ bắt buộc phải có
@@ -396,7 +428,9 @@ export const allAssigneeIds = (p: { thucHienId?: string; thucHienIds?: string[];
   Array.from(new Set([p.thucHienId, ...(p.thucHienIds || []), ...taskAssigneeIds(p.tasks)].filter(Boolean))) as string[];
 
 // ===== MỌI "hạn" bám 1 NGUỒN duy nhất = mốc kết thúc VIỆC CON (sơ đồ Gantt) =====
-type DeadlineFields = { ngayBatDau: string; tasks?: ProjectTask[]; soNgayThucHien?: number; soNgayDuyetTP?: number; soNgayDuyetBLD?: number; soNgayDuKien?: number; vongHienTai?: number };
+// `delayLogs` nằm trong đây vì hạn Bộ phận nay CỘNG cả ngày gia hạn theo phiếu của vòng đang chạy
+// (chị Trâm chốt 12/09/2026 — xem ngayGiaHanTheoPhieu bên dưới).
+type DeadlineFields = { ngayBatDau: string; tasks?: ProjectTask[]; soNgayThucHien?: number; soNgayDuyetTP?: number; soNgayDuyetBLD?: number; soNgayDuKien?: number; vongHienTai?: number; delayLogs?: DelayLog[] };
 
 // Ngày BẮT ĐẦU của VÒNG hiện tại (chị Trâm báo lỗi 27/07/2026).
 // Vòng 1 = ngày bắt đầu dự án. Vòng ≥ 2 (hồ sơ bị CĐT trả về làm lại) = ngày bắt đầu SỚM NHẤT
@@ -418,6 +452,37 @@ export const getRoundStart = (p: DeadlineFields): Date => {
 // TÍNH CẢ NGÀY ĐẦU (chị Trâm báo lỗi 25/07/2026): việc bắt đầu 25/07 làm 3 ngày thì NGÀY CUỐI là 27/07,
 // không phải 28/07. Trước đây hàm này cộng thẳng `days` (bỏ ngày đầu) nên hạn tổng bị lệch 1 ngày so với
 // sơ đồ Gantt và ô "Bộ phận thực hiện" — cùng một form mà Gantt ghi 20/07→27/07 còn hạn lại ra 29/07.
+/**
+ * SỐ NGÀY GIA HẠN THEO PHIẾU của VÒNG đang chạy (chị Trâm chốt 12/09/2026 — vá bug chồng chéo).
+ *
+ * VÌ SAO CÓ HÀM NÀY: trước đây app có HAI nguồn sự thật về hạn, không nguồn nào biết nguồn nào —
+ *   (A) getExecEnd/getDeptDeadline/getTenderDeadline: tính lại từ việc con mỗi lần vẽ, KHÔNG biết
+ *       tới phiếu dời hạn → Dashboard và Kanban vẫn báo QUÁ HẠN dù đã đăng ký dời tiến độ;
+ *   (B) trường lưu `ngayHoanThanhDuKienHienTai`: cộng theo phiếu → Gantt và danh sách lại ra ngày khác.
+ * Sửa việc con thì (A) nhích, ghi thêm phiếu thì (B) nhích nữa ⇒ cộng hai lần.
+ * Nay gộp phiếu vào chính (A) nên chỉ còn MỘT nguồn, mọi màn hình tự khớp nhau.
+ *
+ * HAI CÁCH DỜI TIẾN ĐỘ, CHỈ ĐƯỢC CHỌN MỘT (chị Trâm chốt):
+ *   1. Quản lý SỬA việc con làm hạn dài ra → phiếu ghi lý do nhưng `soNgayLech = 0`, vì phần ngày
+ *      tăng thêm đã nằm sẵn trong kế hoạch việc con, hàm getExecEnd tự thấy.
+ *   2. Quản lý KHÔNG sửa việc con, chỉ XIN GIA HẠN N ngày bằng phiếu (việc của Quản lý còn kẹt,
+ *      việc nhân viên thì không) → `soNgayLech = N`, hàm này cộng đúng N ngày vào hạn Bộ phận.
+ * Làm cả hai là cộng trùng — PullBackDelayModal chặn sẵn, chỉ cho đi một đường.
+ *
+ * CHỈ CỘNG PHIẾU CỦA VÒNG HIỆN TẠI: mở vòng mới thì hạn tính lại từ bộ việc con của vòng đó,
+ * cộng tiếp phiếu vòng cũ là hồ sơ tự nhảy hạn thêm đúng số ngày đã xin ở vòng trước.
+ */
+export const ngayGiaHanTheoPhieu = (p: DeadlineFields): number => {
+  const vong = Math.max(1, p.vongHienTai || 1);
+  return (p.delayLogs || [])
+    .filter(l => Math.max(1, l.vong || 1) === vong)
+    // CHỈ cộng phiếu của BỘ PHẬN. Phiếu của Trưởng phòng (khau === 'PHONG') chỉ để ghi lại lý do
+    // tăng số ngày kiểm tra — số ngày đó đã nằm trong soNgayDuyetTP, cộng ở đây nữa là tính trùng
+    // (chị Trâm chốt 15/09/2026). Phiếu cũ không có trường `khau` đều là phiếu Bộ phận.
+    .filter(l => l.khau !== 'PHONG')
+    .reduce((s, l) => s + Math.max(0, l.soNgayLech || 0), 0);
+};
+
 export const getExecEnd = (p: DeadlineFields): Date => {
   const DAY = 24 * 60 * 60 * 1000;
   const vong = Math.max(1, p.vongHienTai || 1);
@@ -425,20 +490,26 @@ export const getExecEnd = (p: DeadlineFields): Date => {
   // CHỈ tính việc con của VÒNG hiện tại. Vòng 1 gồm cả việc con dữ liệu cũ không ghi `vong`
   // (vongCuaViec coi thiếu = 1) nên hồ sơ 1 vòng chạy y như trước. Vòng ≥ 2 bỏ qua việc con vòng cũ.
   const list = tasksOfRound(p.tasks, vong);
-  if (list.length === 0) {
-    const execDays = p.soNgayThucHien ?? Math.max(1, (p.soNgayDuKien ?? 3) - 2);
-    return new Date(start.getTime() + Math.max(0, execDays - 1) * DAY);
+  // NGÀY GIA HẠN THEO PHIẾU cộng vào ĐÂY — tức vào hạn BỘ PHẬN, đúng lời chị Trâm: "giấy phép đó
+  // chỉ tính cho tiến độ bộ phận". Hạn Phòng và hạn thầu tự dịch theo vì hai hạn đó xây trên hạn
+  // Bộ phận; còn số ngày Trưởng phòng kiểm tra (soNgayDuyetTP) thì chị tự tăng/giảm độc lập, không
+  // đụng gì tới phiếu gia hạn của Quản lý.
+  const giaHan = ngayGiaHanTheoPhieu(p) * DAY;
+
+  // ===== MỐC KẾT THÚC KẾ HOẠCH LẤY TỪ MỘT NGUỒN DUY NHẤT (chị Trâm báo 15/09/2026) =====
+  // "Tại sao không bao giờ khớp em nhỉ."
+  // Trước đây đoạn này tự duyệt việc CẤP 1 với đơn vị ngày tròn, trong khi form hồ sơ lại lấy số
+  // ngày Bộ phận từ `khoangKeHoachViecCon` — hàm xét cả phần cấp 2 và có luật nửa ngày. Cùng một
+  // kế hoạch mà hai bên lệch nhau một ngày, nên "Hạn hoàn thành Phòng (tự tính)" trừ "Hạn hiện
+  // tại (đã bù lệch)" không bao giờ ra đúng tổng số ngày đã xin gia hạn.
+  // Nay dùng CHUNG `khoangKeHoachViecCon`; chỉ khi kế hoạch chưa khai ngày nào (hàm trả null) mới
+  // rơi về cách suy theo số ngày thực hiện.
+  const khoang = khoangKeHoachViecCon(list, vong, ymdOf(start));
+  if (khoang) {
+    return new Date(new Date(khoang.maxDate).getTime() + giaHan);
   }
-  let cursor = start.getTime();   // ngày làm việc tiếp theo còn trống
-  let maxEnd = cursor;
-  for (const t of list) {
-    const ts = t.ngayBatDau ? new Date(t.ngayBatDau).getTime() : cursor;
-    const days = t.soNgay && t.soNgay > 0 ? t.soNgay : DEFAULT_TASK_DAYS;
-    const end = ts + Math.max(0, days - 1) * DAY;  // NGÀY CUỐI làm việc
-    cursor = end + DAY;                            // việc kế tiếp bắt đầu ngày hôm sau
-    if (end > maxEnd) maxEnd = end;
-  }
-  return new Date(maxEnd);
+  const execDays = p.soNgayThucHien ?? Math.max(1, (p.soNgayDuKien ?? 3) - 2);
+  return new Date(start.getTime() + Math.max(0, execDays - 1) * DAY + giaHan);
 };
 // Hạn PHÒNG (chốt khi TP duyệt xong) = mốc kết thúc việc con + số ngày TP kiểm tra. KHÔNG tính BLĐ.
 export const getDeptDeadline = (p: DeadlineFields): Date => {
@@ -451,6 +522,111 @@ export const getTenderDeadline = (p: DeadlineFields): Date => {
   const d = getDeptDeadline(p);
   d.setDate(d.getDate() + (p.soNgayDuyetBLD ?? 1));
   return d;
+};
+
+/**
+ * TRỄ Ở KHÂU NÀO — Bộ phận hay Phòng (chị Trâm 15/09/2026: "chưa thấy ghi lại lịch sử cập nhật
+ * tiến độ bộ phận trễ hay do phòng trễ").
+ *
+ * App vốn chỉ có ô `lyDo` gõ tay trong phiếu dời hạn và ô `nguyenNhanTreHan` — đọc lại không biết
+ * khâu nào gây chậm, muốn tổng kết "Phòng chậm mấy lần, Bộ phận chậm mấy lần" thì phải ngồi đọc
+ * từng dòng chữ. Nhưng dữ liệu để trả lời câu đó app CÓ SẴN, không cần bắt ai khai thêm:
+ *
+ *   · Hạn BỘ PHẬN = getExecEnd  — mốc việc con phải xong.
+ *   · Hạn PHÒNG   = hạn Bộ phận + số ngày Trưởng phòng kiểm tra.
+ *
+ * Nên chỉ cần soi tiến độ tại hai mốc đó là biết lỗi thuộc khâu nào:
+ *   'BO_PHAN'  — quá hạn Bộ phận mà việc con chưa xong 100% ⇒ Bộ phận giữ hồ sơ quá lâu.
+ *   'PHONG'    — Bộ phận đã xong 100%, nhưng quá hạn Phòng mà Trưởng phòng duyệt chưa đủ 100%
+ *                ⇒ hồ sơ nằm chờ ở bàn Phòng.
+ *   'CHUA_TRE' — còn trong hạn.
+ *
+ * CỐ Ý KHÔNG xét mốc gửi Chủ đầu tư (Bước 5): quãng chờ Ban lãnh đạo ký không thuộc trách nhiệm
+ * của Phòng — cùng lý do đã chuyển mốc hoàn thành về Bước 4 hôm 12/09.
+ */
+/**
+ * ĐÓNG HỒ SƠ — MỘT LUẬT DUY NHẤT CHO MỌI ĐƯỜNG ĐI (chị Trâm chốt 19/09/2026)
+ *
+ * "Ngày đóng hồ sơ tính từ lúc Bước 3 kéo qua Bước 4, coi như hạn thầu đã xong."
+ *
+ * Có HAI đường đưa hồ sơ sang Bước 4: kéo thẻ Kanban, và Trưởng phòng duyệt tiến độ Phòng đủ 100%
+ * rồi hệ thống tự đẩy. Trước đây mỗi đường làm một kiểu — đường kéo thẻ thì chốt ngày và xét
+ * đúng/trễ, còn đường duyệt tiến độ chỉ gán cứng 'HOÀN THÀNH ĐÚNG HẠN' mà KHÔNG chốt ngày, cũng
+ * KHÔNG so với hạn nào. Hệ quả: hồ sơ đóng trễ vẫn được ghi đúng hạn, KPI cuối kỳ chấm sai.
+ * Gom về đây để hai đường không thể nói hai kiểu.
+ */
+export const tinhDongHoSo = (p: DeadlineFields & {
+  ngayHoanThanhThucTe?: string; hanHenCDT?: string;
+}): { ngayDong: string; benchmark: string; treHan: boolean } => {
+  const ngayDong = p.ngayHoanThanhThucTe || ymdOf(new Date());
+  // Mốc so sánh: ưu tiên ngày ĐÃ HẸN với Chủ đầu tư (cam kết ngoài), không có thì lấy hạn thầu.
+  const benchmark = p.hanHenCDT || ymdOf(getTenderDeadline(p));
+  return { ngayDong, benchmark, treHan: !!benchmark && ngayDong > benchmark };
+};
+
+export type KhauTre = 'BO_PHAN' | 'PHONG' | 'CHUA_TRE';
+export const khauDangTre = (
+  p: DeadlineFields & { tienDoBoPhan?: number; tienDoPhong?: number },
+  moc: Date = new Date(),
+): KhauTre => {
+  const homNay = ymdOf(moc);
+  const hanBoPhan = ymdOf(getExecEnd(p));
+  const hanPhong = ymdOf(getDeptDeadline(p));
+  const bp = p.tienDoBoPhan ?? 0;
+  const ph = p.tienDoPhong ?? 0;
+
+  // Bộ phận chưa xong mà đã quá hạn của mình → lỗi nằm ở khâu thực hiện.
+  if (bp < 100 && homNay > hanBoPhan) return 'BO_PHAN';
+  // Bộ phận xong rồi, quá hạn Phòng mà chưa duyệt đủ → hồ sơ đang nằm chờ ở cấp Phòng.
+  if (bp >= 100 && ph < 100 && homNay > hanPhong) return 'PHONG';
+  return 'CHUA_TRE';
+};
+
+/** Nhãn tiếng Việt của khâu trễ — dùng chung cho bảng lịch sử, khung xem nhanh và nhật ký. */
+// CÂU CHỮ PHẢI NÓI RÕ ĐANG NÓI VỀ THỜI ĐIỂM NÀO (chị Trâm 19/09/2026: "cái này em ghi là sao nhỉ,
+// chị không hiểu"). Cột này nằm ngay cạnh cột "Khâu" — mà "Khâu" trả lời "phiếu dời hạn của ai",
+// còn cột này trả lời "lúc bấm lập phiếu thì hồ sơ đang kẹt ở đâu". Hai câu khác hẳn nhau nhưng
+// chữ cũ ("Bộ phận trễ" / "Phòng duyệt trễ") nghe gần giống nhau nên đọc ngang qua là lẫn: dòng
+// phiếu của Bộ phận mà ô bên cạnh ghi "Phòng duyệt trễ", không hiểu rốt cuộc ai trễ.
+// Nay thêm chữ "Đang kẹt ở …" để thấy ngay đây là ẢNH CHỤP TÌNH TRẠNG, không phải quy trách nhiệm.
+export const nhanKhauTre = (k?: KhauTre): { chu: string; mau: string } => {
+  if (k === 'BO_PHAN') return { chu: 'Đang kẹt ở Bộ phận', mau: 'bg-brand-warning/15 text-brand-warning' };
+  if (k === 'PHONG') return { chu: 'Đang kẹt ở Phòng', mau: 'bg-brand-danger/15 text-brand-danger' };
+  if (k === 'CHUA_TRE') return { chu: 'Còn trong hạn', mau: 'bg-brand-success/15 text-brand-success' };
+  return { chu: '—', mau: 'bg-slate-200/60 text-slate-500 dark:bg-dark-elevated dark:text-slate-400' };
+};
+
+/**
+ * CHI TIẾT TỪNG VÒNG của một hồ sơ (chị Trâm chốt 27/07/2026) — để đo hiệu suất Phòng Đấu thầu:
+ * mỗi lần bị CĐT trả về làm lại là 1 vòng, tách riêng khoảng thời gian + ngày gửi CĐT + tiến độ
+ * của đúng vòng đó, không gộp chung. Mốc thời gian mỗi vòng đọc từ việc con mang trường `vong`
+ * (dùng lại getExecEnd round-aware) và nhật ký gửi CĐT (guiCDTLogs).
+ *
+ * ĐƯA RA MODULE SCOPE 15/09/2026 (chị Trâm: "muốn coi lịch sử các vòng thì sao em"): hàm này vốn
+ * nằm trong component App nên CHỈ file xuất Excel dùng được — trên màn hình không có chỗ nào xem.
+ * Tách ra để khung xem nhanh gọi chung đúng một cách tính, khỏi dựng lại bản thứ hai rồi lệch số.
+ */
+export type ChiTietVong = { vong: number; batDau: string; ketThuc: string; soNgay: number | null; ngayGui?: string; tienDo: number };
+export const chiTietTheoVong = (p: Project): ChiTietVong[] => {
+  const soVong = Math.max(1, soVongCoViec(p.tasks), p.guiCDTLogs?.length || 0, p.vongHienTai || 1);
+  const DAY = 24 * 60 * 60 * 1000;
+  const out: { vong: number; batDau: string; ketThuc: string; soNgay: number | null; ngayGui?: string; tienDo: number }[] = [];
+  for (let r = 1; r <= soVong; r++) {
+    const viecVong = tasksOfRound(p.tasks, r);
+    const coNgay = viecVong.filter(t => t.ngayBatDau);
+    let batDau = '—', ketThuc = '—', soNgay: number | null = null;
+    if (coNgay.length) {
+      const startMs = Math.min(...coNgay.map(t => new Date(t.ngayBatDau!).getTime()));
+      const startYmd = ymdOf(new Date(startMs));
+      const end = getExecEnd({ ngayBatDau: startYmd, tasks: p.tasks, soNgayThucHien: p.soNgayThucHien, soNgayDuyetTP: p.soNgayDuyetTP, vongHienTai: r });
+      batDau = fmtDateVN(startYmd);
+      ketThuc = fmtDateVN(ymdOf(end));
+      soNgay = Math.max(1, Math.round((end.getTime() - startMs) / DAY) + 1);
+    }
+    const gui = (p.guiCDTLogs || []).find(g => g.lan === r);
+    out.push({ vong: r, batDau, ketThuc, soNgay, ngayGui: gui?.ngay, tienDo: progressOfRound(p.tasks, r) });
+  }
+  return out;
 };
 
 // Cụm nút lọc trạng thái Đang làm / Đã xong / Tất cả — DÙNG CHUNG cho Dashboard,
@@ -880,7 +1056,18 @@ export default function App() {
   // Công việc đang mở modal "CĐT điều chỉnh"
   const [cdtRevisionProject, setCdtRevisionProject] = useState<Project | null>(null);
   // Kéo hồ sơ về Bước 1: hộp hỏi "có ảnh hưởng hạn nộp không?" (Stage 1). Nếu có → mở popup dời hạn (Stage 2).
+  // KHUNG XEM NHANH HỒ SƠ (yêu cầu Tổng công ty, chị Trâm chuyển 12/09/2026): bấm hồ sơ ở
+  // Dashboard / Kanban / Gantt thì bật popup ngay tại chỗ, KHÔNG nhảy về tab Báo Cáo Tiến Độ nữa.
+  const [quickViewId, setQuickViewId] = useState<string | null>(null);
+  // Khung xem nhanh đang ở CHẾ ĐỘ SỬA hay chỉ xem (chị Trâm chốt 12/09/2026: popup phải sửa và
+  // lưu được luôn). Chế độ sửa nhúng chính ProjectForm nên mọi ràng buộc nghiệp vụ giữ nguyên.
+  const [quickViewEditing, setQuickViewEditing] = useState(false);
   const [pullBackProject, setPullBackProject] = useState<Project | null>(null);
+  /**
+   * Bước mà hồ sơ đang đứng lúc bấm kéo về — hộp thoại đổi nội dung theo bước (chị Trâm chốt
+   * 19/09/2026): từ Bước 5 thì lựa chọn là "tạo vòng mới", từ Bước 2-3-4 thì là "có đổi tiến độ".
+   */
+  const [pullBackFromStep, setPullBackFromStep] = useState(1);
   const [pullBackDelayProject, setPullBackDelayProject] = useState<Project | null>(null);
   // Bảng phân bổ đang mở ở chế độ nào: true = CÓ dời hạn, false = giữ nguyên hạn, chỉ chia lại
   // việc con (chị Trâm chốt 29/07/2026 — xem chú thích trong PullBackDelayModal).
@@ -908,6 +1095,9 @@ export default function App() {
   // chữ và nút không theo app, đọc lên như trang lạ. Nay dùng hộp riêng giữa màn hình, cùng kiểu với
   // hộp "kéo về Bước 1 — có thay đổi tiến độ không".
   const [xacNhanQuaB3, setXacNhanQuaB3] = useState<Project | null>(null);
+  // Hộp hỏi lý do trễ hạn khi đóng hồ sơ ở Bước 4 (chị Trâm chốt 19/09/2026).
+  const [hoiLyDoTreHan, setHoiLyDoTreHan] = useState<{ project: Project; fromStep: number; toStep: number; benchmark: string; khau: 'BO_PHAN' | 'PHONG' } | null>(null);
+  const [lyDoTreHanTam, setLyDoTreHanTam] = useState('');
   // ===== BẤM THÔNG BÁO "ĐƯỢC CHỌN LÀM QUẢN LÝ" LÀ VÀO THẲNG FORM CÔNG VIỆC MỚI (góp ý #87) =====
   // Chị Trâm chốt 18/08/2026: "khi quản lý nhận đc thông báo đc chọn làm quản lý dự án A, lúc click vô
   // e thẳng tới trường công việc mới + chọn đúng tên dự án đó sẵn cho họ tạo luôn, còn thao tác thủ
@@ -1120,11 +1310,11 @@ export default function App() {
       // Find all projects assigned to this staff member (as coordinator or primary)
       const memberProjects = projList.filter(p => p.thucHienId === member.id || p.thucHienIds?.includes(member.id));
       
-      const activeCount = memberProjects.filter(p => p.trangThai === 'DANG_THUC_HIEN' || p.trangThai === 'TRE_TIEN_DO').length;
+      const activeCount = memberProjects.filter(p => p.trangThai === 'DANG_THUC_HIEN' || dangTreHan(p)).length;
       
       const completedList = memberProjects.filter(p => p.trangThai === 'HOAN_THANH_DUNG_HAN' || p.trangThai === 'HOAN_THANH_TRE_HAN');
       const onTimeCompleted = memberProjects.filter(p => p.trangThai === 'HOAN_THANH_DUNG_HAN');
-      const overdueList = memberProjects.filter(p => p.trangThai === 'TRE_TIEN_DO');
+      const overdueList = memberProjects.filter(p => dangTreHan(p));
       const lateCompletedList = memberProjects.filter(p => p.trangThai === 'HOAN_THANH_TRE_HAN');
 
       // On-time rate calculation
@@ -1334,7 +1524,7 @@ export default function App() {
       // đó (sync effect bên dưới) cũng sẽ đẩy ghi đè HÀNG LOẠT hồ sơ cũ lên Firestore chỉ vì lệch
       // chữ hoa/thường, kể cả hồ sơ người khác đang sửa (rủi ro mất dữ liệu). Chuẩn hóa CHỈ ở lớp
       // HIỂN THỊ (hàm maHienThi ở dưới) — không đụng vào giá trị thật trong state/lưu trữ.
-      const sorted = [...items].sort((a, b) => maHienThi(a.projectId).localeCompare(maHienThi(b.projectId)));
+      const sorted = [...items].sort((a, b) => maHoSo(a).localeCompare(maHoSo(b)));
       lastRemoteProjects.current = JSON.stringify(sorted);
       setProjects(sorted);
     }, baoLoiCloud);
@@ -1497,12 +1687,20 @@ export default function App() {
       const todayYMD = ymdOf(new Date());
       const batch: { id: string; key: string; text: string }[] = [];
       personalTasks.forEach(t => {
-        if (t.done || t.ownerId !== currentUser.staffId || !t.dueDate) return;
+        if (t.ownerId !== currentUser.staffId || !t.dueDate) return;
         const done = new Set(migratedKeys(t));
         const repeating = (t.repeat || 'none') !== 'none';
         // Lần xảy ra đang xét: không lặp = dueDate; lặp = lần kế tiếp >= hôm nay
         const occ = repeating ? ptNextOccurrence(t, todayYMD) : t.dueDate;
         if (!occ) return;
+        // ĐÃ XONG thì thôi nhắc — nhưng xét theo ĐÚNG BUỔI sắp tới, không theo cờ chung.
+        //
+        // ĐÂY CHÍNH LÀ LÝ DO CHUÔNG IM (chị Trâm báo 12/09/2026: "không thấy có thông báo nhắc hẹn
+        // của lịch trên thông báo luôn"). Điều kiện cũ đặt `t.done` ngay đầu vòng lặp: lịch lặp lại
+        // chỉ cần bấm xong MỘT buổi là cờ chung bật lên, thế là toàn bộ chuỗi bị loại khỏi bộ máy
+        // nhắc VĨNH VIỄN — những buổi tháng sau không bao giờ được nhắc nữa.
+        // Hai lỗi chị báo thật ra là một gốc: cờ `done` dùng chung cho cả chuỗi lặp.
+        if (ptBuoiDaXong(t, occ)) return;
         const dm = occ.split('-').reverse().join('-');
         const push = (key: string, text: string) => { if (!done.has(key)) batch.push({ id: t.id, key, text }); };
         // Mốc "tới hạn": CÓ giờ hẹn = đúng giờ:phút; CHỈ có ngày = 8h00 sáng ngày hẹn.
@@ -1557,7 +1755,8 @@ export default function App() {
       const now = Date.now();
       projects.forEach(p => {
         if (p.loaiBanGhi === 'DU_AN') return;          // dự án cha không có việc con
-        if (hoSoChoTPDuyet(p)) return;                 // kế hoạch chưa được TP duyệt (kể cả vòng mới) thì chưa nhắc
+        // KẾ HOẠCH CHỜ TP DUYỆT VẪN NHẮC HẠN (chị Trâm chốt 12/09/2026): từ nay nhân sự được làm
+        // và báo tiến độ ngay khi có việc, nên im lặng không nhắc hạn là bỏ rơi đúng nhóm việc đó.
         if (p.trangThai === 'HOAN_THANH_DUNG_HAN' || p.trangThai === 'HOAN_THANH_TRE_HAN') return;
         const hanGoi = p.ngayHoanThanhDuKienHienTai || p.ngayHoanThanhDuKienGoc;
         const walk = (list?: ProjectTask[]) => (list || []).forEach(t => {
@@ -1605,9 +1804,9 @@ export default function App() {
           // Bỏ chữ "còn nửa ngày": hạn tính tới HẾT NGÀY nên đúng ngày hạn vẫn còn giờ làm,
           // nói "nửa ngày" là tự đặt ra một mốc không có trong quy định.
           if (now >= moc1 && now < moc2) {
-            nhan(`⏰ Còn 1 ngày: việc "${t.name}" (${p.hangMuc} — ${p.tenDuAn}) tới hạn ngày ${hanVN}${gioHanChuan ? ` lúc ${gioHanChuan}` : ''}.`);
+            nhan(`⏰ Còn 1 ngày: việc "${t.name}" (${p.hangMuc} | ${p.tenDuAn}) tới hạn ngày ${hanVN}${gioHanChuan ? ` lúc ${gioHanChuan}` : ''}.`);
           } else if (now >= moc2 && now < hanMs + 2 * DAY) {
-            nhan(`⏰ Đến hạn hôm nay: việc "${t.name}" (${p.hangMuc} — ${p.tenDuAn}) phải xong trước ${gioHanChu} ngày ${hanVN}.`);
+            nhan(`⏰ Đến hạn hôm nay: việc "${t.name}" (${p.hangMuc} | ${p.tenDuAn}) phải xong trước ${gioHanChu} ngày ${hanVN}.`);
           }
         });
         walk(p.tasks);
@@ -1642,7 +1841,18 @@ export default function App() {
     setNewPtTitle(''); setNewPtNote(''); setNewPtTime(''); setNewPtRepeat('none');
     triggerToast('Đã thêm lịch hẹn — hệ thống sẽ nhắc trên chuông khi tới hạn.');
   };
-  const togglePersonalDone = (id: string) => setPersonalTasks(prev => prev.map(t => t.id === id ? { ...t, done: !t.done } : t));
+  // Đánh dấu xong / bỏ đánh dấu MỘT BUỔI (chị Trâm báo lỗi 12/09/2026).
+  // Việc lặp lại: thêm/bớt đúng ngày đó trong doneDates, các buổi khác không đụng tới.
+  // Việc không lặp: vẫn lật cờ `done` như cũ.
+  const togglePersonalDone = (id: string, ngayYMD?: string) => setPersonalTasks(prev => prev.map(t => {
+    if (t.id !== id) return t;
+    if ((t.repeat || 'none') === 'none') return { ...t, done: !t.done };
+    const ngay = ngayYMD || t.dueDate;
+    const list = t.doneDates || [];
+    return list.includes(ngay)
+      ? { ...t, doneDates: list.filter(d => d !== ngay) }
+      : { ...t, doneDates: [...list, ngay] };
+  }));
   const deletePersonalTask = (id: string) => setPersonalTasks(prev => prev.filter(t => t.id !== id));
   // Yêu cầu xóa 1 việc lịch tại NGÀY occ (YYYY-MM-DD). Lặp lại → hỏi phạm vi; không lặp → xác nhận thường.
   const requestDeletePersonalTask = (t: PersonalTask, occ: string) => {
@@ -1781,7 +1991,7 @@ export default function App() {
     if (!currentUser) return;
     if (currentUser.role === 'VIEWER' && !VIEWER_TABS.includes(activeTab)) {
       setActiveTab('DASHBOARD');
-    } else if (currentUser.role === 'STAFF' && !['DASHBOARD', 'HISTORY', 'CALENDAR', 'TEMPLATES'].includes(activeTab)) {
+    } else if (currentUser.role === 'STAFF' && !['DASHBOARD', 'HISTORY', 'CALENDAR', 'TEMPLATES', 'DEPTLINKS'].includes(activeTab)) {
       setActiveTab('DASHBOARD');
     } else if (currentUser.role === 'MANAGER' && activeTab === 'SYSTEM') {
       setActiveTab('DASHBOARD');
@@ -1909,8 +2119,35 @@ export default function App() {
   };
 
   // Handle saving project (both Add and Edit)
+  // Bản ĐÃ LƯU chưa có việc con nào thuộc vòng đang chạy = vòng vừa được mở, lần lưu này là LẬP
+  // KẾ HOẠCH cho vòng mới chứ không phải sửa kế hoạch đang có. Dùng chung cho cả cửa "chờ TP duyệt
+  // lại" ở đây và cửa "bắt khai phiếu dời tiến độ" trong ProjectForm — hai nơi phải hiểu giống nhau.
+  const laLanLapKeHoachVongMoi = (banDaLuu: Project): boolean => {
+    const vong = Math.max(1, banDaLuu.vongHienTai || 1);
+    if (vong <= 1) return false;                       // vòng 1 thì không có "vòng trước" để lẫn
+    return !(banDaLuu.tasks || []).some(t => Math.max(1, t.vong || 1) === vong);
+  };
+
   const handleSaveProject = (savedProject: Project) => {
     let updated: Project[];
+
+    // ===== CHỌN DỰ ÁN TỪ DANH MỤC MÀ APP CHƯA CÓ → TẠO BẢN GHI DỰ ÁN CHA TRƯỚC =====
+    // (chị Trâm chốt 19/09/2026 — xem ghi chú ở `parentProjects`.)
+    // Mục lấy từ Danh mục chỉ là bản chiếu để hiện trong ô chọn, chưa phải hồ sơ thật. Gắn thẳng
+    // công việc vào id ảo đó thì cây dự án mất gốc: Kanban/Gantt tra `duAnChaId` sẽ không thấy ai.
+    // Nên tạo hồ sơ cha thật NGAY TẠI ĐÂY, rồi trỏ công việc vào id thật.
+    let duAnChaMoi: Project | null = null;
+    if (savedProject.duAnChaId?.startsWith(TIEN_TO_DANH_MUC)) {
+      const mau = parentProjects.find(x => x.id === savedProject.duAnChaId);
+      if (mau) {
+        duAnChaMoi = { ...mau, id: `P${Date.now()}`, loaiBanGhi: 'DU_AN' as const };
+        savedProject = { ...savedProject, duAnChaId: duAnChaMoi.id };
+      } else {
+        // Không tra được mẫu (danh mục vừa đổi giữa chừng) — bỏ liên kết còn hơn trỏ vào id ảo.
+        savedProject = { ...savedProject, duAnChaId: undefined };
+      }
+    }
+
     const old = projects.find(p => p.id === savedProject.id);
     const exists = !!old;
 
@@ -1924,11 +2161,73 @@ export default function App() {
       } else if (!exists) {
         savedProject.tpDaDuyet = false;
       } else if (currentUser?.role === 'MANAGER' && old &&
-                 savedProject.ngayHoanThanhDuKienGoc > old.ngayHoanThanhDuKienGoc) {
-        // Quản lý sửa qua form làm hạn tổng bị lùi xa hơn đã báo → chờ TP duyệt lại.
-        // Hạn thật sự bị đẩy ra nên đây là DELAY thật.
+                 // ===== VÒNG MỚI KHÔNG CÓ CHUYỆN "DỜI HẠN" (chị Trâm chốt 19/09/2026) =====
+                 // "Vòng mới tính là làm lại báo giá, không còn liên quan tới tiến độ của vòng cũ
+                 //  nữa em, cho nên nó như là 1 công việc lặp lại từ đầu rồi, thì làm gì còn dời hạn."
+                 // Lần lưu ĐẦU TIÊN của một vòng mới: bản đã lưu chưa có việc con nào thuộc vòng đó,
+                 // nên hạn "cũ" đọc ra vẫn là hạn của vòng trước. Đem so với lịch vòng mới thì ngày
+                 // nào cũng ra "trễ" — đúng cảnh chị Trâm thấy "+6n · 1 phiếu" ở vòng 2.
+                 !laLanLapKeHoachVongMoi(old) &&
+                 // HAI VẾ CÙNG MỘT NGUỒN (chị Trâm báo lỗi 16/09/2026 — xem ghi chú đầy đủ ở
+                 // `gocTheoBanDaLuu` trong ProjectForm): trường `ngayHoanThanhDuKienGoc` đã lưu có
+                 // thể nằm lại ở kế hoạch cũ, so thẳng với hạn form vừa tính sẽ ra chênh lệch giả.
+                 //
+                 // ⚠ PHẢI TÍNH CẢ PHIẾU GIA HẠN (chị Trâm báo lỗi 19/09/2026):
+                 // "Dự án này, Quản lý bấm dời tiến độ 7 ngày sao không gửi lại cho TP duyệt mà
+                 //  vẫn được lên Kanban Bước 2?"
+                 // Trước đây hai vế đều bỏ `delayLogs` ra ngoài để so "hạn gốc". Nhưng hạn nộp lùi
+                 // ra vì HAI nguồn: việc con dài thêm, VÀ phiếu xin gia hạn. Bỏ phiếu ra thì Quản
+                 // lý chỉ cần khai phiếu +7 ngày là hạn thầu lùi 7 ngày mà cờ chờ duyệt không bật —
+                 // lọt thẳng, Trưởng phòng không hề biết.
+                 // Nay giữ nguyên dữ liệu thật của mỗi bên: vẫn CÙNG một công thức, chỉ khác dữ
+                 // liệu, nên chênh lệch phản ánh đúng phần hạn vừa bị đẩy ra — bất kể do nguồn nào.
+                 // ⚠ TĂNG HAY GIẢM ĐỀU PHẢI TRÌNH LẠI (chị Trâm chốt 19/09/2026):
+                 // "Nếu mà hạn Bộ phận thay đổi thì cứ đưa lại cho TP duyệt, dù là tăng hạn hay
+                 //  giảm hạn." Rút ngắn cũng là đổi kế hoạch Phòng — Trưởng phòng đã sắp lịch kiểm
+                 // theo mốc cũ, hồ sơ về sớm hơn mà không ai báo thì cũng hỏng việc.
+                 ymdOf(getDeptDeadline(savedProject)) !== ymdOf(getDeptDeadline(old))) {
+        // Quản lý sửa qua form làm hạn đổi → chờ TP duyệt lại.
         savedProject.choDuyetLai = true;
         savedProject.lyDoChoDuyetLai = 'DOI_HAN';
+
+        // ===== PHẢI BÁO CHUÔNG CHO TRƯỞNG PHÒNG (chị Trâm báo lỗi 19/09/2026) =====
+        // "Dự án này chị thao tác bên Dashboard với vai trò LV2, dời tiến độ thêm, không phải thao
+        //  tác bên Kanban, thì bên TP chị thấy không có thông báo nhỉ em."
+        // Đường kéo thẻ (handlePullBackApply) có pushNotify, đường sửa qua form thì KHÔNG — nên
+        // hồ sơ về Bước 1 với cờ chờ duyệt mà chuông im lặng, Trưởng phòng chỉ biết khi tình cờ mở
+        // bảng Kanban ra nhìn. Cùng một việc thì phải báo giống nhau, bất kể đi đường nào.
+        const hanCuFm = ymdOf(getDeptDeadline(old));
+        const hanMoiFm = ymdOf(getDeptDeadline(savedProject));
+        const lechFm = Math.round(
+          (new Date(hanMoiFm).getTime() - new Date(hanCuFm).getTime()) / (24 * 60 * 60 * 1000));
+        const cauLechFm = lechFm > 0
+          ? `dời hạn +${lechFm} ngày (${fmtDateVN(hanCuFm)} → ${fmtDateVN(hanMoiFm)})`
+          : `rút hạn sớm ${-lechFm} ngày (${fmtDateVN(hanCuFm)} → ${fmtDateVN(hanMoiFm)})`;
+        const boodIdsFm = staff.filter(x => x.role === 'BOOD' && !x.daNghi).map(x => x.id);
+        pushNotify(boodIdsFm,
+          `Quản lý sửa kế hoạch việc con cho "${savedProject.hangMuc} | ${savedProject.tenDuAn}" — ${cauLechFm}. Cần duyệt lại tiến độ Phòng.`,
+          savedProject.id);
+
+        // ===== PHẢI KÉO THẺ VỀ BƯỚC 1 LUÔN (chị Trâm báo lỗi 19/09/2026) =====
+        // "Vẫn kẹt: khi Quản lý sửa tiến độ công việc trong Dashboard, không qua Kanban, thì dự án
+        //  đó không tự nhảy về Bước 1."
+        // Trước đây chỗ này chỉ gắn cờ chờ duyệt mà để thẻ đứng nguyên — trong khi đi đường kéo về
+        // (handlePullBackApply) thì hồ sơ vừa gắn cờ vừa về Bước 1. Cùng một việc "dời hạn" mà hai
+        // đường cho ra hai kết quả khác nhau: sửa trong Dashboard thì hồ sơ vẫn nằm ở Bước 2 như
+        // chưa có chuyện gì, Trưởng phòng nhìn bảng Kanban không thấy dấu hiệu phải duyệt lại.
+        // Nay cùng một luật: dời hạn là quay về Bước 1 để Trưởng phòng duyệt lại kế hoạch.
+        //
+        // NGOẠI LỆ — hồ sơ đã qua mốc Phòng xong phần mình (Bước 4 trở lên): không tự kéo về, vì
+        // hồ sơ đó đã trình Ban lãnh đạo hoặc đã gửi Chủ đầu tư. Kéo ngược về Bước 1 là làm lại từ
+        // đầu, phải đi qua luồng MỞ VÒNG MỚI để giữ bằng chứng vòng trước (xem handlePullBackKeepDeadline).
+        // Trường hợp đó vẫn gắn cờ chờ duyệt để Trưởng phòng biết mà xử.
+        const buocDangO = old.kanbanStep || deriveKanbanStep(old);
+        if (buocDangO > 1 && buocDangO < BUOC_XONG_PHAN_PHONG) {
+          savedProject.kanbanStep = 1;
+          // Về Bước 1 = kế hoạch phải duyệt lại từ đầu → tiến độ Phòng reset, đúng như luồng kéo về.
+          // GIỮ NGUYÊN kết quả kiểm tra & tệp đính kèm (chị Trâm chốt 28/07/2026).
+          savedProject.tienDoPhong = 0;
+        }
       }
     }
 
@@ -2014,7 +2313,7 @@ export default function App() {
     // ===== Thông báo chuông 🔔 =====
     const label = savedProject.loaiBanGhi === 'DU_AN'
       ? `dự án "${savedProject.tenDuAn}"`
-      : `công việc "${savedProject.hangMuc} — ${savedProject.tenDuAn}"`;
+      : `công việc "${savedProject.hangMuc} | ${savedProject.tenDuAn}"`;
     // ===== BÁO TRƯỞNG PHÒNG NGAY KHI CÓ VIỆC CẦN DUYỆT (chị Trâm chốt 17/08/2026) =====
     // "Level 1 chưa được bật thông báo popup khi có thay đổi trên app." Nguyên nhân: hồ sơ Quản lý
     // vừa lập chỉ CHẠY VÀO DANH SÁCH "Chờ Trưởng phòng xử lý" trong chuông, mà danh sách đó là ô
@@ -2028,6 +2327,21 @@ export default function App() {
       pushNotify(
         idsTruongPhong,
         `📝 ${currentUser?.name || 'Quản lý'} vừa ${exists ? 'cập nhật' : 'lập'} kế hoạch ${label} — đang chờ Trưởng phòng kiểm tra & duyệt để hồ sơ lên Kanban.`,
+        savedProject.id,
+        true,
+      );
+    }
+
+    // ===== QUẢN LÝ KHAI HỒ SƠ DỰ ÁN THÌ TRƯỞNG PHÒNG PHẢI THẤY (chị Trâm chốt 19/09/2026) =====
+    // "Khi LV2 tạo thì LV1 cái gì cũng thấy cả."
+    // Khối báo Trưởng phòng ở trên CỐ Ý bỏ qua bản ghi DỰ ÁN (nó không đi qua Kanban nên không có
+    // gì để duyệt). Nhưng từ hôm nay Quản lý tự khai được dự án ở bảng Danh mục, nên nếu im lặng
+    // thì Trưởng phòng chỉ biết khi tình cờ mở bảng — sai mã hay trùng dự án phát hiện rất muộn.
+    if (savedProject.loaiBanGhi === 'DU_AN' && currentUser?.role !== 'BOOD') {
+      const maHienThi = [savedProject.projectId, savedProject.maNoiBo].filter(Boolean).join('-');
+      pushNotify(
+        idsTruongPhong,
+        `🗂️ ${currentUser?.name || 'Quản lý'} vừa ${exists ? 'cập nhật' : 'khai'} hồ sơ dự án ${maHienThi ? `${maHienThi} | ` : ''}${savedProject.tenDuAn || '(chưa đặt tên)'}${savedProject.chuDauTu ? ` — CĐT: ${savedProject.chuDauTu}` : ''}. Vui lòng kiểm tra lại mã dự án và thông tin gói thầu.`,
         savedProject.id,
         true,
       );
@@ -2108,13 +2422,13 @@ export default function App() {
       triggerToast(currentUser?.role === 'BOOD' && savedProject.loaiBanGhi !== 'DU_AN'
         ? `Đã duyệt & cập nhật công việc: "${savedProject.tenDuAn}"`
         : `Đã cập nhật gói thầu: "${savedProject.tenDuAn}"`);
-      logAction('Cập nhật gói thầu', `Cập nhật thông tin chi tiết gói thầu ${maHienThi(savedProject.projectId)} - ${savedProject.tenDuAn}`, undefined, getProjectParticipants(savedProject));
+      logAction('Cập nhật gói thầu', `Cập nhật thông tin chi tiết gói thầu ${nhanHoSo(savedProject)}`, undefined, getProjectParticipants(savedProject));
     } else {
       updated = [...projects, savedProject];
       triggerToast(savedProject.tpDaDuyet === false
         ? `Đã tạo công việc "${savedProject.tenDuAn}" — hệ thống đã báo Trưởng phòng vào duyệt (qua chuông 🔔).`
         : `Đã thêm mới gói thầu: "${savedProject.tenDuAn}"`);
-      logAction('Đăng ký thầu mới', `Đăng ký hồ sơ thầu mới mã ${maHienThi(savedProject.projectId)} - ${savedProject.tenDuAn} (Hạn nộp: ${savedProject.ngayHoanThanhDuKienHienTai})${savedProject.tpDaDuyet === false ? ' — chờ Trưởng phòng duyệt' : ''}`, undefined, getProjectParticipants(savedProject));
+      logAction('Đăng ký thầu mới', `Đăng ký hồ sơ thầu mới mã ${nhanHoSo(savedProject)} (Hạn nộp: ${savedProject.ngayHoanThanhDuKienHienTai})${savedProject.tpDaDuyet === false ? ' — chờ Trưởng phòng duyệt' : ''}`, undefined, getProjectParticipants(savedProject));
     }
     
     // ===== ĐỔI THÔNG TIN DỰ ÁN → CÁC CÔNG VIỆC CON TỰ CẬP NHẬT THEO =====
@@ -2128,6 +2442,9 @@ export default function App() {
         // MÃ DỰ ÁN: công việc con dùng chung mã của dự án cha. Trước đây thiếu trường này nên chị
         // sửa mã ở hồ sơ Dự án mà công việc đã tạo vẫn kẹt mã cũ (chị Trâm báo 26/07/2026).
         'projectId',
+        // Ô 2 của mã hồ sơ (mã Phòng tự đặt) cũng thuộc về DỰ ÁN — sửa ở hồ sơ Dự án thì mọi công
+        // việc con phải đổi theo, y như ô 1 (chị Trâm chốt 12/09/2026).
+        'maNoiBo',
         'tenDuAn', 'chuDauTu', 'diaChi', 'hinhThucDauThau', 'tinhTrangDuAn', 'quocTich',
         'khuCongNghiep', 'tinhThanh', 'loaiCongTrinh', 'hinhThucXayDung', 'giaiDoanDuAn',
         'dienTichDat', 'hoSoPhatThau',
@@ -2145,6 +2462,9 @@ export default function App() {
           // cũng đủ khiến mã cha bị hoa hóa so với bản cũ → nếu so sánh nguyên văn ở đây sẽ tưởng
           // mã ĐỔI THẬT và ghi đè projectId của MỌI công việc con, đẩy hàng loạt lên Firestore
           // ngoài ý muốn (agent review PR#2 phát hiện, 25/08/2026).
+          // So Ô 1 VỚI Ô 1, không dùng maHoSo() (mã ghép đủ hai ô) ở đây: ghép cả maNoiBo vào rồi
+          // đem so với mỗi ô 1 của cha thì hồ sơ nào có mã Phòng cũng bị coi là "mã đã đổi" và bị
+          // ghi đè hàng loạt — đúng cái bug mà đoạn ghi chú trên cảnh báo.
           if (k === 'projectId') {
             if (maHienThi(p.projectId) !== maHienThi(savedProject.projectId as string)) (patch as any)[k] = savedProject[k];
             return;
@@ -2165,7 +2485,7 @@ export default function App() {
     // riêng mã là hòa nhau — thêm tiêu chí phụ để thứ tự không nhảy mỗi lần lưu:
     // cùng mã thì hồ sơ Dự án đứng trước, rồi xếp theo hạng mục, cuối cùng theo id.
     updated.sort((a, b) => {
-      const theoMa = maHienThi(a.projectId).localeCompare(maHienThi(b.projectId));
+      const theoMa = maHoSo(a).localeCompare(maHoSo(b));
       if (theoMa !== 0) return theoMa;
       const chaTruoc = (a.loaiBanGhi === 'DU_AN' ? 0 : 1) - (b.loaiBanGhi === 'DU_AN' ? 0 : 1);
       if (chaTruoc !== 0) return chaTruoc;
@@ -2226,6 +2546,13 @@ export default function App() {
         baoTiepNhan(savedProject.tasks);
       }
 
+    // Hồ sơ cha vừa dựng từ Danh mục phải vào danh sách CÙNG LÚC với công việc con, bằng không
+    // có một khoảnh khắc công việc trỏ tới id chưa tồn tại.
+    if (duAnChaMoi) {
+      updated = [duAnChaMoi, ...updated];
+      triggerToast(`Đã tạo hồ sơ dự án "${duAnChaMoi.tenDuAn}" từ Danh mục dự án và gắn công việc vào.`);
+      logAction('Đăng ký dự án từ Danh mục', `Tạo hồ sơ dự án ${nhanHoSo(duAnChaMoi)} lấy từ Danh mục dự án (App Thông tin dự án) khi thêm công việc mới.`);
+    }
     setProjects(updated);
     setShowForm(false);
     setEditingProject(undefined);
@@ -2268,7 +2595,7 @@ export default function App() {
         const removeIds = new Set([parent.id, ...children.map(c => c.id)]);
         setProjects(projects.filter(p => !removeIds.has(p.id)));
         triggerToast(`Đã xóa dự án "${parent.tenDuAn}"${children.length > 0 ? ` cùng ${children.length} công việc con` : ''}.`);
-        logAction('Xóa dự án', `Xóa dự án "${parent.tenDuAn}" (${maHienThi(parent.projectId)})${children.length > 0 ? ` kèm ${children.length} công việc con` : ''}.`);
+        logAction('Xóa dự án', `Xóa dự án "${parent.tenDuAn}" (${maHoSo(parent)})${children.length > 0 ? ` kèm ${children.length} công việc con` : ''}.`);
       },
     });
   };
@@ -2304,7 +2631,7 @@ export default function App() {
     triggerToast(`Đã áp dụng CĐT điều chỉnh & kéo hồ sơ về bước ${buocVe}.`);
     if (target) {
       const added = newTaskDefs.length ? ` Thêm ${newTaskDefs.length} công việc con mới.` : '';
-      logAction('CĐT điều chỉnh', `CĐT điều chỉnh hồ sơ ${maHienThi(target.projectId)} - ${target.tenDuAn}: ${noiDung}. Kéo về bước ${buocVe}, giữ công việc đã hoàn thành.${added}`, undefined, getProjectParticipants(target));
+      logAction('CĐT điều chỉnh', `CĐT điều chỉnh hồ sơ ${nhanHoSo(target)}: ${noiDung}. Kéo về bước ${buocVe}, giữ công việc đã hoàn thành.${added}`, undefined, getProjectParticipants(target));
     }
   };
 
@@ -2318,9 +2645,58 @@ export default function App() {
     setShowForm(true);
   };
 
+  /**
+   * ===== BẤM CÂY BÚT Ở BẢNG DANH MỤC DỰ ÁN (chị Trâm chốt 19/09/2026) =====
+   * "Vậy cho chị thêm cây bút đi, và đưa tính năng sửa thông tin gói thầu về đây... các thông tin
+   *  này nếu chị chưa điền thì để trống, còn khi chị điền thì bên Quản lý phải thấy được thông tin
+   *  đã cập nhật."
+   *
+   * Danh mục bên App Thông tin dự án chỉ có phần thông tin DỰ ÁN (tên, CĐT, địa chỉ, diện tích...).
+   * Phần thông tin ĐẤU THẦU (mã Phòng đặt, mô tả, hình thức đấu thầu, Quản lý chính/phụ) là của
+   * app này — khai ở form hồ sơ dự án và lưu vào chính bản ghi dự án cha.
+   *
+   * Nhờ vậy dữ liệu NHẤT QUÁN: ô "Chọn dự án cha" và khối "Thông tin dự án" trong form tạo công
+   * việc đều đọc từ bản ghi đó, nên Trưởng phòng điền tới đâu Quản lý thấy tới đó. Chưa điền thì
+   * các ô để trống, không bịa.
+   *
+   * Mã chưa có hồ sơ trong app thì dựng sẵn một bản ghi từ danh mục (CHƯA lưu) để form có dữ liệu
+   * mở ra, người dùng bổ sung rồi bấm lưu mới thành hồ sơ thật.
+   */
+  // ===== AI ĐƯỢC KHAI DỰ ÁN Ở DANH MỤC (chị Trâm chốt 19/09/2026) =====
+  // "Em đưa cái tạo thủ công dự án qua cho Quản lý cũng làm được như LV1 nhé em."
+  // Quy trình chuẩn vẫn là đăng ký bên App Thông tin dự án; hai lối trong bảng Danh mục (dấu + và
+  // nút Tạo thủ công) là lối dự phòng khi app kia chưa nối xong — chặn Quản lý ở đây thì lúc
+  // Trưởng phòng đi vắng cả phòng đứng chờ. Level 3-4 vẫn không được khai (chỉ xem).
+  const duocKhaiDuAn = currentUser?.role === 'BOOD' || currentUser?.role === 'MANAGER';
+
+  const handleSuaTuDanhMuc = (maDuAn: string) => {
+    if (!duocKhaiDuAn) {
+      triggerToast('Chỉ Trưởng phòng (Level 1) và Quản lý (Level 2) mới được khai thông tin gói thầu của dự án.');
+      return;
+    }
+    const ma = (maDuAn || '').trim().toLowerCase();
+    const daCo = parentProjectsGoc.find(p => (p.projectId || '').trim().toLowerCase() === ma);
+    if (daCo) {
+      setFormMode('EDIT_ALL');
+      setEditingProject(daCo);
+      setShowForm(true);
+      return;
+    }
+    const mau = parentProjects.find(p => p.id === `${TIEN_TO_DANH_MUC}${maDuAn}`);
+    if (!mau) {
+      triggerToast('Không tìm thấy dự án này trong danh mục — thử bấm tải lại bảng.');
+      return;
+    }
+    // Bản ghi dựng từ danh mục: bỏ id ảo đi để form coi như hồ sơ MỚI, lưu xong mới có id thật.
+    const { id: _boQua, ...phanConLai } = mau;
+    setFormMode('CREATE_TENDER');
+    setEditingProject({ ...phanConLai, id: '' } as Project);
+    setShowForm(true);
+  };
+
   const handleCreateClick = () => {
-    if (currentUser?.role !== 'BOOD') {
-      triggerToast('Chỉ có Trưởng phòng (Level 1) mới được quyền khai báo gói thầu mới!');
+    if (!duocKhaiDuAn) {
+      triggerToast('Chỉ có Trưởng phòng (Level 1) và Quản lý (Level 2) mới được quyền khai báo gói thầu mới!');
       return;
     }
     setFormMode('CREATE_TENDER');
@@ -2449,6 +2825,24 @@ export default function App() {
     return sourceProjects.filter(p => p.thucHienId === currentUser.staffId || p.thucHienIds?.includes(currentUser.staffId));
   }, [projects, apiFilteredProjects, currentUser]);
 
+  /**
+   * Mã dự án mà người đang đăng nhập được xem TIẾN ĐỘ THIẾT KẾ (chị Trâm chốt 15/09/2026):
+   * "Cho level 3 được thấy chỗ liên kết phòng ban luôn em, và cho họ thấy được tiến độ của các
+   *  gói thầu họ được giao việc thôi em."
+   *
+   * Trả `null` = xem hết (Trưởng phòng, Quản lý, Ban giám đốc — đã có RBAC riêng cho từng cấp).
+   * Với Chuyên viên thì thu về đúng những mã dự án của hồ sơ họ được giao, lấy từ `rbacProjects`
+   * (chính là danh sách hồ sơ RBAC đã lọc sẵn cho họ) — KHÔNG lọc lại từ `projects` để khỏi sinh
+   * ra một luật quyền thứ hai chạy song song rồi lệch nhau lúc nào không hay.
+   *
+   * Ghép hai app bằng `projectId` — ô mã lấy từ App Thông tin dự án; `maNoiBo` là mã Phòng tự đặt
+   * nên bên App Thiết kế không biết.
+   */
+  const maDuAnDuocXem = useMemo<string[] | null>(() => {
+    if (!currentUser || currentUser.role !== 'STAFF') return null;
+    return Array.from(new Set(rbacProjects.map(p => (p.projectId || '').trim()).filter(Boolean)));
+  }, [currentUser, rbacProjects]);
+
   // Hồ sơ Quản lý (L2) ĐANG PHỤ TRÁCH (quản lý chính hoặc phụ) — đưa vào file kết xuất của
   // Quản lý để họ báo cáo được cả phần mình quản lý, không chỉ việc giao đích danh cho mình.
   const managedWorkItems = useMemo(() => {
@@ -2477,7 +2871,63 @@ export default function App() {
 
   // Tách 2 cấp: Dự án cha (DU_AN) và Công việc/gói thầu con (CONG_VIEC).
   // Chỉ công việc con mới lên Kanban / danh sách tiến độ; dự án cha chỉ để đăng ký & làm cha.
-  const parentProjects = useMemo(() => rbacProjects.filter(p => p.loaiBanGhi === 'DU_AN'), [rbacProjects]);
+  /**
+   * ===== DANH MỤC DỰ ÁN TỪ APP THÔNG TIN DỰ ÁN (chị Trâm chốt 19/09/2026) =====
+   * "Khi bấm tạo công việc thì xổ xuống là list danh sách dự án từ Danh mục dự án nhé em."
+   *
+   * Trước đây ô "Chọn dự án cha" chỉ liệt kê dự án ĐÃ đăng ký trong app đấu thầu — muốn thêm công
+   * việc cho một dự án bên App Thông tin dự án thì phải sang bấm "Dự án mới" gõ lại từ đầu.
+   * Nay gộp cả hai nguồn vào một danh sách.
+   */
+  const [danhMucDuAn, setDanhMucDuAn] = useState<DuAnTongItemApp[]>(DANH_MUC_DU_AN_BAN_THU || []);
+  useEffect(() => {
+    if (DANH_MUC_DU_AN_BAN_THU) return;          // Bản thử: dùng bộ dựng sẵn, không gọi API
+    if (!currentUser || laKhachChiXem(currentUser.role)) return;
+    let huy = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/du-an-tong', { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if (!huy && Array.isArray(data?.items)) setDanhMucDuAn(data.items);
+      } catch { /* chưa nối app kia thì thôi — danh sách vẫn còn dự án của app này */ }
+    })();
+    return () => { huy = true; };
+  }, [currentUser]);
+
+  const parentProjectsGoc = useMemo(() => rbacProjects.filter(p => p.loaiBanGhi === 'DU_AN'), [rbacProjects]);
+
+  /**
+   * Danh sách chọn dự án cha = dự án ĐÃ có trong app + dự án bên Danh mục mà app chưa có.
+   * Mục lấy từ Danh mục mang id dạng `DM::<mã>` — lúc lưu, handleSaveProject nhận ra tiền tố này
+   * và TẠO bản ghi dự án cha thật trước khi gắn công việc vào (xem ở đó).
+   * Ghép theo MÃ dự án (projectId) — cùng khoá mà hai app dùng để nói chuyện với nhau.
+   */
+  const parentProjects = useMemo(() => {
+    const daCo = new Set(parentProjectsGoc.map(p => (p.projectId || '').trim().toLowerCase()).filter(Boolean));
+    const themVao: Project[] = danhMucDuAn
+      .filter(d => d.maDuAn && !daCo.has(d.maDuAn.trim().toLowerCase()))
+      .map(d => ({
+        id: `${TIEN_TO_DANH_MUC}${d.maDuAn}`,
+        projectId: d.maDuAn,
+        tenDuAn: d.tenDuAn || d.maDuAn,
+        hangMuc: 'Báo giá chi tiết',
+        loaiBanGhi: 'DU_AN',
+        chuDauTu: d.chuDauTu,
+        diaChi: d.diaChi,
+        quocTich: d.quocTich,
+        khuCongNghiep: d.khuCongNghiep,
+        tinhThanh: d.tinhThanh,
+        loaiCongTrinh: d.loaiCongTrinh,
+        hinhThucXayDung: d.hinhThucXayDung as Project['hinhThucXayDung'],
+        hoSoPhatThau: d.hoSoPhatThau as Project['hoSoPhatThau'],
+        dienTichDat: d.dienTichDat,
+        ngayBatDau: d.ngayKhoiTao || ymdOf(new Date()),
+        tasks: [], tienDoBoPhan: 0, tienDoPhong: 0,
+        trangThai: 'DANG_THUC_HIEN',
+        tinhTrangDuAn: 'Đang triển khai',
+      } as Project));
+    return [...parentProjectsGoc, ...themVao];
+  }, [parentProjectsGoc, danhMucDuAn]);
   // ===== THÔNG TIN MẪU CỦA MỖI DỰ ÁN (chị Trâm nhắc 18/08/2026) =====
   // Hồ sơ DỰ ÁN CHA thường chỉ khai tên + Chủ đầu tư + địa chỉ; còn quốc tịch CĐT, KCN, tỉnh/thành,
   // loại công trình, hình thức xây dựng, diện tích, hồ sơ phát thầu, hình thức đấu thầu... lại nằm ở
@@ -2531,10 +2981,17 @@ export default function App() {
     return [...nam].sort((a, b) => b - a);
   }, [workItems]);
 
-  // Một CÔNG VIỆC coi là ĐÃ XONG khi hoàn thành đúng/trễ hạn hoặc đã có kết quả trúng/rớt.
+  // Một CÔNG VIỆC coi là ĐÃ XONG khi hoàn thành đúng/trễ hạn, đã có kết quả trúng/rớt, HOẶC đã
+  // qua mốc Phòng xong phần mình (Bước 4 — trình BLĐ).
+  //
+  // Chị Trâm chốt 12/09/2026: "tới bước đó chỉ còn hiện ở Kanban, còn ở Dashboard + Gantt + báo cáo
+  // tiến độ thì sẽ nhảy vô tab Đã xong". Hồ sơ đã trình Ban lãnh đạo là hết phần việc của Phòng —
+  // để nó nằm trong nhóm "Đang làm" thì danh sách việc đang chạy của Phòng lúc nào cũng phình ra
+  // bởi những hồ sơ Phòng không còn tác động được, và chúng bị chấm trễ oan trong lúc chờ ký.
   const isWorkDone = (p: Project) =>
     p.trangThai === 'HOAN_THANH_DUNG_HAN' || p.trangThai === 'HOAN_THANH_TRE_HAN' ||
-    p.tinhTrangDuAn === 'Đã trúng thầu' || p.tinhTrangDuAn === 'Rớt thầu';
+    p.tinhTrangDuAn === 'Đã trúng thầu' || p.tinhTrangDuAn === 'Rớt thầu' ||
+    deriveKanbanStep(p) >= BUOC_XONG_PHAN_PHONG;
   // Một DỰ ÁN CHA coi là ĐÃ XONG khi CÓ công việc con và TẤT CẢ công việc con đã xong.
   const isParentDone = (dp: Project) => {
     const kids = projects.filter(p => p.duAnChaId === dp.id);
@@ -2584,11 +3041,27 @@ export default function App() {
   // (chị Trâm báo 27/07/2026): trước đây lọc nhãn trước nên một công việc mới lỡ mang nhãn
   // "Đã trúng thầu" sẽ biến mất khỏi chuông — không ai duyệt được, mà chưa duyệt thì cũng không
   // lên Kanban → kẹt cứng. Nhãn trúng/rớt chỉ dùng để bỏ qua các hồ sơ ĐÃ duyệt xong xuôi.
+  // ===== ĐỔI PHÂN BỔ MÀ HỒ SƠ VẪN CHẠY THÌ KHÔNG CÓ GÌ ĐỂ DUYỆT (chị Trâm chốt 19/09/2026) =====
+  // "2 công việc này sao lại báo cho chị, chỉ cần thông báo bên dưới thôi, chứ có gì để duyệt không em?"
+  // Hồ sơ chỉ chia lại tỉ trọng / đổi người mà hạn nộp không đổi và thẻ vẫn đứng ở bước cũ thì
+  // Trưởng phòng không phải quyết định gì — vào mở ra bấm lưu là thao tác thừa. Tin báo ở mục
+  // "Thông báo của bạn" phía dưới đã đủ để biết chuyện vừa xảy ra.
+  //
+  // NGOẠI LỆ — hồ sơ đang ở BƯỚC 1: lúc đó vẫn phải giữ trong danh sách. Bước 1 chỉ rời đi được
+  // khi Trưởng phòng duyệt kế hoạch; bỏ khỏi đây là hồ sơ nằm lại Bước 1 vĩnh viễn, không ai thấy
+  // để đẩy tiếp — đúng loại lỗi im lặng khó phát hiện nhất.
+  const khongCanDuyet = (p: Project) =>
+    p.choDuyetLai === true &&
+    p.lyDoChoDuyetLai === 'PHAN_BO' &&
+    Math.max(1, p.kanbanStep || deriveKanbanStep(p)) > 1 &&
+    (p.soNgayDuKien || 0) > 0 &&
+    p.tpDaDuyet !== false;
+
   const tpSetupItems = useMemo(() => workItems.filter(p =>
     p.tpDaDuyet === false ||
     (((p.soNgayDuKien || 0) <= 0 || p.choDuyetLai === true) &&
       p.tinhTrangDuAn !== 'Đã trúng thầu' && p.tinhTrangDuAn !== 'Rớt thầu')
-  ), [workItems]);
+  ).filter(p => !khongCanDuyet(p)), [workItems]);
   // Công việc TP đã duyệt và có thời hạn → lên sơ đồ GANTT.
   // Gantt là trục thời gian nên bắt buộc phải có kế hoạch đã chốt: hồ sơ chưa có hạn hoặc chưa
   // được duyệt mà vẽ lên thì vạch tiến độ là số ảo.
@@ -2884,12 +3357,9 @@ export default function App() {
     // TỪ BƯỚC 3 (Duyệt hồ sơ thầu cấp Phòng) TRỞ ĐI: khóa cập nhật tiến độ việc con.
     // Bộ phận phải xong TRƯỚC rồi Trưởng phòng mới kiểm tra; còn cho sửa việc con lúc TP đang
     // duyệt là mâu thuẫn logic — bộ phận chưa xong mà Phòng đã duyệt 100% (chị Trâm chốt 26/07/2026).
-    // Kế hoạch chưa được Trưởng phòng duyệt thì chưa ai được bắt tay làm (chị Trâm chốt 27/07/2026).
-    // Trưởng phòng KHÔNG bị khóa này — chính họ là người duyệt, chặn họ lại là vô lý.
-    if (targetProject && hoSoChoTPDuyet(targetProject) && currentUser?.role !== 'BOOD') {
-      triggerToast('⏳ Kế hoạch đang chờ Trưởng phòng duyệt — chưa đánh dấu hoàn thành được. Duyệt xong bạn sẽ nhận thông báo.');
-      return;
-    }
+    // BỎ KHÓA "chờ Trưởng phòng duyệt kế hoạch" (chị Trâm chốt 12/09/2026) — nhân sự có việc con là
+    // được cập nhật tiến độ / đánh dấu hoàn thành ngay, không phải đợi TP duyệt kế hoạch.
+    // Cửa chặn duy nhất còn lại ở đây là bước 3 trở đi (TP đang duyệt giá cấp Phòng).
     if (targetProject && khoaCapNhatViecCon(targetProject)) {
       triggerToast(`🔒 Hồ sơ đã sang bước ${targetProject.kanbanStep} (${KANBAN_STEPS.find(s => s.id === targetProject.kanbanStep)?.title}) — không cập nhật tiến độ công việc con được nữa. Cần sửa thì đề nghị Trưởng phòng kéo hồ sơ về bước trước.`);
       return;
@@ -2953,50 +3423,32 @@ export default function App() {
     // Log the action
     const targetProj = projects.find(p => p.id === projId);
     if (targetProj) {
-      logAction('Cập nhật tác vụ', `Cập nhật trạng thái một số công việc thầu thành phần của hồ sơ ${maHienThi(targetProj.projectId)} - ${targetProj.tenDuAn}`, undefined, getProjectParticipants(targetProj));
+      logAction('Cập nhật tác vụ', `Cập nhật trạng thái một số công việc thầu thành phần của hồ sơ ${nhanHoSo(targetProj)}`, undefined, getProjectParticipants(targetProj));
     }
   };
 
   const handleUpdateTasks = (projId: string, updatedTasks: ProjectTask[]) => {
-    // ===== HỒ SƠ ĐANG CHỜ TRƯỞNG PHÒNG DUYỆT =====
-    // Chị Trâm chốt 17/08/2026 (góp ý #2 — "Quản lý lỡ bấm Lưu dự án thì không thấy và không sửa
-    // được những gì mình vừa tạo"):
-    //   · Quản lý phụ trách hồ sơ VẪN ĐƯỢC xem + SỬA KẾ HOẠCH việc con của chính mình
-    //     (tên việc, tỉ trọng, người giao, ngày bắt đầu, số ngày, kế hoạch chi tiết, thêm/bớt việc).
-    //   · Nhưng KHÔNG được CẬP NHẬT TIẾN ĐỘ (%, đánh dấu hoàn thành, nhập kết quả) — vì TP còn
-    //     có thể duyệt lại đổi người/đổi hạn/đổi tỉ trọng, làm sớm là công cốc.
+    // ===== HỒ SƠ ĐANG CHỜ TRƯỞNG PHÒNG DUYỆT KẾ HOẠCH =====
+    // Chị Trâm chốt 12/09/2026: "công việc con của các bạn không cần gắn cờ chờ duyệt nữa, các bạn
+    // có công việc con được quyền cập nhật tiến độ hoặc hoàn thành luôn".
+    //   · CẬP NHẬT TIẾN ĐỘ (%, đánh dấu hoàn thành, nhập kết quả, đính kèm) → MỞ cho mọi người có
+    //     việc trong hồ sơ, kể cả lúc kế hoạch còn chờ duyệt. Đây là thay đổi so với bản 17/08/2026.
+    //   · SỬA KẾ HOẠCH (tên việc, tỉ trọng, người giao, lịch, thêm/bớt việc) trong lúc chờ duyệt thì
+    //     GIỮ NGUYÊN luật cũ: chỉ Quản lý ĐANG PHỤ TRÁCH hồ sơ được sửa — bằng không nhân viên sửa
+    //     đè lên kế hoạch mà Trưởng phòng sắp duyệt, chị mở ra thấy khác lúc trình.
     //
-    // TRƯỚC ĐÂY chặn SẠCH mọi cập nhật, nên Quản lý bị kẹt luôn cả việc sửa kế hoạch của mình.
     // Trưởng phòng KHÔNG bị khóa này — chính họ là người duyệt.
+    // Dùng chuKyKeHoach để phân biệt: chữ ký chỉ gom các trường KẾ HOẠCH, cố ý bỏ tiến độ/kết quả —
+    // nhân viên kéo % thì chữ ký không đổi nên không lọt vào nhánh chặn bên dưới.
     const hoSoDangSua = projects.find(p => p.id === projId);
     if (hoSoDangSua && hoSoChoTPDuyet(hoSoDangSua) && currentUser?.role !== 'BOOD') {
-      // Gom cây việc con thành map theo id để so từng việc trước/sau.
-      const trai = (list: ProjectTask[], out: Record<string, ProjectTask> = {}) => {
-        list.forEach(t => { out[t.id] = t; if (t.subtasks?.length) trai(t.subtasks, out); });
-        return out;
-      };
-      const truoc = trai(hoSoDangSua.tasks || []);
-      const sau = trai(updatedTasks);
-      // Các trường thuộc TIẾN ĐỘ / KẾT QUẢ — sửa mấy trường này thì vẫn bị chặn.
-      const truongTienDo: (keyof ProjectTask)[] = [
-        'isCompleted', 'completedAt', 'staffProgress', 'managerProgress',
-        'ketQuaCongViec', 'taiLieuDinhKem', 'kpi', 'overdueReason',
-      ];
-      const doiTienDo = Object.keys(sau).some(id => {
-        const a = truoc[id], b = sau[id];
-        if (!a) return false; // việc MỚI thêm là sửa kế hoạch, không phải cập nhật tiến độ
-        return truongTienDo.some(k => (a[k] ?? null) !== (b[k] ?? null));
-      });
+      const doiKeHoach = chuKyKeHoach(hoSoDangSua.tasks) !== chuKyKeHoach(updatedTasks);
       // Chỉ Quản lý ĐANG PHỤ TRÁCH hồ sơ mới được sửa kế hoạch của hồ sơ đó.
       const laQuanLyHoSoNay = currentUser?.role === 'MANAGER'
         && isProjectManager(hoSoDangSua, currentUser.staffId);
 
-      if (doiTienDo) {
-        triggerToast('⏳ Kế hoạch đang chờ Trưởng phòng duyệt — chưa cập nhật TIẾN ĐỘ được. Duyệt xong bạn sẽ nhận thông báo. (Vẫn sửa được kế hoạch việc con.)');
-        return;
-      }
-      if (!laQuanLyHoSoNay) {
-        triggerToast('⏳ Kế hoạch đang chờ Trưởng phòng duyệt — chỉ Quản lý phụ trách hồ sơ này mới sửa được kế hoạch lúc này.');
+      if (doiKeHoach && !laQuanLyHoSoNay) {
+        triggerToast('⏳ Kế hoạch đang chờ Trưởng phòng duyệt — chỉ Quản lý phụ trách hồ sơ này mới sửa được kế hoạch lúc này. (Cập nhật tiến độ việc của bạn thì vẫn bình thường.)');
         return;
       }
     }
@@ -3011,29 +3463,16 @@ export default function App() {
     walkAssignees(updatedTasks);
     const assignees = Object.entries(assigneeCount).sort((a, b) => b[1] - a[1]).map(([id]) => id);
 
-    // Mốc KẾT THÚC của kế hoạch (max ngày kết thúc các việc con có đặt ngày)
-    const DAY = 24 * 60 * 60 * 1000;
-    const planEnd = (list: ProjectTask[]): number | null => {
-      let max: number | null = null;
-      const walk = (ts: ProjectTask[]) => ts.forEach(t => {
-        if (t.ngayBatDau) {
-          const s = new Date(t.ngayBatDau).getTime();
-          if (!isNaN(s)) { const e = s + Math.max(1, t.soNgay || 1) * DAY; if (max === null || e > max) max = e; }
-        }
-        if (t.subtasks?.length) walk(t.subtasks);
-      });
-      walk(list);
-      return max;
-    };
-
-    // Quản lý sửa kế hoạch làm tiến độ DELAY xa hơn đã báo → gắn cờ chờ TP duyệt lại.
-    // Không kéo dài (giữ nguyên/rút ngắn) → im lặng, không làm phiền TP.
+    // Quản lý sửa kế hoạch làm hạn Bộ phận ĐỔI (tăng hay giảm đều tính) → gắn cờ chờ TP duyệt lại.
+    // Dùng ĐÚNG hàm getDeptDeadline() như đường lưu qua ProjectForm (handleSaveProject) — cùng một
+    // công thức cho cả hai đường sửa kế hoạch, khớp đúng chốt 19/09/2026: "tăng hay giảm đều phải
+    // trình lại", không chỉ bắt lúc kéo dài (bản trước chỉ so newEnd > oldEnd, bỏ sót rút ngắn).
     const targetBefore = projects.find(p => p.id === projId);
     let delayed = false;
     if (currentUser?.role === 'MANAGER' && targetBefore) {
-      const oldEnd = planEnd(targetBefore.tasks || []);
-      const newEnd = planEnd(updatedTasks);
-      delayed = oldEnd !== null && newEnd !== null && newEnd > oldEnd;
+      const hanCu = ymdOf(getDeptDeadline(targetBefore));
+      const hanMoi = ymdOf(getDeptDeadline({ ...targetBefore, tasks: updatedTasks }));
+      delayed = hanCu !== hanMoi;
     }
 
     // Vòng làm việc đang chạy — tiến độ Bộ phận tính RIÊNG cho vòng này (vòng mới bắt đầu lại từ 0%).
@@ -3070,7 +3509,7 @@ export default function App() {
     // lúc đang chia), nhưng phải cảnh báo + báo chuông cho Quản lý biết đang kẹt chỗ nào.
     const tiTrongLech = weightIssue(updatedTasks, vongCuaHoSo);
     triggerToast(delayed
-      ? '⚠ Kế hoạch bị kéo dài so với tiến độ đã báo — hệ thống đã báo Trưởng phòng duyệt lại!'
+      ? '⚠ Hạn Bộ phận đã đổi so với tiến độ đã báo — hệ thống đã báo Trưởng phòng duyệt lại!'
       : tiTrongLech
         ? `⚠ ${tiTrongLech.moTa} Hồ sơ chỉ lưu được khi chia đủ 100%.`
         : 'Đã cập nhật tiến độ công việc con. Tiến độ bộ phận tự động tính gộp!');
@@ -3079,20 +3518,22 @@ export default function App() {
     const targetProj = projects.find(p => p.id === projId);
     if (targetProj) {
       if (tiTrongLech) {
-        pushNotify(allManagerIds(targetProj), `⚠ Phân bổ tỉ trọng chưa đủ: "${targetProj.hangMuc} — ${targetProj.tenDuAn}" — ${tiTrongLech.moTa}`, targetProj.id);
+        pushNotify(allManagerIds(targetProj), `⚠ Phân bổ tỉ trọng chưa đủ: "${targetProj.hangMuc} | ${targetProj.tenDuAn}" — ${tiTrongLech.moTa}`, targetProj.id);
       }
-      logAction('Cập nhật tác vụ', `Cập nhật cây công việc và tiến độ con cho hồ sơ ${maHienThi(targetProj.projectId)} - ${targetProj.tenDuAn}`, undefined, getProjectParticipants(targetProj));
+      logAction('Cập nhật tác vụ', `Cập nhật cây công việc và tiến độ con cho hồ sơ ${nhanHoSo(targetProj)}`, undefined, getProjectParticipants(targetProj));
       // CHỈ báo khi KẾ HOẠCH thật sự đổi (thêm/xoá việc, đổi tên, tỉ trọng, người giao, lịch).
       // Nhân viên chỉ kéo tiến độ / nhập kết quả thì KHÔNG báo — Quản lý nhìn % trên bảng là thấy,
       // báo mỗi lần nhúc nhích chỉ làm nhiễu chuông (chị Trâm báo 28/07/2026).
       if (chuKyKeHoach(targetProj.tasks) !== chuKyKeHoach(updatedTasks)) {
-        pushNotify(allManagerIds(targetProj), `Công việc "${targetProj.hangMuc} — ${targetProj.tenDuAn}" vừa chỉnh sửa kế hoạch.`, targetProj.id);
+        pushNotify(allManagerIds(targetProj), `Công việc "${targetProj.hangMuc} | ${targetProj.tenDuAn}" vừa chỉnh sửa kế hoạch.`, targetProj.id);
       }
-      // Người MỚI được giao việc (chưa có trong danh sách cũ) — chỉ báo khi công việc đã được TP duyệt
-      if (!hoSoChoTPDuyet(targetProj)) {
+      // Người MỚI được giao việc (chưa có trong danh sách cũ) — báo NGAY, kể cả khi kế hoạch còn
+      // chờ Trưởng phòng duyệt (chị Trâm chốt 12/09/2026). Trước đây im lặng cho tới lúc duyệt xong;
+      // nay nhân sự được bắt tay làm ngay nên phải biết ngay mình có việc.
+      {
         const oldIds = new Set([targetProj.thucHienId, ...(targetProj.thucHienIds || [])].filter(Boolean));
         const newcomers = assignees.filter(id => !oldIds.has(id));
-        pushNotify(newcomers, `Bạn được giao công việc "${targetProj.hangMuc} — ${targetProj.tenDuAn}".`, targetProj.id);
+        pushNotify(newcomers, `Bạn được giao công việc "${targetProj.hangMuc} | ${targetProj.tenDuAn}".`, targetProj.id);
       }
     }
   };
@@ -3100,11 +3541,26 @@ export default function App() {
   // Cập nhật ngày bắt đầu / số ngày của một công việc con (phục vụ sơ đồ Gantt)
   // Di chuyển thẻ hồ sơ trên bảng Kanban (RBAC đã được KanbanBoard kiểm tra, kiểm lại lần cuối tại đây)
   // daXacNhanGuiCDT: chỉ true khi TP đã bấm "Đúng, ghi nhận" trong hộp xác nhận gửi CĐT.
-  const handleKanbanMove = (projectId: string, fromStep: number, toStep: number, daXacNhanGuiCDT = false) => {
+  // daKhaiLyDoTre: vừa khai lý do trễ hạn ở hộp riêng (hoặc ở bảng cập nhật tiến độ Phòng) rồi gọi
+  // lại hàm này để đi tiếp. BẮT BUỘC phải có cờ: lý do vừa ghi bằng setProjects nên `projects` mà
+  // hàm này đóng gói vẫn là bản CŨ — đọc lại sẽ thấy ô lý do trống và hỏi thêm lần nữa (chị Trâm
+  // báo 19/09/2026: "yêu cầu khai trễ hạn 2 lần").
+  const handleKanbanMove = (projectId: string, fromStep: number, toStep: number, daXacNhanGuiCDT = false, daKhaiLyDoTre = false) => {
     if (currentUser?.role !== 'BOOD' && currentUser?.role !== 'MANAGER') return;
-    // Quản lý (L2) được đẩy thẻ lên tối đa bước 3 (Duyệt giá cấp phòng); từ bước 3 trở đi do Trưởng phòng.
-    if (currentUser.role === 'MANAGER' && (fromStep > 2 || toStep > 3)) {
-      triggerToast('Quản lý (L2) chỉ đẩy được tối đa đến bước 3 (Duyệt giá cấp phòng) để báo Trưởng phòng. Từ bước 3 do Trưởng phòng thao tác!');
+    // ===== QUYỀN ĐẨY THẺ CỦA QUẢN LÝ (L2) — nới 19/09/2026 =====
+    // Chị Trâm: "Mở thêm cho Quản lý tính năng kéo từ Bước 4 qua Bước 5, và từ Bước 5 được click
+    //            trúng thầu hay rớt thầu đi ní."
+    //   · 1-2 → tối đa 3 : như cũ, đẩy lên để báo Trưởng phòng.
+    //   · 4 → 5          : gửi hồ sơ cho Chủ đầu tư (Ban lãnh đạo đã duyệt ở Bước 4).
+    //   · 5 → 6 hoặc 7   : ghi nhận trúng / rớt thầu theo tin Chủ đầu tư báo.
+    // VẪN CHẶN 3 → 4: cửa "Phòng xong phần mình" do Trưởng phòng chốt tiến độ Phòng 100%.
+    // Giữ đúng một bộ luật với canMove() bên KanbanBoard — hai nơi lệch nhau là nút bấm được mà
+    // thao tác bị từ chối, người dùng không hiểu vì sao.
+    const l2DuocDay = (fromStep <= 2 && toStep <= 3)
+      || (fromStep === 4 && toStep === 5)
+      || (fromStep === 5 && (toStep === 6 || toStep === 7));
+    if (currentUser.role === 'MANAGER' && !l2DuocDay && toStep !== 1) {
+      triggerToast('Cửa bước 3 → 4 (trình Ban lãnh đạo) do Trưởng phòng chốt tiến độ Phòng rồi mới chuyển. Quản lý đẩy được tới bước 3, và thao tác được 4 → 5 (gửi CĐT), 5 → 6/7 (trúng / rớt thầu).');
       return;
     }
     const target = projects.find(p => p.id === projectId);
@@ -3222,6 +3678,43 @@ export default function App() {
       return;
     }
 
+    // ===== RỜI KHÂU NÀO MÀ TRỄ KHÂU ĐÓ THÌ PHẢI KHAI LÝ DO (chị Trâm chốt 19/09/2026) =====
+    // "Nếu LV1 kéo từ bước 3 => 4 nếu dự án trễ hạn Phòng yêu cầu nhập lý do nữa nha. Nếu LV2 kéo
+    //  từ bước 2 => 3 mà trễ hạn cũng phải yêu cầu nhập lý do mới cho lưu. Như vậy trong chỗ ghi
+    //  trễ hạn sẽ có lưu lại Bộ phận ghi gì, Phòng ghi gì."
+    //
+    // Hai cửa, mỗi cửa gác đúng khâu của mình, và hỏi ĐÚNG LÚC người chịu trách nhiệm rời khâu đó:
+    //   Bước 2 → 3 : Bộ phận giao việc lên Phòng. Quá HẠN BỘ PHẬN thì Quản lý khai lý do.
+    //   Bước 3 → 4 : Phòng duyệt xong, trình Ban lãnh đạo. Quá HẠN PHÒNG thì Trưởng phòng khai.
+    // Hỏi lúc rời khâu chứ không đợi cuối kỳ: lúc đó còn nhớ vì sao chậm, để sang tháng mới hỏi
+    // thì chỉ còn đoán.
+    if (!daKhaiLyDoTre) {
+      const roiBoPhan = fromStep === 2 && toStep === 3;
+      const roiPhong  = fromStep === 3 && toStep === BUOC_XONG_PHAN_PHONG;
+      const homNay = ymdOf(new Date());
+      if (roiBoPhan && !(target.lyDoTreBoPhan || '').trim()) {
+        const hanBP = ymdOf(getExecEnd(target));
+        if (hanBP && homNay > hanBP) {
+          setLyDoTreHanTam('');
+          setHoiLyDoTreHan({ project: target, fromStep, toStep, benchmark: hanBP, khau: 'BO_PHAN' });
+          return;
+        }
+      }
+      // KHÂU PHÒNG KHÔNG DÙNG HỘP RIÊNG (chị Trâm chốt 19/09/2026): "ở B3 qua B4 thì khai 1 lần
+      // lúc đưa bảng KH lên thôi, báo chung trong bảng cập nhật kế hoạch."
+      // Mở thẳng BẢNG CẬP NHẬT TIẾN ĐỘ & KẾT QUẢ CẤP PHÒNG — bảng đó tự hiện ô lý do và tự đẩy hồ
+      // sơ sang bước đích sau khi lưu. Nhờ vậy dù Trưởng phòng đi đường nào (kéo thẻ khi đã đủ
+      // 100%, hay bị cửa chốt 100% chặn) cũng chỉ gặp ĐÚNG MỘT bảng, khai đúng một lần.
+      if (roiPhong && !(target.lyDoTrePhong || '').trim()) {
+        const hanPhong = ymdOf(getDeptDeadline(target));
+        if (hanPhong && homNay > hanPhong) {
+          setPhongInputProject(target);
+          setPhongInputChuyenBuoc(toStep);
+          return;
+        }
+      }
+    }
+
     // XÁC NHẬN trước khi ghi nhận 1 lần gửi CĐT — tránh TP lỡ tay kéo qua kéo lại làm số lần
     // gửi tăng sai. Chỉ hỏi khi thực sự đi 4 → 5 (đường sinh ra bản ghi gửi CĐT).
     if (toStep === 5 && fromStep === 4 && !daXacNhanGuiCDT) {
@@ -3242,18 +3735,23 @@ export default function App() {
         // Lùi hồ sơ về giai đoạn trước khi có kết quả → quay lại đang triển khai
         tinhTrangDuAn = 'Đang triển khai';
       }
-      // Bước 5 "Hồ sơ đã gửi CĐT" = đóng gói thầu: tự chốt ngày đóng hồ sơ thực tế (giữ ngày TP đã
-      // nhập tay nếu có) và đánh giá đúng hạn/trễ theo THỜI HẠN HẸN CĐT (không có hẹn thì theo hạn hiện tại).
-      // TP vẫn có thể vào form sửa tay ngày thực tế nếu ngày gửi thật khác ngày kéo thẻ.
+      // ===== NGÀY ĐÓNG HỒ SƠ CHỐT TẠI BƯỚC 4 (chị Trâm chốt 19/09/2026) =====
+      // "Ngày đóng hồ sơ tính từ lúc Bước 3 kéo qua Bước 4 nha em, coi như hạn thầu đã xong."
+      // Trước đây chốt ở Bước 5 (đã gửi CĐT) — sót lại từ mốc cũ. Mốc "Phòng xong phần mình" đã
+      // chuyển về Bước 4 từ 12/09, nên ngày đóng hồ sơ phải theo đúng mốc đó: quãng chờ Ban lãnh
+      // đạo ký không thuộc trách nhiệm của Phòng.
+      // TP vẫn sửa tay được ngày thực tế trong form nếu ngày thật khác ngày kéo thẻ.
       let dongGoi: Partial<Project> = {};
+      if (toStep >= BUOC_XONG_PHAN_PHONG && fromStep < BUOC_XONG_PHAN_PHONG) {
+        const { ngayDong, treHan } = tinhDongHoSo(p);
+        dongGoi = { ngayHoanThanhThucTe: ngayDong, trangThai: treHan ? 'HOAN_THANH_TRE_HAN' : 'HOAN_THANH_DUNG_HAN' };
+        step5AutoMsg = ` Đã chốt ngày đóng hồ sơ ${fmtDateVN(ngayDong)} — ${treHan ? 'TRỄ' : 'ĐÚNG'} hạn ${p.hanHenCDT ? 'hẹn CĐT' : 'thầu'}.`;
+      }
+      // GHI NHẬN 1 LẦN GỬI CĐT vẫn ở Bước 5 — đó là việc khác với "đóng hồ sơ".
       if (toStep === 5 && fromStep < 5) {
         const actual = p.ngayHoanThanhThucTe || new Date().toISOString().split('T')[0];
-        const benchmark = p.hanHenCDT || ymdOf(getTenderDeadline(p));
-        const treHan = !!benchmark && new Date(actual) > new Date(benchmark);
-        dongGoi = { ngayHoanThanhThucTe: actual, trangThai: treHan ? 'HOAN_THANH_TRE_HAN' : 'HOAN_THANH_DUNG_HAN' };
-        step5AutoMsg = ` Đã chốt ngày gửi CĐT ${actual.split('-').reverse().join('-')} — ${treHan ? 'TRỄ' : 'ĐÚNG'} hạn ${p.hanHenCDT ? 'hẹn CĐT' : 'hiện tại'}.`;
-        // GHI NHẬN 1 LẦN GỬI CĐT: TP kéo tay 4→5 = hồ sơ đã gửi CĐT lần này. Hồ sơ bị yêu cầu sửa,
-        // kéo về bước 1-3 rồi làm lại và kéo 4→5 nữa → ghi tiếp lần 2, lần 3... (chị Trâm chốt 25/07/2026).
+        // TP kéo tay 4→5 = hồ sơ đã gửi CĐT lần này. Hồ sơ bị yêu cầu sửa, kéo về bước 1-3 rồi làm
+        // lại và kéo 4→5 nữa → ghi tiếp lần 2, lần 3... (chị Trâm chốt 25/07/2026).
         const lanTruoc = p.guiCDTLogs || [];
         lanGuiCDT = lanTruoc.length + 1;
         dongGoi.guiCDTLogs = [...lanTruoc, {
@@ -3265,9 +3763,11 @@ export default function App() {
           nguoiGui: currentUser?.name || '',
         }];
         step5AutoMsg += ` Đã ghi nhận GỬI CĐT LẦN ${soLanGuiTruocApp(p) + lanGuiCDT}.`;
-      } else if (fromStep >= 5 && toStep < 5) {
-        // Kéo lùi về trước bước 5: hồ sơ coi như chưa gửi → bỏ mốc tự chốt, trở lại đang thực hiện
-        dongGoi = { ngayHoanThanhThucTe: undefined, trangThai: 'DANG_THUC_HIEN' };
+      }
+      if (fromStep >= BUOC_XONG_PHAN_PHONG && toStep < BUOC_XONG_PHAN_PHONG) {
+        // Kéo lùi về trước mốc Phòng xong phần mình → hồ sơ coi như chưa đóng: bỏ mốc tự chốt,
+        // trở lại đang thực hiện.
+        dongGoi = { ...dongGoi, ngayHoanThanhThucTe: undefined, trangThai: 'DANG_THUC_HIEN' };
       }
       // VÒNG CHỈNH SỬA MỚI: kéo hồ sơ từ bước 4 trở lên về bước 1-3 → tiến độ Phòng reset về 0 để
       // vòng này Trưởng phòng phải duyệt lại từ đầu.
@@ -3281,7 +3781,7 @@ export default function App() {
     }));
     const stepTitle = KANBAN_STEPS.find(s => s.id === toStep)?.title || `Bước ${toStep}`;
     triggerToast(`Đã chuyển "${target.tenDuAn}" sang bước ${toStep}: ${stepTitle}.${step5AutoMsg}`);
-    logAction('Chuyển bước Kanban', `Chuyển hồ sơ ${maHienThi(target.projectId)} - ${target.tenDuAn} từ bước ${fromStep} sang bước ${toStep} (${stepTitle})`, undefined, getProjectParticipants(target));
+    logAction('Chuyển bước Kanban', `Chuyển hồ sơ ${nhanHoSo(target)} từ bước ${fromStep} sang bước ${toStep} (${stepTitle})`, undefined, getProjectParticipants(target));
     // Vào bước 4 (trình BLĐ/Giám đốc) → MỞ NGAY bảng nhập tiến độ Phòng + kết quả công việc cho
     // Trưởng phòng làm luôn tại chỗ (chị Trâm chốt 25/07/2026), thay vì chỉ nhắc rồi TP phải tự tìm form.
     // Mở ở MỌI vòng (kể cả vòng chỉnh sửa lần 2, 3...) vì mỗi vòng phải nhập lại tiến độ & kết quả.
@@ -3297,25 +3797,44 @@ export default function App() {
     // vào kiểm tra (chị Trâm chốt 27/07/2026). Từ bước 3 trở đi việc thuộc về TP nên phải biết ngay.
     if (toStep === KANBAN_L1_ONLY_FROM && fromStep < KANBAN_L1_ONLY_FROM && currentUser.role === 'MANAGER') {
       const boodIds = staff.filter(s => (s.role || chucVuToRole(s.chucVu)) === 'BOOD' && !s.daNghi).map(s => s.id);
-      pushNotify(boodIds, `Quản lý ${currentUser.name} đã trình hồ sơ "${target.hangMuc} — ${target.tenDuAn}" sang bước ${toStep} (${KANBAN_STEPS.find(s => s.id === toStep)?.title}). Tiến độ Bộ phận đạt 100%, đề nghị Trưởng phòng kiểm tra và duyệt.`, target.id);
+      pushNotify(boodIds, `Quản lý ${currentUser.name} đã trình hồ sơ "${target.hangMuc} | ${target.tenDuAn}" sang bước ${toStep} (${KANBAN_STEPS.find(s => s.id === toStep)?.title}). Tiến độ Bộ phận đạt 100%, đề nghị Trưởng phòng kiểm tra và duyệt.`, target.id);
     }
+    // ===== QUẢN LÝ LÀM BA VIỆC QUAN TRỌNG THÌ TRƯỞNG PHÒNG PHẢI BIẾT (chị Trâm chốt 19/09/2026) =====
+    // "Khi Quản lý thao tác gửi CĐT - click trúng thầu và rớt thầu, thì cũng báo cho LV1 biết nữa
+    //  nhé em", "mấy thao tác đó quan trọng."
+    // Ba mốc này trước đây chỉ Trưởng phòng làm nên không cần tự báo cho mình. Từ hôm nay Quản lý
+    // làm được, mà đây là ba việc ĐỐI NGOẠI — gửi hồ sơ ra ngoài và chốt kết quả thầu — nên Trưởng
+    // phòng phải biết ngay, không đợi mở Kanban mới thấy.
+    // Tin gửi RIÊNG cho Trưởng phòng (khác tin chúc mừng gửi cả nhóm bên dưới): nói rõ AI thao tác.
+    if (currentUser.role === 'MANAGER' && fromStep !== toStep &&
+        ((toStep === 5 && fromStep === 4) || toStep === 6 || toStep === 7)) {
+      const boodIds = staff.filter(x => (x.role || chucVuToRole(x.chucVu)) === 'BOOD' && !x.daNghi).map(x => x.id);
+      const nhan = `"${target.hangMuc} | ${target.tenDuAn}"`;
+      const cau = toStep === 5
+        ? `📤 Quản lý ${currentUser.name} vừa GỬI HỒ SƠ ${nhan} cho Chủ đầu tư (lần ${lanGuiKeTiep(target)}).`
+        : toStep === 6
+          ? `🏆 Quản lý ${currentUser.name} vừa ghi nhận ${nhan} TRÚNG THẦU.`
+          : `📕 Quản lý ${currentUser.name} vừa ghi nhận ${nhan} RỚT THẦU.`;
+      pushNotify(boodIds, `${cau} Vui lòng kiểm tra lại thông tin trên hồ sơ.`, target.id, true);
+    }
+
     // Kéo đến bước 6 "Trúng thầu" → báo tin mừng cho TOÀN BỘ quản lý & nhân viên tham gia dự án
     // (luonBao: một trong 3 mốc vẫn báo cho L2/L3 dù hồ sơ đã qua bước 3 — xem pushNotify)
     if (toStep === 6 && fromStep !== 6) {
       const parentName = (target.duAnChaId && projects.find(x => x.id === target.duAnChaId)?.tenDuAn) || target.tenDuAn;
-      pushNotify(getProjectParticipants(target), `🎉 Chúc mừng! Gói thầu "${target.hangMuc} — ${parentName}" đã TRÚNG THẦU. Cảm ơn cả nhóm đã tham gia!`, target.id, true);
+      pushNotify(getProjectParticipants(target), `🎉 Chúc mừng! Gói thầu "${target.hangMuc} | ${parentName}" đã TRÚNG THẦU. Cảm ơn cả nhóm đã tham gia!`, target.id, true);
     }
     // Kéo đến bước 7 "Rớt thầu" → cũng báo cho cả nhóm, để mọi người biết gói thầu đã khép lại
     // (chị Trâm chốt 27/07/2026: trúng hay rớt đều phải báo).
     if (toStep === 7 && fromStep !== 7) {
       const parentName = (target.duAnChaId && projects.find(x => x.id === target.duAnChaId)?.tenDuAn) || target.tenDuAn;
-      pushNotify(getProjectParticipants(target), `Gói thầu "${target.hangMuc} — ${parentName}" đã có kết quả: RỚT THẦU. Hồ sơ khép lại tại bước ${toStep}.`, target.id, true);
+      pushNotify(getProjectParticipants(target), `Gói thầu "${target.hangMuc} | ${parentName}" đã có kết quả: RỚT THẦU. Hồ sơ khép lại tại bước ${toStep}.`, target.id, true);
     }
     // Kéo NGƯỢC hồ sơ từ bước 3 trở lên về Bước 1 / Bước 2 → việc quay lại tay Quản lý & nhân viên,
     // nên phải báo (mốc thứ ba vẫn xuyên bộ lọc). Kéo về Bước 1 bằng thao tác riêng đã có tin riêng.
     if (fromStep >= KANBAN_L1_ONLY_FROM && toStep <= 2) {
       const tenBuocVe = KANBAN_STEPS.find(s => s.id === toStep)?.title || `Bước ${toStep}`;
-      pushNotify(getProjectParticipants(target), `Hồ sơ "${target.hangMuc} — ${target.tenDuAn}" đã được chuyển về Bước ${toStep} (${tenBuocVe}) để chỉnh sửa. Đề nghị kiểm tra và cập nhật lại phần việc phụ trách.`, target.id, true);
+      pushNotify(getProjectParticipants(target), `Hồ sơ "${target.hangMuc} | ${target.tenDuAn}" đã được chuyển về Bước ${toStep} (${tenBuocVe}) để chỉnh sửa. Đề nghị kiểm tra và cập nhật lại phần việc phụ trách.`, target.id, true);
     }
   };
 
@@ -3338,6 +3857,9 @@ export default function App() {
   const handlePullBackKeepDeadline = (p: Project, moVongMoi = false) => {
     setPullBackProject(null);
     const vongMoi = moVongMoi ? Math.max(1, p.vongHienTai || 1) + 1 : Math.max(1, p.vongHienTai || 1);
+    // AI KÉO — từ 12/09/2026 hàm này còn phục vụ Quản lý kéo về từ Bước 5 (mở vòng mới), nên câu
+    // chữ không ghi cứng "Trưởng phòng" nữa, bằng không nhật ký ghi sai người thao tác.
+    const nguoiKeo = currentUser?.role === 'BOOD' ? 'Trưởng phòng' : 'Quản lý';
     setProjects(prev => prev.map(x => x.id !== p.id ? x : {
       ...x,
       kanbanStep: 1,
@@ -3358,17 +3880,30 @@ export default function App() {
     triggerToast(moVongMoi
       ? `Đã kéo "${p.hangMuc}" về Bước 1 và MỞ VÒNG ${vongMoi} — Quản lý phải tạo công việc con mới đủ 100% cho vòng này.`
       : `Đã kéo "${p.hangMuc}" về Bước 1 (giữ nguyên hạn nộp, vẫn ở vòng ${vongMoi}) — hệ thống đã báo Quản lý lập lại công việc con để trình duyệt tiến độ.`);
-    logAction('Kéo về Bước 1', `Kéo hồ sơ ${maHienThi(p.projectId)} - ${p.tenDuAn} về Bước 1, giữ nguyên hạn nộp.${moVongMoi ? ` MỞ VÒNG ${vongMoi} (làm lại sau khi đã gửi CĐT).` : ''} Chờ Quản lý lập lại kế hoạch & trình Trưởng phòng duyệt tiến độ.`, undefined, getProjectParticipants(p));
+    logAction('Kéo về Bước 1', `${nguoiKeo} kéo hồ sơ ${nhanHoSo(p)} về Bước 1, giữ nguyên hạn nộp.${moVongMoi ? ` MỞ VÒNG ${vongMoi} (làm lại sau khi đã gửi CĐT).` : ''} Chờ Quản lý lập lại kế hoạch & trình Trưởng phòng duyệt tiến độ.`, undefined, getProjectParticipants(p));
     // Hàm này giờ CHỈ Trưởng phòng dùng (kéo thẳng về Bước 1, không hỏi). Quản lý đi đường khác:
     // bắt buộc qua bảng phân bổ lại việc con — xem handlePullBackApply.
     // Báo Quản lý phụ trách vào PHÂN BỔ LẠI công việc con để tính lại tiến độ của vòng này.
     pushNotify(allManagerIds(p), moVongMoi
-      ? `Trưởng phòng đã kéo hồ sơ "${p.hangMuc} — ${p.tenDuAn}" về Bước 1 và mở VÒNG ${vongMoi}. Vui lòng lập bộ công việc con MỚI cho vòng này, chia tỉ trọng đủ 100% rồi trình Trưởng phòng duyệt tiến độ. Việc của vòng trước được giữ nguyên (chỉ xem).`
-      : `Trưởng phòng đã kéo hồ sơ "${p.hangMuc} — ${p.tenDuAn}" về Bước 1. Vui lòng phân bổ lại công việc con để tính lại tiến độ của vòng này, rồi trình Trưởng phòng duyệt; duyệt xong hồ sơ tự sang Bước 2.`, p.id, true);
+      ? `${nguoiKeo} đã kéo hồ sơ "${p.hangMuc} | ${p.tenDuAn}" về Bước 1 và mở VÒNG ${vongMoi}. Vui lòng lập bộ công việc con MỚI cho vòng này, chia tỉ trọng đủ 100% rồi trình Trưởng phòng duyệt tiến độ. Việc của vòng trước được giữ nguyên (chỉ xem).`
+      : `${nguoiKeo} đã kéo hồ sơ "${p.hangMuc} | ${p.tenDuAn}" về Bước 1. Vui lòng phân bổ lại công việc con để tính lại tiến độ của vòng này, rồi trình Trưởng phòng duyệt; duyệt xong hồ sơ tự sang Bước 2.`, p.id, true);
+    // QUẢN LÝ kéo về (Bước 5 → mở vòng mới) thì Trưởng phòng phải biết ngay — chính chị là người
+    // sẽ duyệt kế hoạch vòng mới. Trưởng phòng tự kéo thì không cần tự báo cho mình.
+    if (currentUser?.role !== 'BOOD') {
+      const boodIds = staff.filter(s => s.role === 'BOOD' && !s.daNghi).map(s => s.id);
+      pushNotify(boodIds, `Quản lý đã kéo hồ sơ "${p.hangMuc} | ${p.tenDuAn}" từ Bước 5 (đã gửi CĐT) về Bước 1 và mở VÒNG ${vongMoi}. Chờ Quản lý lập bộ việc con mới để Trưởng phòng duyệt kế hoạch.`, p.id);
+    }
   };
 
   // Áp dụng dời hạn khi kéo về Bước 1: cập nhật việc con, cộng hạn = số ngày dời THỰC, kéo về Bước 1,
   // ghi Delay Log. Định tuyến duyệt (GĐ D): L1 (BOOD) tự áp; L2 (MANAGER) gắn cờ chờ TP duyệt lại.
+  // ===== CHỈ MỘT CƠ CHẾ DỜI HẠN: CĂN CỨ VIỆC CON (chị Trâm chốt 19/09/2026) =====
+  // "Cơ bản em chỉnh cái đó làm tăng hạn, nhưng việc con không chạy, thì bị đá với tiến độ của
+  //  Bộ phận và cả Phòng luôn, nên thôi bỏ luôn cái đó khỏi rắc rối, chỉ đi theo 1 cơ chế căn cứ
+  //  theo việc con là được rồi."
+  // Ô "xin gia hạn thêm" trong bảng dời hạn đã bỏ. Phiếu từ đây chỉ còn GHI LÝ DO, không mang số
+  // ngày (soNgayLech = 0) — số ngày nằm trọn trong lịch việc con, nên Gantt, hạn Bộ phận và hạn
+  // Phòng luôn đọc ra cùng một ngày.
   const handlePullBackApply = (projId: string, newTasks: ProjectTask[], delayDays: number, reason: string) => {
     const isL2 = currentUser?.role === 'MANAGER';
     let target: Project | undefined;
@@ -3386,36 +3921,80 @@ export default function App() {
       // Trước đây lấy hạn cũ + số ngày dời. Nhưng số ngày dời được suy ra CHÍNH TỪ việc con, mà
       // hạn gốc lại cũng tự tính từ việc con (getDeptDeadline) — nên cùng một khoảng thời gian bị
       // cộng hai lần: form hiện "Hạn Phòng 01-08" mà "Hạn hiện tại (đã bù lệch)" lại ra 03-08.
-      const newDeadline = coDoiHan
-        ? ymdOf(getDeptDeadline({ ...p, tasks: newTasks }))
-        : p.ngayHoanThanhDuKienHienTai;
-      const delayLog: DelayLog = {
+      // PHIẾU của lần dời này. `soNgayLech` CHỈ mang phần XIN GIA HẠN bằng phiếu — phần do việc con
+      // dài ra thì getExecEnd tự thấy từ kế hoạch, ghi vào đây nữa là cộng trùng (đúng bug cũ).
+      // `vong` để hạn của vòng sau không bị cộng tiếp phiếu của vòng trước.
+      // ===== HẠN CŨ PHẢI LẤY CÙNG NGUỒN VỚI HẠN MỚI (chị Trâm báo lỗi 14/09/2026) =====
+      // "Quản lý bấm dời tiến độ việc con thì lại ghi dời 0 ngày."
+      // Nguyên nhân: `ngayCu` đọc TRƯỜNG LƯU còn `ngayMoi` tính bằng CÔNG THỨC — hai đầu của cùng
+      // một phép trừ lấy từ hai nguồn khác nhau nên hiệu số ra vô nghĩa. Ca chị gặp: theo công thức
+      // hạn dịch 18-08 → 19-08 (có dời 1 ngày thật), nhưng trường lưu đang là 19-08 nên phiếu ghi
+      // 19-08 → 19-08 = "+0 ngày", trông như dời hụt.
+      // Nay hạn cũ cũng tính bằng getDeptDeadline trên kế hoạch CŨ (tasks cũ, phiếu cũ) — cùng thước
+      // đo với hạn mới, nên số ngày dời luôn phản ánh đúng phần thời gian thật sự bị đẩy ra.
+      const hanCuTheoCongThuc = ymdOf(getDeptDeadline(p));
+      const delayLogTam: DelayLog = {
         id: `DL-${Date.now()}`,
         ngayThayDoi: today,
-        ngayCu: p.ngayHoanThanhDuKienHienTai,
-        ngayMoi: newDeadline,
-        // Để 0: số ngày này ĐÃ nằm trong kế hoạch việc con nên hạn gốc tự có, cộng thêm là trùng.
-        // Số ngày dời thật vẫn đọc được từ cặp ngayCu → ngayMoi (xem tongNgayDoiHan).
-        soNgayLech: 0,
+        ngayCu: hanCuTheoCongThuc,
+        ngayMoi: hanCuTheoCongThuc, // đặt lại ngay bên dưới sau khi tính được hạn mới
+        soNgayLech: 0,   // số ngày đã nằm trong lịch việc con — xem ghi chú đầu hàm
         lyDo: reason,
         nguoiDuyet: isL2 ? '' : (currentUser?.name || ''), // L2 chờ TP duyệt → chưa có người duyệt
+        vong: Math.max(1, p.vongHienTai || 1),
+        // Ghi lại KHÂU GÂY TRỄ ngay lúc lập phiếu — suy từ tiến độ so với hạn Bộ phận / hạn Phòng
+        // tại thời điểm này (chị Trâm 15/09/2026). Phải chấm TRƯỚC khi đổi việc con, vì sau khi
+        // lưu kế hoạch mới thì hạn đã dịch ra, soi lại sẽ ra "chưa trễ" — mất dấu chuyện vừa xảy ra.
+        khauTre: khauDangTre(p),
       };
+      // Hạn mới = tính LẠI từ kế hoạch việc con MỚI, đã bao gồm luôn phiếu gia hạn của vòng này
+      // (getExecEnd cộng ngayGiaHanTheoPhieu). Phải dựng phiếu mới TRƯỚC rồi mới tính, bằng không
+      // phần xin gia hạn vừa khai chưa có trong danh sách nên hạn ra thiếu đúng số ngày đó.
+      const delayLogsMoi = [...(p.delayLogs || []), delayLogTam];
+      // ⚠ TÍNH LẠI CẢ KHI KHÔNG DỜI HẠN (chị Trâm báo lỗi 19/09/2026):
+      // Trước đây nhánh "giữ nguyên hạn" gán lại đúng trường CŨ, nên khi Quản lý rút ngắn kế hoạch
+      // (làm nhanh hơn) thì hạn thật đã rút vào mà trường lưu vẫn là ngày cũ — thẻ Kanban tính
+      // bằng công thức hiện một ngày, thông báo đọc trường lưu hiện ngày khác.
+      // Nay cả hai nhánh cùng tính bằng MỘT công thức trên kế hoạch MỚI; khác nhau chỉ ở chỗ nhánh
+      // dời hạn có thêm phiếu gia hạn vừa lập.
+      const newDeadline = ymdOf(getDeptDeadline({ ...p, tasks: newTasks, delayLogs: delayLogsMoi }));
+      const delayLog: DelayLog = { ...delayLogTam, ngayMoi: newDeadline };
+
+      // ===== HẠN ĐỔI LÀ PHẢI TRÌNH LẠI, DÙ TĂNG HAY GIẢM (chị Trâm chốt 19/09/2026) =====
+      // "Nếu mà hạn Bộ phận thay đổi thì cứ đưa lại cho TP duyệt, dù là tăng hạn hay giảm hạn;
+      //  nếu giảm hạn thì cũng ghi vô lịch sử dời tiến độ là xong mà."
+      //
+      // Luật trước chỉ xét hạn BỊ ĐẨY RA. Nhưng rút ngắn cũng là đổi kế hoạch Phòng: Trưởng phòng
+      // đã sắp lịch kiểm theo mốc cũ, giờ hồ sơ về sớm hơn mà không ai báo thì cũng hỏng việc. Và
+      // lịch sử dời tiến độ mà chỉ ghi lần lùi ra, bỏ lần rút vào, thì đọc lại không dựng được
+      // đúng đường đi của hạn.
+      //
+      // `coDoiHan` (số ngày XIN GIA HẠN > 0) vẫn giữ để biết có phiếu xin thêm ngày hay không;
+      // còn việc trình lại nay xét theo HẠN CÓ ĐỔI KHÔNG — tăng hay giảm đều tính.
+      const hanCu = ymdOf(getDeptDeadline(p));
+      const hanDoi = newDeadline !== hanCu;
+      // Đổi phân bổ mà hạn y nguyên thì vẫn đứng tại chỗ, không phiền Trưởng phòng
+      // (chị Trâm chốt 15/09/2026) — luật đó không đổi, chỉ mở rộng phần "hạn đổi".
+      const buocGiuNguyen = Math.max(1, p.kanbanStep || deriveKanbanStep(p));
       return {
         ...p,
         tasks: newTasks,
         tienDoBoPhan: newProg,
-        tienDoPhong: 0,            // kéo về Bước 1 → tiến độ Phòng reset, chờ duyệt lại
-        // GIỮ NGUYÊN kết quả kiểm tra & tệp (chị Trâm chốt 28/07/2026) — chỉ reset % tiến độ.
+        // Hạn đổi → về Bước 1, tiến độ Phòng reset chờ duyệt lại.
+        // Hạn y nguyên → giữ luôn tiến độ Phòng đã duyệt, không bắt duyệt lại từ đầu.
+        // GIỮ NGUYÊN kết quả kiểm tra & tệp trong cả hai trường hợp (chị Trâm chốt 28/07/2026).
+        ...(hanDoi
+          ? { tienDoPhong: 0, kanbanStep: 1 }
+          : { kanbanStep: buocGiuNguyen }),
         ngayHoanThanhDuKienHienTai: newDeadline,
-        kanbanStep: 1,
         tinhTrangDuAn: 'Đang triển khai' as const,
         trangThai: 'DANG_THUC_HIEN' as const,
-        delayLogs: coDoiHan ? [...(p.delayLogs || []), delayLog] : (p.delayLogs || []),
-        // L2 sửa → chờ TP duyệt lại tiến độ Phòng (tỉ trọng việc con đã đổi); L1 tự sửa → không cần cờ.
-        // Ghi rõ VÌ SAO duyệt lại: chỉ đổi phân bổ thì Trưởng phòng duyệt cho nhanh, đừng để chuông
-        // báo "DELAY" làm chị tưởng gói thầu bị đẩy hạn (chị Trâm 29/07/2026).
-        ...(isL2
-          ? { choDuyetLai: true, lyDoChoDuyetLai: (coDoiHan ? 'DOI_HAN' : 'PHAN_BO') as 'DOI_HAN' | 'PHAN_BO' }
+        // Ghi phiếu cho MỌI lần hạn đổi — kể cả rút vào. Phiếu rút vào mang soNgayLech = 0 (không
+        // xin thêm ngày nào), nhưng cặp ngày cũ → mới vẫn kể đúng chuyện đã xảy ra.
+        delayLogs: hanDoi ? [...(p.delayLogs || []), delayLog] : (p.delayLogs || []),
+        // Cờ chờ duyệt lại đặt khi Quản lý (L2) làm hạn ĐỔI; L1 tự sửa thì không cần cờ.
+        ...(isL2 && hanDoi
+          ? { choDuyetLai: true, lyDoChoDuyetLai: 'DOI_HAN' as const }
           : { choDuyetLai: undefined, lyDoChoDuyetLai: undefined }),
       };
     });
@@ -3423,31 +4002,59 @@ export default function App() {
     setPullBackDelayProject(null);
     if (!target) return;
     const coDoiHan = delayDays > 0;
+    // `target` là bản ghi TRƯỚC khi đổi kế hoạch, nên chấm ở đây ra đúng khâu đang gây trễ lúc lập
+    // phiếu — chấm sau khi lưu thì hạn đã dịch ra, soi lại sẽ ra "chưa trễ" và mất dấu.
+    const khauTreLucLap = khauDangTre(target);
+    // Bước hồ sơ đứng SAU khi sửa — để câu thông báo nói đúng chỗ hồ sơ đang nằm.
+    const buocSauKhiSua = coDoiHan ? 1 : Math.max(1, target.kanbanStep || deriveKanbanStep(target));
+
+    // ===== CÂU THÔNG BÁO PHẢI NÓI ĐÚNG HẠN SAU KHI SỬA (chị Trâm báo lỗi 19/09/2026) =====
+    // "Quản lý cập nhật thay đổi tiến độ lùi ngày, có nghĩa là làm nhanh hơn... nhưng sao tiến độ
+    //  của Phòng lại bị lùi ngày theo?"
+    // Lỗi ở câu chữ: thông báo đọc TRƯỜNG ĐÃ LƯU `ngayHoanThanhDuKienHienTai` (hạn TRƯỚC khi sửa),
+    // còn thẻ Kanban tính bằng công thức từ việc con MỚI — nên báo "GIỮ NGUYÊN hạn nộp 24/09"
+    // trong khi thẻ hiện 21/09. Lại đúng lớp lỗi "hai nguồn" đã sửa mấy lần.
+    // Và chữ "GIỮ NGUYÊN" cũng sai khi kế hoạch RÚT NGẮN: hạn thật sự đã rút vào, không giữ nguyên.
+    const hoSoSauKhiSua = updated.find(x => x.id === projId) || target;
+    const hanSauKhiSua = ymdOf(getDeptDeadline(hoSoSauKhiSua));
+    const hanTruocKhiSua = ymdOf(getDeptDeadline(target));
+    const soNgayRutVao = Math.max(0, Math.round(
+      (new Date(hanTruocKhiSua).getTime() - new Date(hanSauKhiSua).getTime()) / (24 * 60 * 60 * 1000)));
+    /** Câu mô tả hạn sau khi phân bổ lại — dùng chung cho toast, thông báo và nhật ký. */
+    const cauHan = soNgayRutVao > 0
+      ? `hạn nộp RÚT VÀO ${fmtDateVN(hanSauKhiSua)} (sớm hơn ${soNgayRutVao} ngày)`
+      : `GIỮ NGUYÊN hạn nộp ${fmtDateVN(hanSauKhiSua)}`;
     if (isL2) {
       const boodIds = staff.filter(s => s.role === 'BOOD' && !s.daNghi).map(s => s.id);
       triggerToast(coDoiHan
         ? `Đã gửi yêu cầu dời hạn +${delayDays} ngày cho "${target.hangMuc}" — chờ Trưởng phòng duyệt lại tiến độ Phòng.`
-        : `Đã gửi phân bổ lại việc con cho "${target.hangMuc}" (hạn nộp giữ nguyên) — chờ Trưởng phòng duyệt lại tiến độ Phòng.`);
+        : `Đã cập nhật phân bổ việc con của "${target.hangMuc}" — ${cauHan}, hồ sơ vẫn ở Bước ${buocSauKhiSua}. Không cần duyệt lại.`);
+      // Giữ nguyên hạn: chỉ BÁO TIN, không phải yêu cầu duyệt. Gắn chữ "cần duyệt lại" vào một
+      // việc không cần duyệt chỉ làm Trưởng phòng mở ra rồi đóng lại.
+      // Câu chữ giữ giọng văn bản hành chính, không xưng hô kiểu trò chuyện (chị Trâm chốt
+      // 15/09/2026: "đừng ghi như văn nói, ghi chuyên nghiệp lên").
       pushNotify(boodIds, coDoiHan
-        ? `Quản lý xin dời hạn +${delayDays} ngày (kéo về Bước 1) cho "${target.hangMuc} — ${target.tenDuAn}". Lý do: ${reason}. Cần duyệt lại tiến độ Phòng.`
-        : `Quản lý phân bổ lại công việc con cho "${target.hangMuc} — ${target.tenDuAn}" — GIỮ NGUYÊN hạn nộp ${fmtDateVN(target.ngayHoanThanhDuKienHienTai)}. Lý do: ${reason}. Cần duyệt lại tiến độ Phòng.`, target.id);
+        ? `Quản lý xin dời hạn +${delayDays} ngày (kéo về Bước 1) cho "${target.hangMuc} | ${target.tenDuAn}". Lý do: ${reason}. Cần duyệt lại tiến độ Phòng.`
+        : `Quản lý đã phân bổ lại công việc con cho "${target.hangMuc} | ${target.tenDuAn}" — ${cauHan}, hồ sơ vẫn ở Bước ${buocSauKhiSua}. Lý do: ${reason}. Không cần duyệt lại.`, target.id);
     } else {
       triggerToast(coDoiHan
         ? `Đã dời hạn +${delayDays} ngày & kéo "${target.hangMuc}" về Bước 1.`
-        : `Đã lưu phân bổ lại việc con của "${target.hangMuc}" & kéo về Bước 1 — hạn nộp giữ nguyên.`);
+        : `Đã lưu phân bổ lại việc con của "${target.hangMuc}" — ${cauHan}, hồ sơ vẫn ở Bước ${buocSauKhiSua}.`);
     }
-    // #3: hồ sơ kéo về Bước 1 (Tiếp nhận) → tự báo Quản lý phụ trách vào tạo/cập nhật công việc con
-    // cho nhân viên; sau đó chạy tiếp logic cũ (tạo cv con + tiến độ → Trưởng phòng duyệt lại → chạy tiếp).
-    if (target.quanLyId && target.quanLyId !== currentUser?.staffId) {
-      pushNotify([target.quanLyId], `Hồ sơ "${target.hangMuc} — ${target.tenDuAn}" đã được kéo về Bước 1 (Tiếp nhận thông tin). Vui lòng vào tạo/cập nhật công việc con cho nhân viên; sau đó Trưởng phòng duyệt lại tiến độ để chạy tiếp.`, target.id, true);
+    // Hồ sơ BỊ KÉO VỀ Bước 1 (chỉ khi dời hạn) → báo Quản lý phụ trách vào lập lại việc con.
+    // Giữ nguyên hạn thì hồ sơ không đi đâu cả, không có việc gì để nhắc.
+    if (coDoiHan && target.quanLyId && target.quanLyId !== currentUser?.staffId) {
+      pushNotify([target.quanLyId], `Hồ sơ "${target.hangMuc} | ${target.tenDuAn}" đã được kéo về Bước 1 (Tiếp nhận thông tin). Vui lòng vào tạo/cập nhật công việc con cho nhân viên; sau đó Trưởng phòng duyệt lại tiến độ để chạy tiếp.`, target.id, true);
     }
     logAction(
       coDoiHan ? 'Dời hạn (kéo về Bước 1)' : 'Phân bổ lại việc con (giữ nguyên hạn)',
       coDoiHan
-        ? `${isL2 ? 'Quản lý xin' : 'Trưởng phòng'} dời hạn +${delayDays} ngày hồ sơ ${maHienThi(target.projectId)} - ${target.tenDuAn}, kéo về Bước 1. Lý do: ${reason}.`
+        // Ghi luôn KHÂU GÂY TRỄ vào nhật ký (chị Trâm 15/09/2026) — để tra lại lịch sử là thấy
+        // ngay khâu nào chậm, không phải mở từng hồ sơ ra đọc bảng phiếu.
+        ? `${isL2 ? 'Quản lý xin' : 'Trưởng phòng'} dời hạn +${delayDays} ngày hồ sơ ${nhanHoSo(target)}, kéo về Bước 1. Trễ do: ${nhanKhauTre(khauTreLucLap).chu}. Lý do: ${reason}.`
         // Không dời hạn thì Delay Log không ghi — nhật ký hoạt động chính là chỗ lưu bằng chứng
         // "ai đổi phân công, đổi lúc nào, vì sao" (chị Trâm 29/07/2026).
-        : `${isL2 ? 'Quản lý' : 'Trưởng phòng'} phân bổ lại công việc con hồ sơ ${maHienThi(target.projectId)} - ${target.tenDuAn}, kéo về Bước 1, GIỮ NGUYÊN hạn nộp ${fmtDateVN(target.ngayHoanThanhDuKienHienTai)}. Lý do: ${reason}.`,
+        : `${isL2 ? 'Quản lý' : 'Trưởng phòng'} phân bổ lại công việc con hồ sơ ${nhanHoSo(target)}, ${cauHan}, hồ sơ vẫn ở Bước ${buocSauKhiSua}. Lý do: ${reason}.`,
       undefined,
       getProjectParticipants(target)
     );
@@ -3457,31 +4064,56 @@ export default function App() {
   // taiLieuKetQuaPhong: bỏ qua (undefined) = KHÔNG đụng tệp đang có; truyền chuỗi = ghi lại danh sách tệp.
   // chuyenSangBuoc: bảng nhập được mở vì cửa chốt 100% chặn ở bước trước đó. Lưu đủ 100% thì đi
   // tiếp luôn sang bước đó ngay trong lần lưu này — không bắt Trưởng phòng kéo thẻ lại lần nữa.
-  const handleUpdatePhongResult = (projId: string, tienDoPhong: number, ketQuaPhong: string, taiLieuKetQuaPhong?: string, chuyenSangBuoc?: number | null) => {
+  const handleUpdatePhongResult = (projId: string, tienDoPhong: number, ketQuaPhong: string, taiLieuKetQuaPhong?: string, chuyenSangBuoc?: number | null, lyDoTrePhongMoi?: string) => {
     if (currentUser?.role !== 'BOOD') {
       triggerToast('Chỉ Trưởng phòng (Level 1) mới được cập nhật kết quả & tiến độ cấp Phòng!');
       return;
     }
     // Chỉ đi tiếp khi đã thật sự đủ 100% — chưa đủ thì lưu bình thường và thẻ đứng nguyên.
-    const buocMoi = (chuyenSangBuoc && tienDoPhong >= 100) ? chuyenSangBuoc : undefined;
+    let buocMoi = (chuyenSangBuoc && tienDoPhong >= 100) ? chuyenSangBuoc : undefined;
+
+    // ===== LÝ DO TRỄ HẠN PHÒNG ĐI CHUNG BẢNG NÀY (chị Trâm chốt 19/09/2026) =====
+    // "Ở B3 qua B4 thì khai 1 lần lúc đưa bảng KH lên thôi, báo chung trong bảng cập nhật kế hoạch."
+    // Bản trước bật thêm một HỘP RIÊNG sau khi lưu bảng này; cộng với cửa chặn ở handleKanbanMove
+    // thành ra Trưởng phòng bị hỏi HAI lần cho cùng một việc. Nay bảng cập nhật tiến độ Phòng tự
+    // hiện ô lý do (xem `hanPhongDaQua` truyền vào PhongProgressModal) và gửi kèm về đây.
+    const hoSoTruocLuu = projects.find(x => x.id === projId);
+    const lyDoTre = (lyDoTrePhongMoi || '').trim();
     const updated = projects.map(proj => {
       if (proj.id !== projId) return proj;
       let nextStatus = proj.trangThai;
-      // "Hoàn thành" CHỈ khi hồ sơ đã thực sự GỬI CĐT (kanbanStep >= 5) — nhập/duyệt tiến độ Phòng
-      // 100% ở bước sớm hơn (vd đang nhắc nhập tại bước 4) KHÔNG được tự coi là xong, tránh mâu
-      // thuẫn với thẻ Kanban vẫn còn nằm ở bước sớm (chị Trâm báo 28/07/2026). Mốc hoàn thành thật
-      // sự do handleKanbanMove ghi khi TP xác nhận gửi CĐT (kéo thẻ 4→5), tính đúng hạn/trễ theo
-      // hạn hẹn CĐT — chỗ này chỉ đồng bộ lại đúng trạng thái nếu vô tình đã ở bước 5 trở lên.
+      // "Hoàn thành" CHỈ khi hồ sơ đã qua mốc PHÒNG XONG PHẦN MÌNH (Bước 4 — trình BLĐ). Duyệt tiến
+      // độ Phòng 100% ở bước sớm hơn KHÔNG được tự coi là xong, tránh mâu thuẫn với thẻ Kanban vẫn
+      // còn nằm ở bước sớm (chị Trâm báo 28/07/2026).
+      //
+      // ⚠ SỬA 14/09/2026 (sót khi đổi mốc hôm 12/09): chỗ này vẫn so cứng với bước 5 trong khi mốc
+      // hoàn thành đã chuyển sang Bước 4. Hệ quả: Trưởng phòng duyệt tiến độ Phòng 100% rồi kéo thẻ
+      // 3 → 4, hồ sơ đã nằm ở nhóm "Đã xong" trên Dashboard/Gantt (isWorkDone xét theo bước) nhưng
+      // trường trangThai vẫn là DANG_THUC_HIEN — hai nơi nói hai kiểu, và hồ sơ có thể bị chấm trễ
+      // oan khi qua ngày hạn. Nay dùng chung hằng số BUOC_XONG_PHAN_PHONG.
       const buocSauLuu = buocMoi || proj.kanbanStep || 1;
-      if (proj.tienDoBoPhan === 100 && tienDoPhong === 100 && proj.trangThai === 'DANG_THUC_HIEN' && buocSauLuu >= 5) {
-        nextStatus = 'HOAN_THANH_DUNG_HAN';
+      // Hồ sơ vượt mốc Phòng xong phần mình qua ĐƯỜNG NÀY cũng phải chốt ngày đóng và xét đúng/trễ
+      // y như kéo thẻ (chị Trâm chốt 19/09/2026) — trước đây gán cứng 'ĐÚNG HẠN' mà không so với
+      // hạn nào, nên hồ sơ đóng trễ vẫn được ghi đúng hạn và KPI cuối kỳ chấm sai.
+      let chotNgayDong: Partial<Project> = {};
+      if (proj.tienDoBoPhan === 100 && tienDoPhong === 100 && proj.trangThai === 'DANG_THUC_HIEN' && buocSauLuu >= BUOC_XONG_PHAN_PHONG) {
+        const { ngayDong, treHan } = tinhDongHoSo(proj);
+        nextStatus = treHan ? 'HOAN_THANH_TRE_HAN' : 'HOAN_THANH_DUNG_HAN';
+        chotNgayDong = { ngayHoanThanhThucTe: proj.ngayHoanThanhThucTe || ngayDong };
       }
       return {
         ...proj,
         tienDoPhong,
         ketQuaPhong: ketQuaPhong.trim() || undefined,
+        // Lý do trễ hạn khâu PHÒNG (nếu bảng có hiện ô). `nguyenNhanTreHan` là ô chung phục vụ KPI
+        // cuối kỳ — chỉ điền khi còn trống, đừng đè mất ghi chú đã có.
+        ...(lyDoTre ? {
+          lyDoTrePhong: lyDoTre,
+          nguyenNhanTreHan: (proj.nguyenNhanTreHan || '').trim() || `[Phòng] ${lyDoTre}`,
+        } : {}),
         ...(taiLieuKetQuaPhong !== undefined ? { taiLieuKetQuaPhong: taiLieuKetQuaPhong || undefined } : {}),
         trangThai: nextStatus,
+        ...chotNgayDong,
         ...(buocMoi ? { kanbanStep: buocMoi } : {}),
       };
     });
@@ -3492,16 +4124,19 @@ export default function App() {
       ? `Đã duyệt tiến độ Phòng 100%. Hồ sơ chuyển sang bước ${buocMoi}: ${tenBuocMoi}.`
       : 'Đã cập nhật kết quả và tiến độ cấp Phòng.');
     if (target && buocMoi) {
-      logAction('Chuyển bước Kanban', `Chuyển hồ sơ ${maHienThi(target.projectId)} - ${target.tenDuAn} sang bước ${buocMoi} (${tenBuocMoi}) ngay sau khi Trưởng phòng duyệt tiến độ Phòng 100%`, undefined, getProjectParticipants(target));
+      logAction('Chuyển bước Kanban', `Chuyển hồ sơ ${nhanHoSo(target)} sang bước ${buocMoi} (${tenBuocMoi}) ngay sau khi Trưởng phòng duyệt tiến độ Phòng 100%`, undefined, getProjectParticipants(target));
+    }
+    if (target && lyDoTre) {
+      logAction('Khai lý do trễ hạn', `Khai lý do trễ hạn khâu Phòng cho hồ sơ ${nhanHoSo(target)}: ${lyDoTre}`, target.id, getProjectParticipants(target));
     }
     if (target) {
-      logAction('Cập nhật kết quả Phòng', `Trưởng phòng cập nhật tiến độ Phòng ${tienDoPhong}% và kết quả kiểm tra cho hồ sơ ${maHienThi(target.projectId)} - ${target.tenDuAn}`, undefined, getProjectParticipants(target));
+      logAction('Cập nhật kết quả Phòng', `Trưởng phòng cập nhật tiến độ Phòng ${tienDoPhong}% và kết quả kiểm tra cho hồ sơ ${nhanHoSo(target)}`, undefined, getProjectParticipants(target));
       // Khớp đúng điều kiện với nextStatus ở trên — đừng báo "đã HOÀN THÀNH" trong khi trạng thái
-      // thật sự vẫn là DANG_THUC_HIEN (hồ sơ chưa qua bước 5).
-      const daHoanThanh = target.tienDoBoPhan === 100 && tienDoPhong === 100 && target.trangThai === 'DANG_THUC_HIEN' && (buocMoi || target.kanbanStep || 1) >= 5;
+      // thật sự vẫn là DANG_THUC_HIEN (hồ sơ chưa tới mốc Phòng xong phần mình — Bước 4).
+      const daHoanThanh = target.tienDoBoPhan === 100 && tienDoPhong === 100 && target.trangThai === 'DANG_THUC_HIEN' && (buocMoi || target.kanbanStep || 1) >= BUOC_XONG_PHAN_PHONG;
       pushNotify(allManagerIds(target), daHoanThanh
-        ? `Công việc "${target.hangMuc} — ${target.tenDuAn}" đã HOÀN THÀNH (Phòng duyệt 100%).`
-        : `Trưởng phòng vừa cập nhật tiến độ Phòng ${tienDoPhong}% cho "${target.hangMuc} — ${target.tenDuAn}".`, target.id);
+        ? `Công việc "${target.hangMuc} | ${target.tenDuAn}" đã HOÀN THÀNH (Phòng duyệt 100%).`
+        : `Trưởng phòng vừa cập nhật tiến độ Phòng ${tienDoPhong}% cho "${target.hangMuc} | ${target.tenDuAn}".`, target.id);
     }
   };
 
@@ -3512,31 +4147,6 @@ export default function App() {
     logAction('Xuất báo cáo cá nhân', `Kết xuất báo cáo công việc cá nhân ra tệp Excel (${count} công việc, phạm vi: ${scope})`);
   };
 
-  // Chi tiết TỪNG VÒNG của một hồ sơ (chị Trâm chốt 27/07/2026) — để đo hiệu suất Phòng Đấu thầu:
-  // mỗi lần bị CĐT trả về làm lại là 1 vòng, xuất riêng khoảng thời gian + ngày gửi CĐT + tiến độ
-  // của đúng vòng đó, không gộp chung. Mốc thời gian mỗi vòng đọc từ việc con mang trường `vong`
-  // (dùng lại getExecEnd round-aware) và nhật ký gửi CĐT (guiCDTLogs).
-  const chiTietTheoVong = (p: Project): { vong: number; batDau: string; ketThuc: string; soNgay: number | null; ngayGui?: string; tienDo: number }[] => {
-    const soVong = Math.max(1, soVongCoViec(p.tasks), p.guiCDTLogs?.length || 0, p.vongHienTai || 1);
-    const DAY = 24 * 60 * 60 * 1000;
-    const out: { vong: number; batDau: string; ketThuc: string; soNgay: number | null; ngayGui?: string; tienDo: number }[] = [];
-    for (let r = 1; r <= soVong; r++) {
-      const viecVong = tasksOfRound(p.tasks, r);
-      const coNgay = viecVong.filter(t => t.ngayBatDau);
-      let batDau = '—', ketThuc = '—', soNgay: number | null = null;
-      if (coNgay.length) {
-        const startMs = Math.min(...coNgay.map(t => new Date(t.ngayBatDau!).getTime()));
-        const startYmd = ymdOf(new Date(startMs));
-        const end = getExecEnd({ ngayBatDau: startYmd, tasks: p.tasks, soNgayThucHien: p.soNgayThucHien, soNgayDuyetTP: p.soNgayDuyetTP, vongHienTai: r });
-        batDau = fmtDateVN(startYmd);
-        ketThuc = fmtDateVN(ymdOf(end));
-        soNgay = Math.max(1, Math.round((end.getTime() - startMs) / DAY) + 1);
-      }
-      const gui = (p.guiCDTLogs || []).find(g => g.lan === r);
-      out.push({ vong: r, batDau, ketThuc, soNgay, ngayGui: gui?.ngay, tienDo: progressOfRound(p.tasks, r) });
-    }
-    return out;
-  };
 
   // ===== SAO LƯU / KHÔI PHỤC NGUYÊN TRẠNG (chị Trâm chốt 28/07/2026) =====
   // Khác hẳn "Xuất Excel" và "Báo cáo Chiến lược" (đều là báo cáo cho lãnh đạo, chỉ có thông tin
@@ -3694,7 +4304,7 @@ export default function App() {
   const handleExportExcel = () => {
     const exportData = [...filteredProjects];
     // Sort chronologically by Project_ID
-    exportData.sort((a, b) => maHienThi(a.projectId).localeCompare(maHienThi(b.projectId)));
+    exportData.sort((a, b) => maHoSo(a).localeCompare(maHoSo(b)));
 
     let html = `
       <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
@@ -3765,7 +4375,7 @@ export default function App() {
       } else if (p.trangThai === 'HOAN_THANH_TRE_HAN') {
         statusStr = 'Hoàn thành trễ';
         statusStyle = 'color: #d97706;';
-      } else if (p.trangThai === 'TRE_TIEN_DO') {
+      } else if (dangTreHan(p)) {
         statusStr = 'Quá hạn hồ sơ';
         statusStyle = 'color: #dc2626; font-weight: bold;';
       }
@@ -3812,7 +4422,7 @@ export default function App() {
 
       html += `
         <tr>
-          <td class="bold-text" style="text-align: center;">${maHienThi(p.projectId)}</td>
+          <td class="bold-text" style="text-align: center;">${maHoSo(p)}</td>
           <td class="bold-text">${p.tenDuAn}</td>
           <td>${p.chuDauTu || 'Chưa cập nhật'}</td>
           <td>${p.diaChi || 'Chưa cập nhật'}</td>
@@ -3881,7 +4491,7 @@ export default function App() {
       localStorage.setItem('erp_staff', JSON.stringify(st));
       setStaff(st);
     };
-    // 9 hồ sơ NHÁP đi HẾT 7 bước quy trình (chị Trâm chốt 17/08/2026 — bộ 3 hồ sơ cũ "rất nháp,
+    // 10 hồ sơ NHÁP đi HẾT 7 bước quy trình (chị Trâm chốt 17/08/2026 — bộ 3 hồ sơ cũ "rất nháp,
     // không có logic": cả 3 đều nằm đầu quy trình nên Kanban gần như trống, không thử được luồng).
     // Nội dung từng trạng thái xem `duAnNhap()` trong src/data/sandboxData.ts.
     // Thêm vào danh sách đang có, KHÔNG ghi đè hồ sơ thật đang thử dở.
@@ -3955,7 +4565,7 @@ export default function App() {
               👥 Nạp lại danh sách nhân sự (không kèm hồ sơ)
             </button>
             <button type="button" onClick={napDuAnNhap} className="text-[11px] font-black bg-brand-warning hover:bg-brand-warning/80 text-slate-900 px-3 py-2 rounded-lg cursor-pointer">
-              🧪 Nạp 9 hồ sơ NHÁP (đủ 7 bước quy trình)
+              🧪 Nạp 10 hồ sơ NHÁP (đủ 7 bước + hồ sơ 3 vòng)
             </button>
             <button type="button" onClick={xoaDuLieuThu} className="text-[11px] font-black bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded-lg cursor-pointer">
               🧹 Xoá sạch dữ liệu bản thử
@@ -4253,8 +4863,9 @@ export default function App() {
             </div>
             
             <nav className="flex md:flex-col gap-1.5 overflow-x-auto md:overflow-x-visible pb-2 md:pb-0" id="sidebar-nav">
-              {/* Tab: Liên kết phòng ban — ẩn với Level 3 (Chuyên viên); dữ liệu do IT bổ sung sau */}
-              {currentUser.role !== 'STAFF' && (
+              {/* Tab: Liên kết phòng ban — MỞ CHO CẢ Level 3 (chị Trâm chốt 15/09/2026).
+                  Chuyên viên chỉ thấy tiến độ thiết kế của gói thầu họ được giao việc — xem
+                  `maDuAnDuocXem` bên dưới. */}
               <button
                 id="btn-nav-deptlinks"
                 onClick={() => { setActiveTab('DEPTLINKS'); setShowForm(false); }}
@@ -4267,7 +4878,6 @@ export default function App() {
                 <Building2 className="w-4 h-4 shrink-0" />
                 <span className="text-xs">Liên kết phòng ban</span>
               </button>
-              )}
 
               {/* Tab: Dashboard */}
               <button
@@ -4280,7 +4890,7 @@ export default function App() {
                 }`}
               >
                 <Briefcase className="w-4 h-4 shrink-0" />
-                <span className="text-xs">{currentUser.role === 'STAFF' ? 'KPI Cá Nhân' : 'Dashboard'}</span>
+                <span className="text-xs">{currentUser.role === 'STAFF' ? 'Công việc cá nhân' : 'Dashboard'}</span>
               </button>
 
               {/* Tabs: PROJECTS & GANTT */}
@@ -4365,7 +4975,7 @@ export default function App() {
                 <CalendarDays className="w-4 h-4 shrink-0" />
                 <span className="text-xs flex items-center justify-between w-full">
                   <span>Lịch cá nhân</span>
-                  {(() => { const n = personalTasks.filter(t => !t.done && t.ownerId === currentUser?.staffId).length; return n > 0 ? <span className="bg-brand-primary text-white px-1.5 py-0.5 rounded-full text-[9px] font-black">{n}</span> : null; })()}
+                  {(() => { const n = personalTasks.filter(t => t.ownerId === currentUser?.staffId && !ptBuoiDaXong(t, ptNextOccurrence(t, todayISO()) || undefined)).length; return n > 0 ? <span className="bg-brand-primary text-white px-1.5 py-0.5 rounded-full text-[9px] font-black">{n}</span> : null; })()}
                 </span>
               </button>
 
@@ -4477,8 +5087,8 @@ export default function App() {
             { key: 'PROJECTS' as NavKey, label: 'Tiến Độ', icon: ListTodo, badge: filteredProjects.length },
             { key: 'KANBAN' as NavKey, label: 'Kanban', icon: LayoutGrid },
           ] : [
-            ...(currentUser.role !== 'STAFF' ? [{ key: 'DEPTLINKS' as NavKey, label: 'Liên kết phòng ban', icon: Building2 }] : []),
-            { key: 'DASHBOARD', label: currentUser.role === 'STAFF' ? 'KPI Cá Nhân' : 'Dashboard', icon: Briefcase },
+            { key: 'DEPTLINKS' as NavKey, label: 'Liên kết phòng ban', icon: Building2 },
+            { key: 'DASHBOARD', label: currentUser.role === 'STAFF' ? 'Công việc cá nhân' : 'Dashboard', icon: Briefcase },
             ...(currentUser.role !== 'STAFF' ? [
               { key: 'PROJECTS' as NavKey, label: 'Tiến Độ', icon: ListTodo, badge: filteredProjects.length },
               { key: 'KANBAN' as NavKey, label: 'Kanban', icon: LayoutGrid },
@@ -4699,7 +5309,7 @@ export default function App() {
                               setShowForm(false);
                               return;
                             }
-                            // Nhân viên (L3) không có tab Hồ sơ → đưa về "KPI Cá Nhân" (tab DASHBOARD)
+                            // Nhân viên (L3) không có tab Hồ sơ → đưa về "Công việc cá nhân" (tab DASHBOARD)
                             // nơi liệt kê tác vụ đang phụ trách, thay vì bấm vào tin mà không đi đâu.
                             if (currentUser.role === 'STAFF') {
                               setActiveTab('DASHBOARD');
@@ -4766,7 +5376,7 @@ export default function App() {
                                     className="w-full text-left p-3 hover:bg-slate-50 dark:hover:bg-dark-elevated/60 transition-colors cursor-pointer"
                                   >
                                     <div className="flex items-center gap-2">
-                                      <span className="text-[9px] font-mono font-black bg-slate-100 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded">{maHienThi(p.projectId)}</span>
+                                      <span className="text-[9px] font-mono font-black bg-slate-100 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded">{maHoSo(p)}</span>
                                       <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">{p.hangMuc}</span>
                                     </div>
                                     <div className="text-xs font-black text-slate-800 dark:text-slate-200 mt-0.5 break-words" title={(p.duAnChaId && parentNameById[p.duAnChaId]) || p.tenDuAn}>📁 {(p.duAnChaId && parentNameById[p.duAnChaId]) || p.tenDuAn}</div>
@@ -4784,7 +5394,7 @@ export default function App() {
                                         return (
                                           <span className={`font-bold ${chiPhanBo ? 'text-brand-success dark:text-brand-success-300' : 'text-brand-danger dark:text-brand-danger'}`}>
                                             {chiPhanBo
-                                              ? '🔄 Đổi phân bổ việc con — KHÔNG đổi thời gian gói thầu'
+                                              ? '🔄 Đã phân bổ lại — duyệt để hồ sơ lên Bước 2 (hạn nộp KHÔNG đổi)'
                                               : '⚠ Kế hoạch bị DELAY — chờ duyệt lại'}
                                           </span>
                                         );
@@ -4816,7 +5426,7 @@ export default function App() {
                                     className="w-full text-left p-3 hover:bg-slate-50 dark:hover:bg-dark-elevated/60 transition-colors cursor-pointer"
                                   >
                                     <div className="flex items-center gap-2">
-                                      <span className="text-[9px] font-mono font-black bg-slate-100 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded">{maHienThi(p.projectId)}</span>
+                                      <span className="text-[9px] font-mono font-black bg-slate-100 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded">{maHoSo(p)}</span>
                                       <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">{p.hangMuc}</span>
                                     </div>
                                     <div className="text-xs font-black text-slate-800 dark:text-slate-200 mt-0.5 break-words" title={(p.duAnChaId && parentNameById[p.duAnChaId]) || p.tenDuAn}>📁 {(p.duAnChaId && parentNameById[p.duAnChaId]) || p.tenDuAn}</div>
@@ -4917,18 +5527,14 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Add Project button - ONLY visible/clickable for Level 1 (BOOD) */}
-              {currentUser.role === 'BOOD' && (
-                <button
-                  onClick={handleCreateClick}
-                  className="text-[11px] bg-brand-success hover:bg-brand-success-hover text-white font-black px-2 md:px-3 py-1.5 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 rounded-lg flex items-center justify-center gap-1 transition-all shadow-md hover:shadow-lg cursor-pointer whitespace-nowrap shrink-0 active:scale-95"
-                  title="Đăng ký một DỰ ÁN mới (chỉ tên/CĐT — không lên Kanban). Sau đó thêm công việc con vào dự án này."
-                  aria-label="Đăng ký dự án mới"
-                >
-                  <Plus className="w-4 h-4 shrink-0" />
-                  <span className="hidden md:inline">DỰ ÁN MỚI</span>
-                </button>
-              )}
+              {/* ===== ĐÃ BỎ NÚT "DỰ ÁN MỚI" (chị Trâm chốt 19/09/2026) =====
+                  "Xoá đi nút tạo dự án... chị sẽ thêm các thông tin liên quan đấu thầu vô trong đó."
+                  Dự án nay ĐẾN TỪ App Thông tin dự án, không khai tay ở đây nữa. Trưởng phòng mở hồ
+                  sơ cho một dự án bằng dấu + ở bảng "Danh mục dự án" (tab Liên kết phòng ban) — chỗ
+                  đó có sẵn tên, CĐT, địa chỉ, diện tích... nên chỉ cần bổ sung phần thông tin thầu.
+                  Nhờ vậy hai app dùng CHUNG một mã dự án, không còn cảnh mỗi bên gõ một kiểu.
+                  ⚠ Khi App Thông tin dự án chưa nối (danh mục rỗng) thì không mở được hồ sơ dự án
+                  nào — xem ghi chú "chưa nối app" ngay trong bảng Danh mục. */}
 
               {/* Add Task/Work button - Visible for Level 1 (BOOD) & Level 2 (MANAGER) */}
               {(currentUser.role === 'BOOD' || currentUser.role === 'MANAGER') && (
@@ -5046,56 +5652,27 @@ export default function App() {
           <div className="space-y-6">
             
             {/* 1. DASHBOARD VIEW */}
-            {activeTab === 'DEPTLINKS' && currentUser.role !== 'STAFF' && (
+            {activeTab === 'DEPTLINKS' && (
               <div className="space-y-6">
-                {/* ===== TRANG LIÊN KẾT PHÒNG BAN (hệ sinh thái HP Cons) =====
-                    Truy cập nhanh ứng dụng các phòng ban khác (HRM, ITAsset, Workflow, CRM, Kho, Mua hàng...).
-                    TẠM THỜI để trống dữ liệu theo yêu cầu — IT bổ sung sau bằng cách thêm phần tử vào mảng deptLinks:
-                    { label: 'Tên phòng ban / ứng dụng', url: 'https://...', desc?: 'mô tả ngắn (tùy chọn)' } */}
-                <div className="bg-white dark:bg-dark-card rounded-2xl border border-slate-100 dark:border-slate-800 shadow-xs p-6">
-                  <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-4 mb-5">
-                    <div>
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-brand-accent dark:text-brand-accent-300" />
-                        Liên kết phòng ban
-                      </h3>
-                      <p className="text-[11px] text-slate-400 mt-0.5">
-                        Truy cập nhanh ứng dụng các phòng ban khác trong hệ sinh thái HP Cons
-                      </p>
-                    </div>
-                  </div>
-                  {(() => {
-                    // IT: thêm liên kết vào mảng này. Để rỗng [] sẽ hiển thị trạng thái "đang cập nhật".
-                    const deptLinks: { label: string; url: string; desc?: string }[] = [];
-                    return deptLinks.length === 0 ? (
-                      <EmptyState
-                        icon={<Building2 className="w-6 h-6" />}
-                        title="Đang cập nhật liên kết"
-                        description="IT sẽ bổ sung liên kết tới ứng dụng các phòng ban tại đây."
-                      />
-                    ) : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                        {deptLinks.map((lnk) => (
-                          <a
-                            key={lnk.url}
-                            href={lnk.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-3 p-3 rounded-xl border border-slate-200/60 dark:border-slate-800 bg-slate-50/50 dark:bg-dark-elevated/40 hover:border-brand-primary hover:bg-brand-primary/5 transition-colors"
-                          >
-                            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-primary/10 text-brand-primary dark:text-brand-primary-300 shrink-0">
-                              <ExternalLink className="w-4 h-4" />
-                            </span>
-                            <span className="min-w-0">
-                              <span className="block text-xs font-bold text-slate-800 dark:text-slate-100 truncate">{lnk.label}</span>
-                              {lnk.desc && <span className="block text-[10px] text-slate-400 truncate">{lnk.desc}</span>}
-                            </span>
-                          </a>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </div>
+                {/* ===== DANH MỤC DỰ ÁN TỪ APP THÔNG TIN DỰ ÁN (chị Trâm chốt 19/09/2026) =====
+                    "Ở mục liên kết phòng ban, TRÊN Tiến độ thiết kế, làm cho chị 1 bảng đổ dữ liệu
+                     dự án từ App Thông tin dự án về nữa nha em."
+                    Đặt TRÊN bảng thiết kế đúng thứ tự liên kết chị Trâm chốt: có mã dự án trước,
+                    rồi mới tra tiến độ thiết kế của mã đó. */}
+                <DanhMucDuAnPanel
+                  duLieuBanThu={DANH_MUC_DU_AN_BAN_THU}
+                  chiMaDuAn={maDuAnDuocXem}
+                  onSua={duocKhaiDuAn ? handleSuaTuDanhMuc : undefined}
+                  maDaCoHoSo={parentProjectsGoc.map(p => p.projectId || '')}
+                  onTaoThuCong={duocKhaiDuAn ? handleCreateClick : undefined}
+                />
+
+                {/* ===== TIẾN ĐỘ THIẾT KẾ (chị Trâm chốt 15/09/2026) =====
+                    "Đây là giao diện của app thiết kế, em thiết kế lại chỗ liên kết phòng ban đưa tiến độ này
+                     qua, bỏ đi vị trí lưu file, chỗ dự án phía trước thêm cột mã dự án."
+                    Bản thử dùng dữ liệu dựng sẵn để còn thấy được giao diện; bản chạy thật đọc dữ liệu
+                    App Thiết kế đẩy sang qua /api/webhook/tien-do-thiet-ke. */}
+                <TienDoThietKePanel duLieuBanThu={TIEN_DO_TKE_BAN_THU} chiMaDuAn={maDuAnDuocXem} />
               </div>
             )}
 
@@ -5188,8 +5765,15 @@ export default function App() {
                           counts={{ active: dashboardProjects.filter(x => !isWorkDone(x)).length, done: dashboardProjects.filter(isWorkDone).length, all: dashboardProjects.length }} />
                       </div>
 
-                      {/* Khung cao ~5 hồ sơ (chị chốt 15/07) — còn lại trượt xuống; đang làm + hạn thầu gần lên trước */}
-                      <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-128 md:max-h-104 overflow-y-auto overflow-x-hidden pr-1">
+                      {/* ===== KHUNG CAO ĐỦ 5 HỒ SƠ (chị Trâm chốt lại 12/09/2026) =====
+                          "Bảng này em cho dài xuống tí, hiển thị được tối đa 5 dự án, và ưu tiên dự
+                           án có hạn thầu gần nhất hiển thị lên trước như trước đây chị đã train."
+                          Thứ tự thì vốn đã đúng (xem sortedDashList ngay bên dưới: đang làm lên
+                          trước, trong đó hạn thầu gần nhất lên đầu) — cái thiếu là CHIỀU CAO:
+                          md:max-h-104 (26rem) chỉ vừa hơn 4 dòng, nên hồ sơ thứ 5 luôn bị cắt và
+                          phải cuộn mới thấy. Nới lên 34rem cho đủ 5 dòng, kể cả dòng có thêm khối
+                          "Nguyên nhân trễ" (cao hơn dòng thường). Từ hồ sơ thứ 6 vẫn cuộn như cũ. */}
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800 max-h-[34rem] overflow-y-auto overflow-x-hidden pr-1">
                         {(() => {
                           const sortedDashList = [...applyStatusFilter(dashboardProjects, isWorkDone)].sort((a, b) => {
                             const aDone = isWorkDone(a), bDone = isWorkDone(b);
@@ -5208,7 +5792,7 @@ export default function App() {
                             return (
                               <div
                                 key={p.id}
-                                onClick={() => moHoSo(p.id)}
+                                onClick={() => setQuickViewId(p.id)}
                                 title="Bấm để xem chi tiết gói thầu, tiến độ và KPI công việc con"
                                 // Lưới 3 cột CỐ ĐỊNH từ md trở lên: tên hồ sơ (co giãn) · tiến độ 240px · trạng thái.
                                 // Nhờ vậy thanh tiến độ và cột hạn thầu của mọi dòng luôn thẳng hàng, kể cả khi
@@ -5221,7 +5805,7 @@ export default function App() {
                                 <div className="space-y-1.5 min-w-0">
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <span className="text-[9px] font-extrabold text-brand-accent dark:text-brand-accent-300 bg-brand-accent/10 dark:bg-brand-accent/15 px-1.5 py-0.5 rounded uppercase font-mono">
-                                      ID: {maHienThi(p.projectId)}
+                                      ID: {maHoSo(p)}
                                     </span>
                                     {/* HẠNG MỤC — thông tin trọng yếu, hiển thị nổi bật */}
                                     <span className="text-[10px] font-black uppercase tracking-wide bg-brand-accent text-white px-2 py-0.5 rounded-md shadow-2xs">
@@ -5583,7 +6167,7 @@ export default function App() {
                       onClick={() => setFilterStatus('TRE_TIEN_DO')}
                       className="px-2.5 py-1 rounded-full bg-brand-danger/15 hover:bg-brand-danger/25 dark:bg-brand-danger/10 dark:hover:bg-brand-danger/20 text-brand-danger dark:text-brand-danger font-bold transition-all"
                     >
-                      Đang trễ hạn thầu ({rbacProjects.filter(p=>p.trangThai==='TRE_TIEN_DO').length})
+                      Đang trễ hạn thầu ({rbacProjects.filter(dangTreHan).length})
                     </button>
                     <button 
                       onClick={() => setFilterCategory('Báo giá chi tiết')}
@@ -5617,7 +6201,7 @@ export default function App() {
                             <div className="flex items-start justify-between gap-2">
                               <div className="min-w-0">
                                 <div className="flex items-center gap-1.5">
-                                  <span className="text-[9px] font-mono font-black bg-slate-200/70 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded shrink-0">{maHienThi(dp.projectId)}</span>
+                                  <span className="text-[9px] font-mono font-black bg-slate-200/70 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded shrink-0">{maHoSo(dp)}</span>
                                   <span className="text-[9px] font-black bg-brand-accent/10 text-brand-accent dark:bg-brand-accent/15 dark:text-brand-accent-300 px-1.5 py-0.5 rounded-full shrink-0">{childCount} công việc</span>
                                 </div>
                                 <h4 className="text-xs font-black text-slate-800 dark:text-slate-200 mt-1 leading-tight">📁 {dp.tenDuAn}</h4>
@@ -5860,7 +6444,7 @@ export default function App() {
 
                                   {/* Mã Dự Án (Project_ID in format YYYY.NN) */}
                                   <td className="col-span-2 block md:table-cell px-4 pt-3 pb-0 md:p-3 text-left md:text-center font-mono font-bold text-slate-900 dark:text-slate-100 md:bg-slate-50/30 md:dark:bg-dark-card/30">
-                                    {maHienThi(p.projectId)}
+                                    {maHoSo(p)}
                                   </td>
 
                                   {/* Project Info (Optimized desktop width & responsive truncation) */}
@@ -6128,7 +6712,7 @@ export default function App() {
                                                 <div className="space-y-0.5 text-slate-700 dark:text-slate-300 font-semibold">
                                                   <div>Loại công trình: <strong className="text-slate-950 dark:text-slate-100 font-bold">{p.loaiCongTrinh || 'Chưa cập nhật'}</strong></div>
                                                   <div>Hình thức xây mới: <strong className="text-slate-950 dark:text-slate-100 font-bold">{p.hinhThucXayDung || 'Chưa cập nhật'}</strong></div>
-                                                  <div>Diện tích đất: <strong className="text-slate-950 dark:text-slate-100 font-bold">{p.dienTichDat ? `${p.dienTichDat.toLocaleString('vi-VN')} m²` : 'Chưa cập nhật'}</strong></div>
+                                                  <div>Diện tích đất: <strong className="text-slate-950 dark:text-slate-100 font-bold">{p.dienTichDat ? `${dinhDangSo(p.dienTichDat)} m²` : 'Chưa cập nhật'}</strong></div>
                                                 </div>
                                               </div>
 
@@ -6319,14 +6903,30 @@ export default function App() {
                 currentUserRole={currentUser?.role}
                 onMove={handleKanbanMove}
                 onDenied={(msg) => triggerToast(msg)}
-                onOpenProject={moHoSo}
+                onOpenProject={(pid) => setQuickViewId(pid)}
                 // Trưởng phòng: kéo thẳng về Bước 1 (giữ hạn), không hỏi gì — muốn dời hạn thì sửa trong hồ sơ.
-                // Quản lý: vẫn hỏi có ảnh hưởng hạn nộp không, vì Quản lý phải khai lý do dời hạn để TP duyệt.
-                onPullBackToStart={(pid) => {
+                // Quản lý: tách hai đường theo bước hồ sơ ĐANG đứng (chị Trâm chốt 12/09/2026):
+                //   · Bước 2-3-4 → hỏi "có thay đổi tiến độ hay không" rồi vào bảng phân bổ lại việc con
+                //     (đúng luồng L2 vẫn dùng ở Bước 2 từ trước, không thêm bớt gì).
+                //   · Bước 5 (ĐÃ gửi CĐT) → không hỏi nữa: gửi CĐT rồi mà kéo về thì đương nhiên là làm
+                //     lại VÒNG MỚI. Kéo thẳng về Bước 1 và mở vòng kế tiếp. Chị Trâm: "từ bước 5 kéo về
+                //     thì chỉ có mở lên vòng 2 thôi", "không cần khai lý do, cứ kéo tính vòng mới".
+                onPullBackToStart={(pid, fromStep) => {
                   const p = projects.find(x => x.id === pid);
                   if (!p) return;
-                  if (currentUser?.role !== 'BOOD') { setPullBackProject(p); return; }
+                  if (currentUser?.role !== 'BOOD') {
+                    // ===== TỪ BƯỚC 5 CŨNG PHẢI HỎI (chị Trâm chốt 19/09/2026) =====
+                    // "Ở LV2, từ Bước 5 về Bước 1, hiện hộp thoại lên: 1 là tạo vòng n, 2 là đổi
+                    //  phân bổ không làm thay đổi tiến độ dự án, 3 là kéo nhầm huỷ kéo."
+                    // Trước đây kéo từ Bước 5 là MỞ VÒNG MỚI ngay, không hỏi — lỡ tay một cái là
+                    // hồ sơ sang vòng mới, Quản lý phải lập lại toàn bộ việc con. Nay dùng chung
+                    // hộp thoại với đường Bước 2-3-4, chỉ đổi nội dung hai lựa chọn.
+                    setPullBackFromStep(fromStep);
+                    setPullBackProject(p);
+                    return;
+                  }
                   // Hồ sơ ĐÃ gửi CĐT ít nhất 1 lần → hỏi TP có mở vòng mới hay chỉ sửa nhỏ.
+                  setPullBackFromStep(fromStep);
                   if ((p.guiCDTLogs || []).length > 0) setVongMoiAsk(p);
                   else handlePullBackKeepDeadline(p);
                 }}
@@ -6335,7 +6935,7 @@ export default function App() {
 
             {/* 3. GANTT CHART VIEW */}
             {activeTab === 'GANTT' && (
-              <GanttChart projects={scheduledWorkItems} staff={staff} currentUserRole={currentUser?.role} />
+              <GanttChart projects={scheduledWorkItems} staff={staff} currentUserRole={currentUser?.role} onOpenProject={(pid) => setQuickViewId(pid)} />
             )}
 
             {/* 4. STAFF KPI & LIST VIEW */}
@@ -6508,7 +7108,7 @@ export default function App() {
                             <div className="space-y-1 max-h-16 overflow-y-auto">
                               {memberProjects.slice(0, 2).map(p => (
                                 <div key={p.id} className="text-[10px] text-slate-600 dark:text-slate-300 font-bold truncate">
-                                  • [{maHienThi(p.projectId)}] {p.tenDuAn}
+                                  • [{maHoSo(p)}] {p.tenDuAn}
                                 </div>
                               ))}
                               {memberProjects.length > 2 && (
@@ -6792,7 +7392,7 @@ export default function App() {
               const tasksOn = (ds: string) => {
                 const d = new Date(ds + 'T00:00:00');
                 return mine.filter(t => ptOccursOn(t, d))
-                  .sort((a, b) => (a.done ? 1 : 0) - (b.done ? 1 : 0) || (a.dueTime || '99').localeCompare(b.dueTime || '99'));
+                  .sort((a, b) => (ptBuoiDaXong(a, ds) ? 1 : 0) - (ptBuoiDaXong(b, ds) ? 1 : 0) || (a.dueTime || '99').localeCompare(b.dueTime || '99'));
               };
               // Lưới tháng: bắt đầu từ Thứ 2 của tuần chứa ngày 1 → 42 ô (6 tuần)
               const first = new Date(calCursor.getFullYear(), calCursor.getMonth(), 1);
@@ -6802,7 +7402,9 @@ export default function App() {
               const weekdayLabels = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
               // Màu chip theo trạng thái tại NGÀY hiển thị (ds) — dùng cho cả việc lặp lại
               const chipStyle = (t: PersonalTask, ds: string) => {
-                if (t.done) return 'bg-brand-muted/15 text-brand-muted line-through';
+                // Xét theo ĐÚNG BUỔI của ngày đang vẽ, không xét cờ chung — bằng không việc lặp lại
+                // xong một buổi là mọi ô ngày khác cũng bị gạch ngang (chị Trâm báo 12/09/2026).
+                if (ptBuoiDaXong(t, ds)) return 'bg-brand-muted/15 text-brand-muted line-through';
                 if (ds < todayStr) return 'bg-brand-danger/15 text-brand-danger dark:text-brand-danger';
                 if (ds === todayStr || (new Date(ds).getTime() - Date.now()) <= 3 * 86400000) return 'bg-brand-warning/15 text-brand-warning';
                 return 'bg-brand-accent/15 text-brand-accent dark:text-brand-accent-300';
@@ -6998,11 +7600,11 @@ export default function App() {
                           <div className="space-y-1.5">
                             {modalTasks.map(t => (
                               <div key={t.id} className="flex items-start gap-2 p-2 rounded-lg bg-slate-50 dark:bg-dark-bg/40 border border-slate-100 dark:border-slate-800">
-                                <button type="button" onClick={() => togglePersonalDone(t.id)} className="shrink-0 text-slate-400 hover:text-brand-primary min-h-[44px] min-w-[32px] flex items-center justify-center" title={t.done ? 'Bỏ đánh dấu xong' : 'Đánh dấu xong'}>
-                                  {t.done ? <CheckSquare className="w-5 h-5 text-brand-success" /> : <Square className="w-5 h-5" />}
+                                <button type="button" onClick={() => togglePersonalDone(t.id, calDayModal || undefined)} className="shrink-0 text-slate-400 hover:text-brand-primary min-h-[44px] min-w-[32px] flex items-center justify-center" title={ptBuoiDaXong(t, calDayModal || undefined) ? 'Bỏ đánh dấu xong' : 'Đánh dấu xong'}>
+                                  {ptBuoiDaXong(t, calDayModal || undefined) ? <CheckSquare className="w-5 h-5 text-brand-success" /> : <Square className="w-5 h-5" />}
                                 </button>
                                 <div className="flex-1 min-w-0 py-1">
-                                  <div className={`text-xs font-bold ${t.done ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-200'}`}>{t.title}</div>
+                                  <div className={`text-xs font-bold ${ptBuoiDaXong(t, calDayModal || undefined) ? 'line-through text-slate-400' : 'text-slate-800 dark:text-slate-200'}`}>{t.title}</div>
                                   <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                                     {t.dueTime && <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-brand-accent/10 text-brand-accent dark:text-brand-accent-300">🕐 {t.dueTime}</span>}
                                     {t.repeat && t.repeat !== 'none' && <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-brand-primary/10 text-brand-primary dark:text-brand-primary-300">🔁 {REPEAT_LABEL[t.repeat]}</span>}
@@ -7203,7 +7805,9 @@ export default function App() {
         />
       )}
 
-      {/* Kéo hồ sơ về Bước 1 — hộp hỏi ảnh hưởng hạn nộp (GĐ A/B). Không ảnh hưởng → không kéo. */}
+      {/* Lập lại kế hoạch việc con — hộp hỏi có ảnh hưởng hạn nộp không.
+          Có ảnh hưởng → kéo về Bước 1 & chờ TP duyệt lại. Không ảnh hưởng → hồ sơ đứng yên tại chỗ
+          (chị Trâm chốt 15/09/2026). */}
       {pullBackProject && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setPullBackProject(null)}>
           <div className="bg-white dark:bg-dark-card border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-md p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
@@ -7212,16 +7816,27 @@ export default function App() {
                 <AlertCircle className="w-5 h-5" />
               </span>
               <div className="min-w-0">
-                <h3 className="text-sm font-black text-slate-800 dark:text-slate-100">Kéo hồ sơ về Bước 1</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">{maHienThi(pullBackProject.projectId)} — {pullBackProject.hangMuc}</p>
+                <h3 className="text-sm font-black text-slate-800 dark:text-slate-100">Lập lại kế hoạch việc con</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">{maHoSo(pullBackProject)} — {pullBackProject.hangMuc}</p>
               </div>
             </div>
             {/* BA LỰA CHỌN (chị Trâm chốt 29/07/2026). Bản 28/07 chỉ có 2 nút và mặc định "kéo về =
                 có đổi tiến độ", nên tình huống CÓ THẬT sau đây bị kẹt: giữa chừng có người mới vào
                 hỗ trợ, Quản lý cần chia lại tỉ trọng / thêm việc con để lưu bằng chứng phân công,
                 nhưng hạn nộp không đổi → bảng dời hạn đòi "số ngày dời > 0" nên bấm không được. */}
+            {/* ===== HỒ SƠ ĐÃ GỬI CĐT (Bước 5) THÌ HAI LỰA CHỌN KHÁC HẲN (chị Trâm chốt 19/09/2026) =====
+                Hồ sơ chưa gửi CĐT: chuyện là "kế hoạch có làm dời hạn không".
+                Hồ sơ ĐÃ gửi CĐT: chuyện là "có làm lại từ đầu (vòng mới) hay chỉ sửa phân công" —
+                hỏi "có đổi tiến độ không" ở đây là vô nghĩa, vì hạn của vòng cũ đã chốt khi gửi. */}
+            {(() => {
+              const tuBuoc5 = pullBackFromStep >= 5;
+              const vongKeTiep = Math.max(1, pullBackProject.vongHienTai || 1) + 1;
+              return (
+            <>
             <p className="text-xs font-medium text-slate-600 dark:text-slate-300 leading-relaxed">
-              Kéo hồ sơ về Bước 1 để <b>lập lại kế hoạch việc con</b>. Chọn giúp trường hợp của bạn:
+              {tuBuoc5
+                ? 'Hồ sơ này đã gửi Chủ đầu tư. Chọn giúp trường hợp của bạn:'
+                : 'Lập lại kế hoạch việc con cho hồ sơ này. Chọn giúp trường hợp của bạn:'}
             </p>
             <div className="flex flex-col gap-2 pt-1">
               {/* 2 — GIỮ NGUYÊN HẠN: chỉ chia lại tỉ trọng / thêm việc con (có người mới tham gia
@@ -7231,20 +7846,37 @@ export default function App() {
                 onClick={() => handlePullBackImpact(pullBackProject, false)}
                 className="w-full px-4 py-3 rounded-xl text-left border border-brand-success/40 bg-brand-success/10 hover:bg-brand-success/15 transition-colors cursor-pointer"
               >
-                <span className="block text-xs font-black text-slate-800 dark:text-slate-100">Không thay đổi tiến độ — chỉ phân bổ / thêm công việc con</span>
+                <span className="block text-xs font-black text-slate-800 dark:text-slate-100">
+                  {tuBuoc5
+                    ? 'Đổi phân bổ — hạn nộp giữ NGUYÊN ngày'
+                    : 'Không thay đổi tiến độ — chỉ phân bổ / thêm công việc con'}
+                </span>
                 <span className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-                  Có người mới tham gia giữa chừng, chia lại tỉ trọng để lưu bằng chứng. Hạn nộp <b>giữ nguyên</b>.
+                  Có người mới tham gia giữa chừng, chia lại tỉ trọng để lưu bằng chứng. Chỉ chọn được khi
+                  kế hoạch mới vẫn <b>kết thúc đúng ngày cũ</b> — lệch ngày nào, dù sớm hay muộn, app sẽ
+                  không cho lưu và nhắc quay lại mục dưới. Hồ sơ <b>đứng nguyên tại bước hiện tại</b>.
                 </span>
               </button>
-              {/* 3 — CÓ ĐỔI TIẾN ĐỘ: hệ thống tự tính số ngày dời theo việc con, ghi Delay Log. */}
+              {/* 3 — CÓ ĐỔI TIẾN ĐỘ / MỞ VÒNG MỚI: tuỳ hồ sơ đã gửi CĐT hay chưa. */}
               <button
                 type="button"
-                onClick={() => handlePullBackImpact(pullBackProject, true)}
+                onClick={() => tuBuoc5
+                  ? handlePullBackKeepDeadline(pullBackProject, true)
+                  : handlePullBackImpact(pullBackProject, true)}
                 className="w-full px-4 py-3 rounded-xl text-left border border-brand-warning/40 bg-brand-warning/15 hover:bg-brand-warning/25 transition-colors cursor-pointer"
               >
-                <span className="block text-xs font-black text-slate-800 dark:text-slate-100">Có thay đổi tiến độ</span>
+                <span className="block text-xs font-black text-slate-800 dark:text-slate-100">
+                  {tuBuoc5 ? `Tạo vòng ${vongKeTiep}` : 'Có thay đổi tiến độ'}
+                </span>
                 <span className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
-                  Việc con kéo dài thêm nên phải dời hạn nộp. Hệ thống tự tính số ngày dời và <b>ghi nhật ký dời hạn</b>.
+                  {tuBuoc5 ? (
+                    <>Chủ đầu tư trả hồ sơ về làm lại. Hồ sơ về <b>Bước 1</b> và mở <b>vòng {vongKeTiep}</b>: phải lập
+                    bộ công việc con MỚI đủ 100% cho vòng này, việc của vòng trước giữ nguyên làm bằng chứng.</>
+                  ) : (
+                    <>Lịch việc con đổi nên <b>hạn nộp đổi theo</b> — dài thêm hay rút ngắn đều chọn mục này.
+                    Hệ thống tự tính số ngày, <b>ghi vào lịch sử dời tiến độ</b> và kéo hồ sơ <b>về Bước 1</b>{' '}
+                    để Trưởng phòng duyệt lại tiến độ.</>
+                  )}
                 </span>
               </button>
               {/* 1 — HUỶ: bấm nhầm, không kéo nữa. */}
@@ -7256,9 +7888,89 @@ export default function App() {
                 Huỷ — kéo nhầm
               </button>
             </div>
+            </>
+              );
+            })()}
           </div>
         </div>
       )}
+
+      {/* ===== KHUNG XEM NHANH HỒ SƠ (yêu cầu Tổng công ty — chị Trâm chuyển 12/09/2026) =====
+          Bật ngay tại Dashboard / Kanban / Gantt, không đá người dùng sang tab Báo Cáo Tiến Độ nữa.
+          Ba hạn truyền từ đây để dùng ĐÚNG công thức chung (đã gồm ngày gia hạn theo phiếu) — không
+          để component tự tính lại, bằng không lại sinh thêm một nguồn số liệu thứ hai. */}
+      {(() => {
+        const qv = quickViewId ? projects.find(x => x.id === quickViewId) : null;
+        if (!qv) return null;
+        const dongKhung = () => { setQuickViewId(null); setQuickViewEditing(false); };
+        // QUYỀN SỬA — dùng ĐÚNG điều kiện của nút sửa ở màn Báo Cáo Tiến Độ (handleEditClick):
+        // Nhân viên (L3) không sửa hồ sơ, Ban giám đốc (L4) chỉ xem. Không có đường vòng nào cấp
+        // thêm quyền qua khung này.
+        const duocSua = currentUser?.role !== 'STAFF' && !laKhachChiXem(currentUser?.role);
+
+        // CHẾ ĐỘ SỬA — nhúng chính ProjectForm vào popup (chị Trâm chốt 12/09/2026). Lưu xong thì
+        // quay về chế độ xem để chị soát lại ngay con số vừa đổi, không phải mở lại hồ sơ.
+        if (quickViewEditing && duocSua) {
+          return (
+            <div className="fixed inset-0 z-[70] flex items-start justify-center p-0 md:p-4 md:py-6 bg-slate-900/60 backdrop-blur-sm overflow-y-auto"
+              onClick={() => setQuickViewEditing(false)}>
+              <div onClick={e => e.stopPropagation()}
+                className="bg-white dark:bg-dark-card w-full max-w-5xl rounded-none md:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl my-auto">
+                {/* ===== THANH ĐẦU KHUNG SỬA (Sếp báo lỗi 14/09/2026) =====
+                    Hai lỗi cùng chỗ, đều do bản dựng vội hôm 12/09:
+                    (1) CHỮ CHỒNG CHỮ — thanh này `sticky` mà nền lại MỜ (bg-brand-accent/[0.07]),
+                        nên nội dung form cuộn qua bên dưới hiện xuyên lên, đè chồng vào ô "Ngày bắt
+                        đầu". Nay dùng nền ĐẶC của thẻ (bg-white / dark:bg-dark-card) — sticky thì
+                        bắt buộc phải có nền đặc, bằng không lúc nào cũng lộ chữ phía dưới.
+                    (2) LẶP TIÊU ĐỀ — ProjectForm vốn đã có tiêu đề riêng "Cập nhật: <tên hồ sơ>"
+                        kèm nút đóng, nên popup hiện hai tiêu đề và hai nút X chồng nhau. Nay thanh
+                        này rút còn một dòng mã hồ sơ + nút đóng, nhường phần tên cho tiêu đề của
+                        form — vẫn giữ được nút đóng luôn trong tầm mắt khi form dài phải cuộn. */}
+                <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-dark-card sticky top-0 z-20 md:rounded-t-2xl">
+                  <p className="text-[11px] font-mono font-bold text-slate-500 dark:text-slate-400 truncate">
+                    <span className="uppercase tracking-wide not-italic">Đang sửa</span> · {maHoSo(qv)} · {qv.hangMuc}
+                  </p>
+                  <button type="button" onClick={() => setQuickViewEditing(false)} aria-label="Quay lại khung xem nhanh"
+                    title="Quay lại khung xem nhanh"
+                    className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-dark-elevated shrink-0 cursor-pointer">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="p-4">
+                  <ProjectForm
+                    key={`qv-${qv.id}`}
+                    project={qv}
+                    staffList={staff}
+                    nextProjectId={nextProjectId}
+                    onSave={(du) => { handleSaveProject(du); setQuickViewEditing(false); }}
+                    onCancel={() => setQuickViewEditing(false)}
+                    currentUserRole={currentUser?.role}
+                    formMode="EDIT_ALL"
+                    projectsListForSelect={parentProjects}
+                    thongTinMauTheoDuAn={mauThongTinTheoDuAn}
+                    thuVienTenViecCon={thuVienTenViecCon}
+                    duAnChaInfo={duAnChaInfoById}
+                    maDuAnDaDung={projects.filter(p => p.loaiBanGhi === 'DU_AN' && p.id !== qv.id).map(p => (p.projectId || '').trim().toUpperCase())}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <ProjectQuickView
+            project={qv}
+            staff={staff}
+            parentName={qv.duAnChaId ? parentNameById[qv.duAnChaId] : undefined}
+            hanBoPhan={ymdOf(getExecEnd(qv))}
+            hanPhong={ymdOf(getDeptDeadline(qv))}
+            onClose={dongKhung}
+            onOpenFull={() => { const id = qv.id; dongKhung(); moHoSo(id); }}
+            onEdit={duocSua ? () => setQuickViewEditing(true) : undefined}
+          />
+        );
+      })()}
 
       {/* Popup dời hạn + sửa việc con (khớp hạn) khi kéo về Bước 1 — GĐ C+D */}
       {pullBackDelayProject && (
@@ -7275,6 +7987,84 @@ export default function App() {
 
       {/* Bảng nhập tiến độ & kết quả cấp Phòng — tự mở khi hồ sơ sang bước 4 (hoặc khi TP kéo
           sang bước 5 mà chưa đủ 100%). Đóng mà chưa đủ 100% thì gửi 1 tin lên chuông để TP nhớ. */}
+      {/* ===== HỘP KHAI LÝ DO TRỄ HẠN KHI ĐÓNG HỒ SƠ (chị Trâm chốt 19/09/2026) =====
+          "Khi TP kéo từ bước 3 qua 4 mà trễ hạn thì cũng phải điền lý do trễ hạn mới được lưu."
+          Khai NGAY tại đây thay vì bắt mở form hồ sơ ra: đây là mốc đóng hồ sơ, qua bước rồi mới đi
+          tìm chỗ khai thì dễ quên, mà KPI cuối kỳ lại cần đúng dòng lý do này. */}
+      {hoiLyDoTreHan && (
+        <div className="fixed inset-0 z-[90] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-dark-card w-full max-w-lg rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-brand-danger shrink-0" />
+              <h3 className="text-sm font-black uppercase tracking-wide text-slate-800 dark:text-slate-100">
+                {hoiLyDoTreHan.khau === 'BO_PHAN' ? 'Trễ hạn Bộ phận — cần lý do' : 'Trễ hạn Phòng — cần lý do'}
+              </h3>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                “{hoiLyDoTreHan.project.hangMuc} | {hoiLyDoTreHan.project.tenDuAn}”
+              </p>
+              <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400 leading-relaxed">
+                {hoiLyDoTreHan.khau === 'BO_PHAN' ? (
+                  <>Chuyển sang Bước {hoiLyDoTreHan.toStep} là <b>Bộ phận giao việc lên Phòng</b>. Hôm nay{' '}
+                  <b>{fmtDateVN(ymdOf(new Date()))}</b> đã quá <b>hạn Bộ phận</b>{' '}
+                  <b className="text-brand-danger">{fmtDateVN(hoiLyDoTreHan.benchmark)}</b>.</>
+                ) : (
+                  <>Chuyển sang Bước {hoiLyDoTreHan.toStep} là <b>Phòng xong phần mình</b>. Hôm nay{' '}
+                  <b>{fmtDateVN(ymdOf(new Date()))}</b> đã quá <b>hạn Phòng</b>{' '}
+                  <b className="text-brand-danger">{fmtDateVN(hoiLyDoTreHan.benchmark)}</b>.</>
+                )}{' '}
+                Ghi lý do để cuối kỳ còn thẩm định KPI — lý do của Bộ phận và của Phòng lưu riêng,
+                xem lại ở mục 6 của hồ sơ.
+              </p>
+              <AutoGrowTextarea
+                value={lyDoTreHanTam}
+                onChange={(e) => setLyDoTreHanTam(e.target.value)}
+                minRows={3}
+                placeholder="VD: Chủ đầu tư bổ sung bản vẽ kết cấu ngày 12/09 nên phải bóc tách lại phần móng..."
+                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs bg-white dark:bg-dark-elevated text-slate-800 dark:text-slate-100 focus:ring-brand-accent"
+              />
+            </div>
+            <div className="px-5 py-3 bg-slate-50 dark:bg-dark-elevated/40 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => { setHoiLyDoTreHan(null); setLyDoTreHanTam(''); }}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+              >
+                Quay lại
+              </button>
+              <button
+                type="button"
+                disabled={!lyDoTreHanTam.trim()}
+                title={!lyDoTreHanTam.trim() ? 'Nhập lý do trễ hạn trước khi chuyển bước' : ''}
+                onClick={() => {
+                  const { project, fromStep, toStep, khau } = hoiLyDoTreHan;
+                  const lyDo = lyDoTreHanTam.trim();
+                  const tenKhau = khau === 'BO_PHAN' ? 'Bộ phận' : 'Phòng';
+                  // Ghi lý do vào hồ sơ TRƯỚC, rồi mới chuyển bước — cửa chặn ở handleKanbanMove đọc
+                  // chính trường này, nên phải có mặt trong state trước khi gọi lại.
+                  // Lưu vào ĐÚNG ô của khâu; `nguyenNhanTreHan` (ô chung, phục vụ KPI cuối kỳ) chỉ
+                  // điền khi còn trống — để không đè mất ghi chú Trưởng phòng đã viết trước đó.
+                  setProjects(prev => prev.map(x => x.id === project.id ? {
+                    ...x,
+                    ...(khau === 'BO_PHAN' ? { lyDoTreBoPhan: lyDo } : { lyDoTrePhong: lyDo }),
+                    nguyenNhanTreHan: (x.nguyenNhanTreHan || '').trim() || `[${tenKhau}] ${lyDo}`,
+                  } : x));
+                  logAction('Khai lý do trễ hạn', `Khai lý do trễ hạn khâu ${tenKhau} cho hồ sơ ${nhanHoSo(project)}: ${lyDo}`, project.id, getProjectParticipants(project));
+                  setHoiLyDoTreHan(null);
+                  setLyDoTreHanTam('');
+                  // Đợi state hồ sơ cập nhật xong rồi mới chuyển bước.
+                  setTimeout(() => handleKanbanMove(project.id, fromStep, toStep, false, true), 0);
+                }}
+                className="px-4 py-2 rounded-xl text-xs font-black bg-brand-danger hover:bg-brand-danger/85 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Lưu lý do &amp; chuyển bước
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== HỘP XÁC NHẬN TRÌNH BƯỚC 3 (chị Trâm chốt 18/08/2026) =====
           Thay cho window.confirm — hộp của trình duyệt hiện cả tên miền "…vercel.app cho biết",
           chữ và nút không theo app nên đọc lên như trang lạ ("thông báo này của e ngộ quá").
@@ -7295,7 +8085,7 @@ export default function App() {
               <p className="text-[12px] text-slate-600 dark:text-slate-300 leading-relaxed">
                 Đã lưu chỉnh sửa của hồ sơ{' '}
                 <strong className="text-slate-800 dark:text-slate-100">
-                  “{xacNhanQuaB3.hangMuc} — {xacNhanQuaB3.tenDuAn}”
+                  “{xacNhanQuaB3.hangMuc} | {xacNhanQuaB3.tenDuAn}”
                 </strong>. Xác nhận trình sang <strong>Bước 3 — Duyệt hồ sơ thầu cấp phòng</strong> để
                 Trưởng phòng nhận hồ sơ và duyệt?
               </p>
@@ -7346,7 +8136,7 @@ export default function App() {
                   setXacNhanQuaB3(null);
                   setChoQuaBuoc3(null);
                   triggerToast(`Hồ sơ “${hoSo.tenDuAn}” đã sang Bước 3 — Trưởng phòng nhận được để duyệt.`);
-                  logAction('Chuyển bước Kanban', `Trình hồ sơ ${maHienThi(hoSo.projectId)} - ${hoSo.tenDuAn} sang Bước 3 sau khi lưu chỉnh sửa (xác nhận 2 lần)`, undefined, getProjectParticipants(hoSo));
+                  logAction('Chuyển bước Kanban', `Trình hồ sơ ${nhanHoSo(hoSo)} sang Bước 3 sau khi lưu chỉnh sửa (xác nhận 2 lần)`, undefined, getProjectParticipants(hoSo));
                 }}
                 className="px-3 py-1.5 rounded-lg text-[11px] font-black text-white bg-brand-accent hover:bg-brand-accent-hover transition-colors flex items-center gap-1.5"
               >
@@ -7370,7 +8160,7 @@ export default function App() {
               ? { ...p, anhBaoCaoGuiBaoGia: tepAnh, ghiChuGuiBaoGia: ghiChu || undefined }
               : p));
             logAction('Đính kèm ảnh đã gửi báo giá',
-              `Hồ sơ "${hoSo.hangMuc} — ${hoSo.tenDuAn}": ${parseAttachments(tepAnh).length} ảnh báo cáo đã gửi báo giá${ghiChu ? ` · ${ghiChu}` : ''}`);
+              `Hồ sơ "${hoSo.hangMuc} | ${hoSo.tenDuAn}": ${parseAttachments(tepAnh).length} ảnh báo cáo đã gửi báo giá${ghiChu ? ` · ${ghiChu}` : ''}`);
             setAnhBaoCaoProject(null);
             // Ảnh đã có → đưa thẻ sang Bước 3 luôn, không bắt người dùng kéo lại.
             handleKanbanMove(hoSo.id, 2, 3);
@@ -7382,6 +8172,13 @@ export default function App() {
         <PhongProgressModal
           project={phongInputProject}
           currentUserRole={currentUser?.role}
+          // Quá HẠN PHÒNG mà chưa khai lý do → bảng tự hiện ô khai, bắt buộc điền khi duyệt đủ
+          // 100% (lúc đó hồ sơ rời khâu Phòng). Đã khai rồi thì không hỏi lại.
+          hanPhongDaQua={(() => {
+            if ((phongInputProject.lyDoTrePhong || '').trim()) return undefined;
+            const han = ymdOf(getDeptDeadline(phongInputProject));
+            return han && ymdOf(new Date()) > han ? han : undefined;
+          })()}
           onClose={() => {
             const p = phongInputProject;
             const hienTai = projects.find(x => x.id === p.id) || p;
@@ -7389,13 +8186,13 @@ export default function App() {
               const buocDang = hienTai.kanbanStep || 1;
               const buocKe = phongInputChuyenBuoc || buocDang + 1;
               const tenBuocKe = KANBAN_STEPS.find(s => s.id === buocKe)?.title || `bước ${buocKe}`;
-              notifySelf(`Hồ sơ "${p.hangMuc} — ${p.tenDuAn}" đang ở bước ${buocDang}: tiến độ Phòng hiện đạt ${hienTai.tienDoPhong || 0}%. Cần duyệt đủ 100% để chuyển sang bước ${buocKe} (${tenBuocKe}).`);
+              notifySelf(`Hồ sơ "${p.hangMuc} | ${p.tenDuAn}" đang ở bước ${buocDang}: tiến độ Phòng hiện đạt ${hienTai.tienDoPhong || 0}%. Cần duyệt đủ 100% để chuyển sang bước ${buocKe} (${tenBuocKe}).`);
             }
             setPhongInputProject(null);
             setPhongInputChuyenBuoc(null);
           }}
-          onSave={(tienDo, ketQua, tep) => {
-            handleUpdatePhongResult(phongInputProject.id, tienDo, ketQua, tep, phongInputChuyenBuoc);
+          onSave={(tienDo, ketQua, tep, lyDoTrePhong) => {
+            handleUpdatePhongResult(phongInputProject.id, tienDo, ketQua, tep, phongInputChuyenBuoc, lyDoTrePhong);
             setPhongInputProject(null);
             setPhongInputChuyenBuoc(null);
           }}
@@ -7411,7 +8208,7 @@ export default function App() {
               <div className="min-w-0">
                 <h3 className="text-sm font-black text-slate-800 dark:text-slate-100">Kéo về Bước 1 — mở vòng mới?</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                  Hồ sơ <b className="text-slate-700 dark:text-slate-200">"{vongMoiAsk.hangMuc} — {vongMoiAsk.tenDuAn}"</b> đã gửi CĐT{' '}
+                  Hồ sơ <b className="text-slate-700 dark:text-slate-200">"{vongMoiAsk.hangMuc} | {vongMoiAsk.tenDuAn}"</b> đã gửi CĐT{' '}
                   <b>{tongSoLanGuiCDT(vongMoiAsk)} lần</b>, đang ở <b>vòng {Math.max(1, vongMoiAsk.vongHienTai || 1)}</b>.
                   Mở vòng mới thì việc con vòng cũ được <b>giữ nguyên (chỉ xem)</b> và Quản lý phải lập bộ việc con mới
                   chia đủ <b>100%</b> cho vòng này — tiến độ Bộ phận bắt đầu lại từ 0%.
@@ -7454,7 +8251,7 @@ export default function App() {
               <div className="min-w-0">
                 <h3 className="text-sm font-black text-slate-800 dark:text-slate-100">Ghi nhận gửi CĐT lần {guiCDTConfirm.lan}?</h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                  Hồ sơ <b className="text-slate-700 dark:text-slate-200">"{guiCDTConfirm.project.hangMuc} — {guiCDTConfirm.project.tenDuAn}"</b> sẽ
+                  Hồ sơ <b className="text-slate-700 dark:text-slate-200">"{guiCDTConfirm.project.hangMuc} | {guiCDTConfirm.project.tenDuAn}"</b> sẽ
                   sang <b>bước 5 (đã gửi CĐT)</b> và hệ thống ghi <b className="text-brand-accent dark:text-brand-accent-300">lần gửi thứ {guiCDTConfirm.lan}</b>,
                   kèm tiến độ Phòng {guiCDTConfirm.project.tienDoPhong || 0}% và kết quả công việc hiện tại.
                   {guiCDTConfirm.lan > 1 && ' Chỉ chọn "Đúng" nếu đây thật sự là một lần gửi mới cho Chủ đầu tư.'}

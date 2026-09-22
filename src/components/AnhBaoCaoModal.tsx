@@ -95,7 +95,7 @@ export default function AnhBaoCaoModal({ project, currentUserRole, onSave, onClo
               Ảnh báo cáo đã gửi báo giá
             </h2>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
-              {project.hangMuc} — {project.tenDuAn}
+              {project.hangMuc} | {project.tenDuAn}
             </p>
           </div>
           <button
@@ -190,7 +190,7 @@ export default function AnhBaoCaoModal({ project, currentUserRole, onSave, onClo
               id="ghi-chu-gui-bao-gia"
               value={ghiChu}
               onChange={(e) => setGhiChu(e.target.value)}
-              placeholder="VD: Đã gửi mail cho Mr. Chen lúc 16:30 ngày 17-08-2026, kèm bảng giá ver02."
+              placeholder="VD: Đã gửi mail cho Mr. Chen lúc 16:30 ngày 17/08/2026, kèm bảng giá ver02."
               className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-[11px] text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated"
             />
           </div>

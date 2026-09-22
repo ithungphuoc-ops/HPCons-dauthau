@@ -12,6 +12,34 @@ export interface DelayLog {
   soNgayLech: number;
   lyDo: string; // Lý do dời tiến độ
   nguoiDuyet: string; // Nhân sự phê duyệt
+  // VÒNG mà phiếu này thuộc về (chị Trâm chốt 12/09/2026). Mở vòng mới là hạn được tính LẠI từ bộ
+  // việc con của vòng đó, nên phiếu gia hạn của vòng cũ KHÔNG được cộng tiếp — bằng không hồ sơ
+  // sang vòng 2 là hạn tự nhảy thêm đúng số ngày đã xin ở vòng 1.
+  // Bỏ trống = vòng 1 (dữ liệu cũ đọc bình thường).
+  vong?: number;
+  // ===== TRỄ Ở KHÂU NÀO (chị Trâm 15/09/2026: "chưa thấy ghi lại lịch sử cập nhật tiến độ bộ phận
+  // trễ hay do phòng trễ") =====
+  // Trước đây phiếu dời hạn chỉ có ô `lyDo` gõ tay, đọc lại không biết khâu nào gây trễ — muốn tổng
+  // kết cuối kỳ "Phòng chậm mấy lần, Bộ phận chậm mấy lần" thì phải ngồi đọc từng dòng chữ.
+  // Nay app TỰ suy lúc lập phiếu (xem khauDangTre trong App.tsx), không bắt ai khai thêm:
+  //   'BO_PHAN' — quá hạn Bộ phận mà việc con chưa xong 100%.
+  //   'PHONG'   — Bộ phận đã xong, nhưng quá hạn Phòng mà Trưởng phòng chưa duyệt đủ 100%.
+  //   'CHUA_TRE'— lập phiếu lúc còn trong hạn (dời trước, phòng xa).
+  // Bỏ trống = phiếu cũ lập trước 15/09/2026, không có dữ liệu để suy ngược.
+  khauTre?: 'BO_PHAN' | 'PHONG' | 'CHUA_TRE';
+  // ===== PHIẾU NÀY DỜI HẠN CỦA KHÂU NÀO (chị Trâm chốt 15/09/2026) =====
+  // "Tiến độ dời hạn lấy căn cứ theo tiến độ Bộ phận, đừng lấy căn cứ theo tiến độ của chị. Nếu
+  //  tiến độ chị kiểm tra chị thêm 1 ngày thì chị phải thêm ghi chú dời hạn của chị riêng; còn nếu
+  //  không thay đổi cứ cộng 1 ngày thì tiến độ Bộ phận và chị chung 1 ghi chú thôi, và chỉ cần
+  //  Quản lý đăng ký thôi — do Bộ phận trễ kéo theo chị trễ."
+  //
+  //   'BO_PHAN' — Quản lý xin thêm ngày cho việc con. Số ngày này CỘNG vào hạn Bộ phận; hạn Phòng
+  //               và hạn thầu tự lùi theo, không cần phiếu thứ hai.
+  //   'PHONG'   — Trưởng phòng tự tăng số ngày kiểm tra (soNgayDuyetTP). Phiếu này chỉ để GHI LẠI
+  //               lý do; số ngày KHÔNG cộng thêm lần nữa vì đã nằm trong soNgayDuyetTP rồi —
+  //               cộng nữa là tính trùng.
+  // Bỏ trống = phiếu cũ lập trước 15/09/2026, đều là phiếu của Bộ phận.
+  khau?: 'BO_PHAN' | 'PHONG';
 }
 
 export interface ProjectTask {
@@ -61,7 +89,17 @@ export interface Project {
   // Bỏ trống = dữ liệu cũ, coi như CONG_VIEC.
   loaiBanGhi?: 'DU_AN' | 'CONG_VIEC';
   duAnChaId?: string; // Với CONG_VIEC: id của Dự án cha
-  projectId: string; // Định dạng YYYY.NN (Ví dụ: 2026.01)
+  // ===== MÃ HỒ SƠ TÁCH LÀM HAI Ô (chị Trâm chốt 12/09/2026) =====
+  // Chuẩn bị cho việc đổ dữ liệu từ App Thông tin dự án sang: mã bên đó và mã Phòng Đấu thầu tự
+  // đặt là HAI thứ khác nhau, gộp chung một ô thì lúc nối app sẽ ghi đè lẫn nhau.
+  //   · projectId — Ô 1: mã lấy từ App Thông tin dự án, dạng "xxxxxx-HPCS" (vd 260034-HPCS).
+  //     Khi nối app xong thì ô này do App Thông tin dự án cấp; hiện tại nhập tay.
+  //   · maNoiBo   — Ô 2: mã Phòng tự đặt theo quy định công ty & quy định nội bộ (vd BG-COL).
+  //     Bỏ trống được — hồ sơ cũ chưa tách thì chỉ có ô 1.
+  // Hiển thị ra ngoài luôn ghép ĐỦ HAI Ô — dùng hàm maHoSo() trong src/lib/utils.ts, đừng tự nối
+  // tay ở từng chỗ, bằng không mỗi màn hình lại ghép một kiểu.
+  projectId: string;
+  maNoiBo?: string;
   tenDuAn: string; // Tên dự án thầu
   quanLyId: string; // Quản lý CHÍNH đảm nhận (hiển thị nổi bật, nhận thông báo chính)
   quanLyIdsPhu?: string[]; // Quản lý PHỤ / kế thừa — cùng quyền thao tác như quản lý khi người chính bận
@@ -81,6 +119,18 @@ export interface Project {
   delayLogs: DelayLog[]; // Lịch sử dời tiến độ
   ngayHoanThanhThucTe?: string; // Ngày hoàn thành thực tế (nếu có)
   nguyenNhanTreHan?: string; // Nguyên nhân trễ hạn (Bắt buộc nếu hoàn thành trễ hoặc đang trễ quá hạn)
+  // ===== LÝ DO TRỄ TÁCH THEO KHÂU (chị Trâm chốt 19/09/2026) =====
+  // "Nếu LV1 kéo từ bước 3 => 4 nếu dự án trễ hạn Phòng yêu cầu nhập lý do nữa nha. Nếu LV2 kéo
+  //  từ bước 2 => 3 mà trễ hạn cũng phải yêu cầu nhập lý do mới cho lưu. Như vậy trong chỗ ghi
+  //  trễ hạn sẽ có lưu lại Bộ phận ghi gì, Phòng ghi gì."
+  //
+  // Một ô `nguyenNhanTreHan` chung không trả lời được câu "ai chậm": Bộ phận chậm hay Phòng chậm
+  // đều ghi chung một chỗ, cuối kỳ đọc lại không biết quy trách nhiệm cho khâu nào.
+  //   · lyDoTreBoPhan — Quản lý khai khi rời Bước 2 (Bộ phận xong phần mình) mà đã quá hạn Bộ phận.
+  //   · lyDoTrePhong  — Trưởng phòng khai khi rời Bước 3 (Phòng duyệt xong) mà đã quá hạn Phòng.
+  // Hai ô độc lập: hồ sơ có thể trễ cả hai khâu, mỗi khâu một lý do riêng.
+  lyDoTreBoPhan?: string;
+  lyDoTrePhong?: string;
   trangThai: 'DANG_THUC_HIEN' | 'HOAN_THANH_DUNG_HAN' | 'HOAN_THANH_TRE_HAN' | 'TRE_TIEN_DO';
   createdBy?: string; // ID người đăng ký hồ sơ thầu
   tasks: ProjectTask[]; // Danh sách tác vụ phụ để tự động nội suy tiến độ
@@ -218,7 +268,14 @@ export interface PersonalTask {
   repeatUntil?: string;
   createdAt: number;    // Thời điểm tạo (ms) — để nhắc mốc "sau tạo 1 tiếng"
   note?: string;        // Ghi chú thêm (tùy chọn)
-  done?: boolean;       // Đã xong
+  // ĐÃ XONG — chỉ dùng cho việc KHÔNG lặp lại.
+  // Việc LẶP LẠI phải dùng doneDates bên dưới: một bản ghi sinh ra nhiều buổi, nên một cờ chung
+  // là bấm xong buổi này thì mọi buổi khác (kể cả buổi cũ) cũng thành xong — chị Trâm báo lỗi
+  // 12/09/2026: "sau khi bấm hoàn thành 1 lịch thì các lịch cũ cũng tự hoàn thành là sao ta".
+  done?: boolean;
+  // Các buổi ĐÃ XONG của lịch lặp lại, ghi theo NGÀY (YYYY-MM-DD) — cùng cách làm với excludeDates
+  // (buổi bị xóa lẻ). Bấm xong buổi nào chỉ đánh dấu đúng buổi đó.
+  doneDates?: string[];
   // Cờ đánh dấu 3 mốc nhắc đã bắn (tránh nhắc trùng): sau tạo 1h · trước hạn 3 ngày · trước hạn 1 ngày
   // (giữ cho dữ liệu cũ; bản mới dùng firedKeys để hỗ trợ lịch lặp lại)
   fired?: { created?: boolean; d3?: boolean; d1?: boolean };

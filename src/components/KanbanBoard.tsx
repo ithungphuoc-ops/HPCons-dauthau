@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react';
 import { Project, Staff } from '../types';
-import { getInitials, getInitialsColor } from '../App';
+import { getInitials, getInitialsColor, getTenderDeadline, ymdOf } from '../App';
 import { ChevronLeft, ChevronRight, Lock, LayoutGrid, ClipboardCheck } from 'lucide-react';
 import DateInput from './DateInput';
 import { tongSoLanGuiCDT, nhanLanGui } from '../utils/guiCDT';
-import { namHienTaiVN } from '../utils/dateVN';
+import { namHienTaiVN, fmtDateVN, nowVN } from '../utils/dateVN';
+import { maHoSo } from '../lib/utils';
 
 // 7 bước quy trình thầu trên bảng Kanban.
 // Bước 1-2: Level 1 (Trưởng phòng) + Level 2 (Quản lý) đều được thao tác (bộ phận thực hiện).
@@ -23,6 +24,52 @@ export const KANBAN_STEPS = [
 // Từ bước này trở đi chỉ Trưởng phòng (Level 1) thao tác — bước 3 Duyệt giá cấp phòng
 export const KANBAN_L1_ONLY_FROM = 3;
 
+// ===== QUẢN LÝ (L2) KÉO VỀ BƯỚC 1 ĐƯỢC TỚI BƯỚC NÀO (chị Trâm chốt 12/09/2026) =====
+// "Ở bước 5 đổ lại quản lý được quyền kéo về để tạo vòng 2 hoặc đổi phân bổ, cho linh động."
+// Hồ sơ đang đứng ở bước <= mốc này thì Quản lý tự kéo về Bước 1 được; bước 6 (Trúng thầu) và
+// 7 (Rớt thầu) đã chốt kết quả với CĐT nên vẫn chỉ Trưởng phòng đụng tới.
+// LƯU Ý: đây là trần của chiều KÉO VỀ. Chiều ĐẨY TIẾN của L2 vẫn là KANBAN_L1_ONLY_FROM ở trên.
+export const KANBAN_KEO_VE_TOI_DA_L2 = 5;
+
+// ===== PHẦN VIỆC CỦA PHÒNG XONG Ở BƯỚC NÀO (chị Trâm chốt 12/09/2026) =====
+// "Tiến độ phòng chỉ tính hoàn thành khi kéo từ Bước 3 sang 4. Từ bước 4 sang 5 là tiến độ chiến
+//  lược, không tính chung trong tiến độ phòng ban."
+//
+// LUẬT CŨ lấy mốc là Bước 5 (đã gửi CĐT). Sai với cách Phòng làm việc: khoảng từ lúc trình BLĐ tới
+// lúc gửi CĐT phụ thuộc lịch của Ban lãnh đạo, Phòng không quyết được — tính vào đó là chấm tiến độ
+// của BLĐ chứ không phải của Phòng, và hồ sơ bị báo trễ oan trong lúc chờ ký.
+//
+// Hồ sơ đứng từ bước này trở đi = Phòng đã xong phần mình:
+//   · Dashboard, Gantt, Báo Cáo Tiến Độ → xếp vào nhóm "Đã xong".
+//   · Kanban → vẫn hiện đủ 7 bước để theo dõi tiếp đường đi của hồ sơ.
+//   · Thẻ Kanban từ bước này cũng thôi hiện hạn thầu (xem phần vẽ thẻ).
+export const BUOC_XONG_PHAN_PHONG = 4;
+
+/**
+ * HỒ SƠ CÓ ĐANG TRỄ HẠN THẬT KHÔNG — dùng thay cho `p.trangThai === 'TRE_TIEN_DO'` ở MỌI nơi
+ * hiển thị (chị Trâm hỏi 12/09/2026 trước khi lên production: "các dự án đang kẹt tiến độ BGĐ chưa
+ * xem ghi trễ hạn, nó còn ghi trễ hạn nữa không?").
+ *
+ * VẤN ĐỀ: `trangThai` là trường ĐÃ LƯU trong Firestore, không tính lại mỗi lần vẽ. Hồ sơ bị đóng
+ * dấu TRE_TIEN_DO từ trước — hồi mốc hoàn thành còn là Bước 5 — thì cái dấu đó nằm luôn trong dữ
+ * liệu; đổi mốc sang Bước 4 mà không xét gì thêm thì hồ sơ đang chờ Ban lãnh đạo ký vẫn đỏ y như
+ * cũ, và chỉ hết đỏ khi có người mở từng hồ sơ ra bấm Lưu.
+ *
+ * CÁCH XỬ LÝ: không đụng vào dữ liệu đã lưu (ghi đè hàng loạt lên Firestore là việc nguy hiểm và
+ * không cần thiết), chỉ đổi CÁCH ĐỌC: hồ sơ đã qua mốc Phòng xong phần mình thì thôi tính trễ,
+ * vì quãng chờ BLĐ ký không thuộc trách nhiệm của Phòng. Dấu cũ vẫn nằm trong dữ liệu, lần nào
+ * hồ sơ được lưu lại thì tự chuẩn hoá theo luật mới.
+ *
+ * ⚠ PHẢI dùng deriveKanbanStep chứ KHÔNG đọc thẳng p.kanbanStep (sửa 14/09/2026 khi rà lại):
+ * isWorkDone() bên App.tsx suy bước bằng deriveKanbanStep. Nếu hàm này đọc thô p.kanbanStep thì hai
+ * bên lệch nhau ở hồ sơ CŨ chưa từng được xếp cột — ví dụ hồ sơ đã trúng thầu, còn mang dấu
+ * TRE_TIEN_DO và kanbanStep trống: deriveKanbanStep suy ra Bước 6 nên isWorkDone coi là "đã xong",
+ * còn p.kanbanStep||1 = 1 nên hàm này lại coi là "đang trễ" ⇒ một hồ sơ bị đếm vào CẢ HAI nhóm,
+ * biểu đồ Hiện trạng gói thầu cộng dư.
+ */
+export const dangTreHan = (p: Project): boolean =>
+  p.trangThai === 'TRE_TIEN_DO' && deriveKanbanStep(p) < BUOC_XONG_PHAN_PHONG;
+
 // Chuyển bước có hợp lệ không (bước 6 & 7 song song, cùng ra/vào từ bước 5 gửi CĐT)
 export const isValidKanbanTransition = (from: number, to: number): boolean => {
   if (from === to) return false;
@@ -38,7 +85,9 @@ export const deriveKanbanStep = (p: Project): number => {
   if (p.kanbanStep && p.kanbanStep >= 1 && p.kanbanStep <= 7) return p.kanbanStep;
   if (p.tinhTrangDuAn === 'Đã trúng thầu') return 6;
   if (p.tinhTrangDuAn === 'Rớt thầu') return 7;
-  if (p.trangThai === 'HOAN_THANH_DUNG_HAN' || p.trangThai === 'HOAN_THANH_TRE_HAN') return 5;
+  // Hồ sơ đã đánh dấu hoàn thành mà chưa từng xếp cột: đặt vào đúng mốc "Phòng xong phần mình"
+  // (Bước 4 — trình BLĐ), không phải Bước 5 như luật cũ.
+  if (p.trangThai === 'HOAN_THANH_DUNG_HAN' || p.trangThai === 'HOAN_THANH_TRE_HAN') return BUOC_XONG_PHAN_PHONG;
   if (p.tienDoBoPhan > 0) return 2;
   return 1;
 };
@@ -113,20 +162,38 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
     if (currentUserRole === 'BOOD') return true;
     if (currentUserRole !== 'MANAGER') return false;
     // Level 2 (Quản lý/bộ phận): thao tác trong bước 1-2 và được ĐẨY LÊN đến bước 3 (Duyệt giá cấp phòng)
-    // để báo Trưởng phòng. Từ bước 3 trở đi do Trưởng phòng kiểm tra & chuyển tiếp.
-    return fromStep <= 2 && toStep <= KANBAN_L1_ONLY_FROM;
+    // để báo Trưởng phòng.
+    if (fromStep <= 2 && toStep <= KANBAN_L1_ONLY_FROM) return true;
+    // ===== MỞ THÊM CHO QUẢN LÝ (chị Trâm chốt 19/09/2026) =====
+    // "Mở thêm cho Quản lý tính năng kéo từ Bước 4 qua Bước 5, và từ Bước 5 được click trúng thầu
+    //  hay rớt thầu đi ní."
+    //   · 4 → 5 : gửi hồ sơ cho Chủ đầu tư. Ban lãnh đạo đã duyệt ở Bước 4 rồi, việc gửi đi là
+    //             thao tác hành chính — bắt chờ Trưởng phòng kéo tay chỉ làm chậm ngày gửi.
+    //   · 5 → 6/7 : ghi nhận kết quả thầu. Chủ đầu tư báo trúng hay rớt thì ai nghe tin cũng ghi
+    //             được, không phải quyết định gì.
+    // VẪN GIỮ NGUYÊN chặn 3 → 4: đó là cửa "Phòng xong phần mình", phải do Trưởng phòng chốt tiến
+    // độ Phòng 100% và chịu trách nhiệm trước Ban lãnh đạo.
+    if (fromStep === 4 && toStep === 5) return true;
+    if (fromStep === 5 && (toStep === 6 || toStep === 7)) return true;
+    return false;
   };
 
   const tryMove = (p: Project, toStep: number) => {
     const fromStep = deriveKanbanStep(p);
     if (toStep < 1 || toStep > 7 || toStep === fromStep) return;
     // KÉO VỀ BƯỚC 1 (từ bất kỳ bước nào): không chuyển ngay — mở hộp hỏi ảnh hưởng hạn nộp.
-    // Quyền: L1 (BOOD) luôn được; L2 (Quản lý) chỉ khi hồ sơ CÒN ở bước 1-2. Bước 3+ chỉ L1 kéo.
+    // Quyền: L1 (BOOD) luôn được; L2 (Quản lý) được kéo về từ BƯỚC 5 TRỞ XUỐNG.
+    //
+    // Chị Trâm chốt 12/09/2026 — MỞ QUYỀN KÉO VỀ CHO QUẢN LÝ: "ở bước 5 đổ lại quản lý được quyền
+    // kéo về để tạo vòng 2 hoặc đổi phân bổ, cho linh động". Trước đây L2 chỉ kéo về được khi hồ sơ
+    // CÒN ở bước 1-2, nên mỗi lần cần lập lại kế hoạch là phải nhờ Trưởng phòng kéo tay — nghẽn cổ chai.
+    // Chỉ mở đúng chiều KÉO VỀ; trần ĐẨY TIẾN của L2 vẫn dừng ở bước KANBAN_L1_ONLY_FROM (xem canMove).
+    // Bước 6 (Trúng thầu) và 7 (Rớt thầu) vẫn chỉ Trưởng phòng — hồ sơ đã chốt kết quả với CĐT.
     if (toStep === 1 && fromStep > 1) {
-      if (currentUserRole === 'BOOD' || (currentUserRole === 'MANAGER' && fromStep <= 2)) {
+      if (currentUserRole === 'BOOD' || (currentUserRole === 'MANAGER' && fromStep <= KANBAN_KEO_VE_TOI_DA_L2)) {
         onPullBackToStart(p.id, fromStep);
       } else {
-        onDenied('Hồ sơ đã lên từ bước 3 — chỉ Trưởng phòng (Level 1) được kéo về Bước 1. Quản lý chỉ kéo về Bước 1 khi hồ sơ còn ở bước 1-2.');
+        onDenied(`Hồ sơ đã ở bước ${fromStep} (${KANBAN_STEPS.find(s => s.id === fromStep)?.title}) — chỉ Trưởng phòng (Level 1) kéo về được. Quản lý kéo về Bước 1 từ bước ${KANBAN_KEO_VE_TOI_DA_L2} trở xuống.`);
       }
       return;
     }
@@ -135,7 +202,7 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
       return;
     }
     if (!canMove(fromStep, toStep)) {
-      onDenied(`Quản lý (Level 2) chỉ được đẩy thẻ lên tối đa bước ${KANBAN_L1_ONLY_FROM} (Duyệt giá cấp phòng) để báo Trưởng phòng. Từ bước ${KANBAN_L1_ONLY_FROM} trở đi do Trưởng phòng thao tác!`);
+      onDenied(`Cửa bước ${KANBAN_L1_ONLY_FROM} → 4 (trình Ban lãnh đạo) do Trưởng phòng chốt tiến độ Phòng rồi mới chuyển. Quản lý đẩy được tới bước ${KANBAN_L1_ONLY_FROM}, và từ bước 4 trở đi thao tác được các bước 4 → 5 (gửi CĐT), 5 → 6/7 (trúng / rớt thầu).`);
       return;
     }
     onMove(p.id, fromStep, toStep);
@@ -208,7 +275,10 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
       <div className="flex overflow-x-auto md:grid md:grid-cols-7 md:overflow-x-visible gap-1 pb-1">
         {KANBAN_STEPS.map(col => {
           const colProjects = filteredProjects.filter(p => deriveKanbanStep(p) === col.id);
-          const isL1Zone = col.id >= KANBAN_L1_ONLY_FROM;
+          // Ổ KHOÁ chỉ còn ở ĐÚNG cột Trưởng phòng mới thao tác được (19/09/2026). Quản lý nay làm
+          // được 4 → 5 và 5 → 6/7, nên treo khoá ở cột 4-5-6-7 là nói sai quyền: người dùng nhìn
+          // khoá rồi không dám bấm, trong khi nút vẫn ăn.
+          const isL1Zone = col.id === KANBAN_L1_ONLY_FROM;
           const isDragOver = dragOverStep === col.id;
           return (
             <div
@@ -250,11 +320,36 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
                 )}
                 {colProjects.map(p => {
                   const step = deriveKanbanStep(p);
-                  const implementer = staff.find(s => s.id === p.thucHienId);
+                  // CHỮ VIẾT TẮT TRÊN THẺ = QUẢN LÝ CHÍNH của hồ sơ (chị Trâm chốt 12/09/2026).
+                  // Trước đây lấy p.thucHienId — người THỰC HIỆN việc con đầu tiên — nên thẻ hiện
+                  // "NQ", "NL"... không đúng mục đích: nhìn bảng Kanban là để biết AI ĐANG CẦM hồ sơ
+                  // này, tức quản lý phụ trách, chứ không phải ai đang bóc tách khối lượng.
+                  const quanLyChinh = staff.find(s => s.id === p.quanLyId);
+                  // HẠN THẦU của hồ sơ — cùng nguồn với badge "⏰ Hạn thầu" ở màn Báo Cáo Tiến Độ
+                  // (getTenderDeadline), để hai nơi không bao giờ lệch ngày nhau.
+                  const hanThau = getTenderDeadline(p);
+                  const hanThauISO = ymdOf(hanThau);
+                  // Quá hạn: chỉ tính khi hồ sơ CHƯA chốt kết quả. Hồ sơ đã trúng/rớt hoặc đã hoàn
+                  // thành thì treo chữ đỏ "quá hạn" là gây hiểu nhầm — việc đã xong rồi.
+                  const daChotKetQua = step >= 6
+                    || p.trangThai === 'HOAN_THANH_DUNG_HAN' || p.trangThai === 'HOAN_THANH_TRE_HAN';
+                  // So theo NGÀY VIỆT NAM (không phải giờ UTC của máy chủ) — trước 07:00 giờ VN,
+                  // new Date().toISOString() còn trả ngày hôm trước, làm cờ quá hạn lùi mất 1 ngày
+                  // (CodeRabbit phát hiện lúc rà PR #11, 21/09/2026).
+                  const quaHanThau = !daChotKetQua && hanThauISO < ymdOf(nowVN());
                   const parentName = (p.duAnChaId && parentNameById[p.duAnChaId]) || p.tenDuAn;
                   // Bước lùi: 6/7 → 5, còn lại → step-1
                   const backStep = (step === 6 || step === 7) ? 5 : step - 1;
                   const backAllowed = isValidKanbanTransition(step, backStep) && canMove(step, backStep);
+                  // ===== NÚT LÙI CỦA QUẢN LÝ = KÉO VỀ BƯỚC 1 (phát hiện khi nghiệm thu 14/09/2026) =====
+                  // Từ 12/09 Quản lý ĐƯỢC kéo hồ sơ về Bước 1 từ Bước 5 trở xuống, nhưng KHÔNG được lùi
+                  // từng nấc (4→3, 3→2) — đó là khâu duyệt giá của Phòng. Hệ quả trên màn hình: thẻ ở
+                  // Bước 3-5 hiện nút ‹ xám ngắt với dòng "Chỉ Trưởng phòng được thao tác vùng này",
+                  // nên Quản lý nhìn vào tưởng mình không làm được gì — trong khi quyền vừa được mở.
+                  // Nay với Quản lý, nút ‹ làm đúng thao tác lùi DUY NHẤT họ được phép: về thẳng Bước 1.
+                  // Trưởng phòng giữ nguyên hành vi cũ (lùi từng nấc).
+                  const l2VeBuoc1 = currentUserRole === 'MANAGER' && !backAllowed
+                    && step > 1 && step <= KANBAN_KEO_VE_TOI_DA_L2;
                   // Hồ sơ Quản lý vừa lập (hoặc vừa dời hạn) đứng sẵn ở Bước 1 chờ Trưởng phòng
                   // duyệt kế hoạch — KHÔNG cho đẩy thẻ tiến lên bằng tay, duyệt xong hồ sơ tự sang
                   // Bước 2 (chị Trâm chốt 29/07/2026: cứ để nó ở Bước 1 chứ đừng giấu khỏi bảng).
@@ -283,10 +378,10 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
                     >
                       <div className="flex items-center justify-between gap-1">
                         <span className="text-[0.58rem] font-black font-mono bg-slate-100 dark:bg-dark-elevated text-slate-500 dark:text-slate-400 px-1 py-0.5 rounded truncate">
-                          {p.projectId}
+                          {maHoSo(p)}
                         </span>
                         <span className={`text-[0.58rem] font-black px-1 py-0.5 rounded-full shrink-0 ${
-                          p.trangThai === 'TRE_TIEN_DO'
+                          dangTreHan(p)
                             ? 'bg-brand-danger/10 text-brand-danger'
                             : 'bg-brand-accent/10 text-brand-accent dark:text-brand-accent-300'
                         }`}>
@@ -315,7 +410,7 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
                           const daXong = (p.tienDoBoPhan || 0) >= 100 && (p.tienDoPhong || 0) >= 100;
                           const mauThanh = daXong
                             ? 'bg-brand-success'
-                            : p.trangThai === 'TRE_TIEN_DO' ? 'bg-brand-danger' : 'bg-brand-accent';
+                            : dangTreHan(p) ? 'bg-brand-danger' : 'bg-brand-accent';
                           return (
                             <div
                               className="mt-1 h-1.5 w-full bg-slate-100 dark:bg-dark-elevated rounded-full overflow-hidden"
@@ -363,23 +458,45 @@ export default function KanbanBoard({ projects, staff, parentNameById = {}, curr
                         )}
                       </button>
                       <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-100 dark:border-slate-800">
-                        <div
-                          className={`w-4 h-4 rounded-full border flex items-center justify-center text-[0.58rem] font-black uppercase shrink-0 ${getInitialsColor(implementer?.hoTen || '')}`}
-                          title={implementer ? `${implementer.hoTen}${implementer.daNghi ? ' (đã nghỉ)' : ''}` : 'Chưa gán'}
-                        >
-                          {getInitials(implementer?.hoTen || '')}
+                        <div className="flex items-center gap-1 min-w-0">
+                          <div
+                            className={`w-4 h-4 rounded-full border flex items-center justify-center text-[0.58rem] font-black uppercase shrink-0 ${getInitialsColor(quanLyChinh?.hoTen || '')}`}
+                            title={quanLyChinh ? `Quản lý chính: ${quanLyChinh.hoTen}${quanLyChinh.daNghi ? ' (đã nghỉ)' : ''}` : 'Chưa gán quản lý'}
+                          >
+                            {getInitials(quanLyChinh?.hoTen || '')}
+                          </div>
+                          {/* HẠN THẦU ngay cạnh tên quản lý (chị Trâm chốt 12/09/2026) — nhìn thẻ là
+                              biết hồ sơ này phải nộp ngày nào, khỏi mở hồ sơ ra xem.
+                              CHỈ HIỆN TỚI BƯỚC 3: từ Bước 4 (trình BLĐ) trở đi hồ sơ đã ra khỏi tay
+                              Phòng, chị Trâm chốt "tới bước BLĐ ai lại đi tính cho BLĐ" — treo hạn ở
+                              đó là chấm tiến độ của Ban lãnh đạo, sai đối tượng. */}
+                          {step < KANBAN_L1_ONLY_FROM + 1 && (
+                            <span
+                              className={`text-[0.55rem] font-black whitespace-nowrap leading-none ${
+                                quaHanThau ? 'text-brand-danger' : 'text-slate-500 dark:text-slate-400'
+                              }`}
+                              title={`Hạn thầu (hạn nộp hồ sơ): ${fmtDateVN(hanThauISO)}${quaHanThau ? ' — ĐÃ QUÁ HẠN' : ''}`}
+                            >
+                              ⏰ {fmtDateVN(hanThauISO)}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-0.5 shrink-0">
                           <button
                             type="button"
-                            onClick={() => tryMove(p, backStep)}
+                            onClick={() => tryMove(p, l2VeBuoc1 ? 1 : backStep)}
                             disabled={step <= 1}
                             className={`p-0.5 rounded transition-colors ${
-                              step > 1 && backAllowed
+                              step > 1 && (backAllowed || l2VeBuoc1)
                                 ? 'text-slate-400 hover:text-brand-accent hover:bg-brand-accent/10 cursor-pointer'
                                 : 'text-slate-200 dark:text-slate-700 cursor-not-allowed'
                             }`}
-                            title={step <= 1 ? '' : backAllowed ? `Lùi về bước ${backStep}` : 'Chỉ Trưởng phòng được thao tác vùng này'}
+                            title={
+                              step <= 1 ? ''
+                              : l2VeBuoc1 ? 'Lập lại kế hoạch việc con — đổi phân bổ (hồ sơ đứng nguyên) hoặc dời hạn (kéo về Bước 1)'
+                              : backAllowed ? `Lùi về bước ${backStep}`
+                              : 'Chỉ Trưởng phòng được thao tác vùng này'
+                            }
                           >
                             <ChevronLeft className="w-3.5 h-3.5" />
                           </button>

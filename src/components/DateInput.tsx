@@ -14,15 +14,19 @@ import { nowVN } from '../utils/dateVN';
 // ===== LỊCH CHỌN NGÀY (chị Trâm yêu cầu 17/08/2026 — góp ý #6: "Thêm lịch trong quá trình chọn
 // ngày thực hiện đỡ gõ tay") =====
 // Vẫn GÕ TAY được như cũ; thêm nút lịch bên cạnh để bấm chọn. Lịch tự dựng (không dùng ô native)
-// để giữ đúng thứ tự DD-MM-YYYY và tuần bắt đầu từ THỨ HAI theo lịch Việt Nam.
+// để giữ đúng thứ tự DD/MM/YYYY và tuần bắt đầu từ THỨ HAI theo lịch Việt Nam.
 
-// ISO "2026-07-12" → hiển thị "12-07-2026" (thao tác chuỗi thuần, không qua Date để khỏi lệch múi giờ)
+// ISO "2026-07-12" → hiển thị "12/07/2026" (thao tác chuỗi thuần, không qua Date để khỏi lệch múi giờ).
+// Dấu "/" theo quy định định dạng dữ liệu của công ty (thông báo nội bộ 19/08/2026): ngày tháng
+// dùng dd/mm/yyyy, KHÔNG dùng dd-mm-yyyy.
 const isoToVN = (iso?: string): string => {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || '');
-  return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
 };
 
-// Người dùng gõ "12-07-2026" / "12/7/2026" → ISO "2026-07-12". Trả null nếu không hợp lệ.
+// Người dùng gõ "12/07/2026" (chuẩn công ty), hoặc "12-7-2026" / "12.7.2026" → ISO "2026-07-12".
+// VẪN nhận cả dấu "-" và "." khi NHẬP: chuẩn công ty áp cho HIỂN THỊ, còn chặn cách gõ quen tay
+// của người dùng thì chỉ tổ làm họ khó chịu. Trả null nếu không hợp lệ.
 const vnToISO = (s: string): string | null => {
   const m = /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/.exec(s.trim());
   if (!m) return null;
@@ -53,7 +57,7 @@ interface DateInputProps {
   placeholder?: string;
 }
 
-export default function DateInput({ value, onChange, disabled, className = '', title, id, placeholder = 'dd-mm-yyyy' }: DateInputProps) {
+export default function DateInput({ value, onChange, disabled, className = '', title, id, placeholder = 'dd/mm/yyyy' }: DateInputProps) {
   // Giữ chuỗi đang gõ cục bộ, chỉ commit khi rời ô (blur) / nhấn Enter — tránh năm gõ dở bị hiểu sai.
   const [draft, setDraft] = useState(isoToVN(value));
   useEffect(() => { setDraft(isoToVN(value)); }, [value]);
