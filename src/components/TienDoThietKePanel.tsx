@@ -55,6 +55,21 @@ const soNgayCua = (s?: string): number | null => {
   return Math.round(Date.UTC(y, m - 1, d) / MS_NGAY);
 };
 const homNay = (): number => soNgayCua(new Date().toISOString()) as number;
+/**
+ * Ngày ngoài ±3 năm quanh hôm nay coi như không đọc được (CodeRabbit PR #13): một dòng gửi nhầm
+ * `9999-12-31` sẽ kéo trục Gantt ra hàng triệu px và treo trình duyệt của cả phòng. Ngày kết thúc
+ * trước ngày bắt đầu thì lấy bằng ngày bắt đầu, để thanh không âm và số ngày không âm.
+ */
+const GIOI_HAN_NGAY = 3 * 366;
+const ngayHopLe = (n: number | null, hn: number): number | null =>
+  n != null && Math.abs(n - hn) <= GIOI_HAN_NGAY ? n : null;
+const chuanHoaKhoang = (bdTho: number | null, ktTho: number | null): { bd: number | null; kt: number | null } => {
+  const hn = homNay();
+  const bd = ngayHopLe(bdTho, hn);
+  let kt = ngayHopLe(ktTho, hn);
+  if (bd != null && kt != null && kt < bd) kt = bd;
+  return { bd, kt };
+};
 const tuSoNgay = (n: number): Date => new Date(n * MS_NGAY);
 const pad = (n: number) => String(n).padStart(2, '0');
 /** dd/MM/yy như bảng bên Thiết kế. */
@@ -174,7 +189,7 @@ export default function TienDoThietKePanel({ duLieuBanThu, chiMaDuAn }: Props) {
   );
 
   const nhom = useMemo<Nhom[]>(() => duocXem.map(x => {
-    const dong: Dong[] = (x.rows || []).map(r => ({ ...r, bd: soNgayCua(r.startDate), kt: soNgayCua(r.endDate) }));
+    const dong: Dong[] = (x.rows || []).map(r => ({ ...r, ...chuanHoaKhoang(soNgayCua(r.startDate), soNgayCua(r.endDate)) }));
     const bds = dong.map(d => d.bd).filter((n): n is number => n != null);
     const kts = dong.map(d => d.kt ?? d.bd).filter((n): n is number => n != null);
     return {

@@ -89,7 +89,10 @@ Bên nhận: `khoaDuAn` sai dạng (vd `../x`) hoặc dạng `__...__` (Firestor
 
 ## Migration Plan
 
-1. Deploy bên **Thiết kế** trước (cổng nhận đã sửa) — bên nhận sẵn sàng trước bên gửi.
+1. **Bên nhận lên trước, theo từng chiều** (sửa 26/09/2026, CodeRabbit PR #13):
+   - Chiều 2 (Đấu thầu → Thiết kế): bên nhận là **Thiết kế** — deploy cổng `/api/webhooks/incoming` trước.
+   - Chiều 1 bản 2 (Thiết kế → Đấu thầu): bên nhận là **app này** — deploy cổng `tien-do-thiet-ke-chi-tiet` bản 2 (nhận `khoaDuAn`, cho `maDuAn` rỗng) **trước** khi App Thiết kế deploy Cloud Function bản 2. Ngược lại thì cổng bản 01 trả 400 cho mọi dự án chưa mã và các lần Share đó mất.
+   - Thực tế an toàn nhất: chưa đặt `WEBHOOK_SECRET_DT_PTK` ở đâu cho tới khi CẢ HAI app đã lên bản 2 — thiếu secret thì cả hai cổng tự khoá.
 2. Sinh secret mạnh, đặt `WEBHOOK_SECRET_DT_PTK` ở Vercel **cả hai app** + `THIET_KE_WEBHOOK_URL` ở app này; deploy.
 3. Trưởng phòng bấm "Đồng bộ lại sang Thiết kế" một lần để nạp các dự án đang có.
 4. Kiểm: dự án `2610xx` hiện trên trang Phòng ban bên Thiết kế; `260039-HPCS`, `2026.01` không hiện.
