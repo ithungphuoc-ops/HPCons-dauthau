@@ -5,6 +5,8 @@ import { ChevronDown, ChevronRight, Search, RefreshCw, PencilRuler, AlertTriangl
 import { EmptyState } from './ui/EmptyState';
 import { namHienTaiVN, fmtDateTimeVN } from '../utils/dateVN';
 import type { DuAnThietKe, HangMucThietKe } from '../lib/tienDoThietKeTypes';
+import type { TienDoThietKeChiTiet } from '../lib/tienDoThietKeChiTietTypes';
+import { chuanHoaMaDuAn, laMaPhongDauThau } from '../lib/maPhongBan';
 
 /**
  * BẢNG TIẾN ĐỘ THIẾT KẾ — tab "Liên kết phòng ban" (chị Trâm chốt 15/09/2026)
@@ -28,6 +30,11 @@ type Props = {
    * Dùng cho Chuyên viên (Level 3): họ chỉ thấy tiến độ thiết kế của gói thầu mình được giao việc.
    */
   chiMaDuAn?: string[] | null;
+  /**
+   * Mã ô 1 các DỰ ÁN bên này (thô, chưa lọc) — để ô chọn mã của bảng chi tiết liệt kê cả mã Thiết
+   * kế CHƯA Share (hiện đúng câu "chưa chia sẻ"), không chỉ mã đã có dữ liệu.
+   */
+  dsMaDuAn?: string[];
 };
 
 const dinhDangNgay = (s?: string): string => {
@@ -85,7 +92,10 @@ const OTreHan = ({ so }: { so?: number }) => {
   );
 };
 
-export default function TienDoThietKePanel({ duLieuBanThu, chiMaDuAn }: Props) {
+/** Ngày bên Thiết kế gửi có thể là yyyy-mm-dd hoặc ISO đủ giờ — chỉ hiện phần ngày. */
+const dinhDangNgayChiTiet = (s?: string): string => dinhDangNgay((s || '').slice(0, 10) || undefined);
+
+export default function TienDoThietKePanel({ duLieuBanThu, chiMaDuAn, dsMaDuAn }: Props) {
   const [items, setItems] = useState<DuAnThietKe[]>(duLieuBanThu || []);
   const [dangTai, setDangTai] = useState(!duLieuBanThu);
   const [thongBao, setThongBao] = useState('');
@@ -100,6 +110,10 @@ export default function TienDoThietKePanel({ duLieuBanThu, chiMaDuAn }: Props) {
   const [tinhTrang, setTinhTrang] = useState<'TAT_CA' | 'DANG_LAM' | 'DA_XONG'>('TAT_CA');
   const [moRong, setMoRong] = useState<Record<string, boolean>>({});
   const [lanTai, setLanTai] = useState(0);
+  // ===== Bảng CHI TIẾT công việc (OpenSpec `lien-ket-thiet-ke-dau-thau`, Sếp duyệt 26/09/2026) =====
+  const [chiTiet, setChiTiet] = useState<TienDoThietKeChiTiet[]>([]);
+  const [thongBaoChiTiet, setThongBaoChiTiet] = useState('');
+  const [maChiTiet, setMaChiTiet] = useState('');
 
   useEffect(() => {
     // Bản thử: dùng dữ liệu dựng sẵn, TUYỆT ĐỐI không gọi API (quy ước DEV_SANDBOX ở App.tsx).
@@ -123,6 +137,25 @@ export default function TienDoThietKePanel({ duLieuBanThu, chiMaDuAn }: Props) {
     return () => { huy = true; };
   }, [duLieuBanThu, lanTai]);
 
+  // Tiến độ chi tiết đọc từ cổng MỚI (/api/tien-do-thiet-ke-chi-tiet) — tách effect riêng để một
+  // bên lỗi không kéo bên kia trống theo. Bản thử không gọi API (quy ước DEV_SANDBOX).
+  useEffect(() => {
+    if (duLieuBanThu) { setChiTiet([]); return; }
+    let huy = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/tien-do-thiet-ke-chi-tiet', { cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if (huy) return;
+        setChiTiet(Array.isArray(data?.items) ? data.items : []);
+        setThongBaoChiTiet(data?.thongBao || (res.ok ? '' : 'Không đọc được tiến độ chi tiết.'));
+      } catch {
+        if (!huy) setThongBaoChiTiet('Không đọc được tiến độ chi tiết.');
+      }
+    })();
+    return () => { huy = true; };
+  }, [duLieuBanThu, lanTai]);
+
   // Danh sách năm lấy theo NGÀY LẬP DỰ ÁN (chị Trâm chốt 15/09/2026), không dùng chuỗi năm tài
   // chính bên App Thiết kế gửi sang: chuỗi đó dạng "2026-2027" nên đọc lên không biết là năm nào,
   // trong khi người dùng chỉ cần chọn 2026 / 2027 / 2028.
@@ -136,6 +169,40 @@ export default function TienDoThietKePanel({ duLieuBanThu, chiMaDuAn }: Props) {
     const cho = new Set(chiMaDuAn.map(m => m.trim().toLowerCase()).filter(Boolean));
     return items.filter(d => cho.has((d.maDuAn || '').trim().toLowerCase()));
   }, [items, chiMaDuAn]);
+
+  /**
+   * Bảng chi tiết áp ĐÚNG luật lọc Chuyên viên của bảng trên (chiMaDuAn — mã thuộc gói được giao,
+   * ghép theo projectId). So bằng mã đã chuẩn hoá (bỏ khoảng trắng, HOA) vì bên Thiết kế gửi mã
+   * đã chuẩn hoá, còn projectId bên này là chữ gõ tay.
+   */
+  const choXemChiTiet = useMemo(
+    () => (chiMaDuAn ? new Set(chiMaDuAn.map(chuanHoaMaDuAn).filter(Boolean)) : null),
+    [chiMaDuAn],
+  );
+  const chiTietTheoMa = useMemo(() => {
+    const m = new Map<string, TienDoThietKeChiTiet>();
+    chiTiet.forEach(c => {
+      const ma = chuanHoaMaDuAn(c.maDuAn);
+      if (!ma || (choXemChiTiet && !choXemChiTiet.has(ma))) return;
+      m.set(ma, c);
+    });
+    return m;
+  }, [chiTiet, choXemChiTiet]);
+  // Ô chọn mã: mã dự án phòng Đấu thầu bên này (kể cả mã Thiết kế chưa Share) + mã đã có chi tiết.
+  const dsMaChiTiet = useMemo(() => {
+    const tuDuAn = (dsMaDuAn || [])
+      .map(chuanHoaMaDuAn)
+      .filter(ma => laMaPhongDauThau(ma) && (!choXemChiTiet || choXemChiTiet.has(ma)));
+    return Array.from(new Set([...tuDuAn, ...chiTietTheoMa.keys()])).sort();
+  }, [dsMaDuAn, choXemChiTiet, chiTietTheoMa]);
+  // Mặc định chọn mã đầu tiên ĐÃ có chi tiết (mở ra là thấy dữ liệu ngay); mã đang chọn rơi khỏi
+  // danh sách (vd đổi người dùng) thì chọn lại.
+  useEffect(() => {
+    if (maChiTiet && dsMaChiTiet.includes(maChiTiet)) return;
+    const coDuLieu = dsMaChiTiet.find(ma => chiTietTheoMa.has(ma));
+    setMaChiTiet(coDuLieu || dsMaChiTiet[0] || '');
+  }, [dsMaChiTiet, chiTietTheoMa, maChiTiet]);
+  const banChiTiet = maChiTiet ? chiTietTheoMa.get(maChiTiet) : undefined;
 
   const dsNam = useMemo(
     // Năm hiện tại LUÔN có trong danh sách, kể cả chưa có dự án nào của năm đó — nếu không, ô chọn
@@ -400,6 +467,109 @@ export default function TienDoThietKePanel({ duLieuBanThu, chiMaDuAn }: Props) {
           </table>
         </div>
       )}
+
+      {/* ===== TIẾN ĐỘ CHI TIẾT THEO MÃ DỰ ÁN (OpenSpec `lien-ket-thiet-ke-dau-thau`, 26/09/2026) =====
+          Từng dòng công việc trang Tiến độ bên App Thiết kế, chỉ có khi Trưởng nhóm Thiết kế bấm
+          "Share sang Đấu thầu". Chỉ xem — tiến độ do Phòng Thiết kế làm chủ. */}
+      <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800/80">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+          <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-200">
+            Tiến độ chi tiết công việc
+          </h4>
+          <label className="inline-flex items-center gap-2">
+            <span className={nhanLoc}>Mã dự án</span>
+            <select
+              value={maChiTiet}
+              onChange={e => setMaChiTiet(e.target.value)}
+              disabled={dsMaChiTiet.length === 0}
+              className={oLoc}
+            >
+              {dsMaChiTiet.length === 0 && <option value="">— Chưa có mã —</option>}
+              {dsMaChiTiet.map(ma => (
+                <option key={ma} value={ma}>{ma}{chiTietTheoMa.has(ma) ? '' : ' (chưa chia sẻ)'}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {thongBaoChiTiet && (
+          <div className="mb-3 rounded-xl border border-amber-200 dark:border-amber-500/30 bg-amber-50 dark:bg-amber-500/10 px-4 py-3 text-[11px] font-medium text-amber-800 dark:text-amber-300">
+            {thongBaoChiTiet}
+          </div>
+        )}
+
+        {!maChiTiet ? (
+          <p className="py-6 text-center text-xs text-slate-400">
+            {chiMaDuAn
+              ? 'Chưa có mã dự án nào thuộc gói thầu bạn được giao.'
+              : 'Chưa có dự án nào mang mã Phòng Đấu thầu (dạng YY10xx-HPCS).'}
+          </p>
+        ) : !banChiTiet ? (
+          <p className="py-6 text-center text-xs text-slate-400">Phòng Thiết kế chưa chia sẻ tiến độ cho mã này.</p>
+        ) : (
+          <>
+            <p className="text-[11px] text-slate-400 mb-2">
+              {banChiTiet.tenDuAn && <span className="font-bold text-slate-600 dark:text-slate-300">{banChiTiet.tenDuAn} · </span>}
+              Thiết kế chia sẻ lúc {banChiTiet.sharedAt ? fmtDateTimeVN(banChiTiet.sharedAt) : '—'} bởi {banChiTiet.sharedByName || '—'}
+            </p>
+            {banChiTiet.rows.length === 0 ? (
+              <p className="py-6 text-center text-xs text-slate-400">Lần chia sẻ này không có dòng công việc nào.</p>
+            ) : (
+              // Bảng 7 cột: trên điện thoại cuộn ngang trong khung, không đẩy vỡ bề ngang trang.
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] table-fixed border-collapse">
+                  <colgroup>
+                    <col className="w-[16rem]" />
+                    <col className="w-36" />
+                    <col className="w-28" />
+                    <col className="w-28" />
+                    <col className="w-32" />
+                    <col className="w-24" />
+                    <col className="w-[14rem]" />
+                  </colgroup>
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-dark-elevated/50">
+                      <th className={`${dauCot} text-left`}>Tên công việc</th>
+                      <th className={`${dauCot} text-left`}>Người thực hiện</th>
+                      <th className={`${dauCot} text-left`}>Ngày bắt đầu</th>
+                      <th className={`${dauCot} text-left`}>Ngày kết thúc</th>
+                      <th className={`${dauCot} text-left`}>Tình trạng</th>
+                      <th className={`${dauCot} text-center`}>Trễ hạn</th>
+                      <th className={`${dauCot} text-left`}>Nội dung thay đổi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {banChiTiet.rows.map(r => (
+                      <tr key={`${r.source}-${r.id}`} className="border-t border-slate-100 dark:border-slate-800">
+                        <td className={`${o} text-xs font-semibold text-slate-800 dark:text-slate-100`}>{r.title}</td>
+                        <td className={`${o} text-[11px] text-slate-600 dark:text-slate-300`}>{r.assigneeName || '—'}</td>
+                        <td className={`${o} text-[11px] text-slate-600 dark:text-slate-300 whitespace-nowrap`}>{dinhDangNgayChiTiet(r.startDate)}</td>
+                        <td className={`${o} text-[11px] text-slate-600 dark:text-slate-300 whitespace-nowrap`}>{dinhDangNgayChiTiet(r.endDate)}</td>
+                        <td className={o}>
+                          <span className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold ${mauTinhTrang(r.status)}`}>
+                            {r.status || '—'}
+                          </span>
+                        </td>
+                        <td className={`${o} text-center`}>
+                          {r.overdue ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 dark:text-rose-400">
+                              <AlertTriangle className="w-3 h-3" />
+                              Trễ hạn
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">Đúng hạn</span>
+                          )}
+                        </td>
+                        <td className={`${o} text-[11px] text-slate-500 dark:text-slate-400 break-words`}>{r.changeNote || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
