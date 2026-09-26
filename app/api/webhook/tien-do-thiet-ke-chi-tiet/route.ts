@@ -137,7 +137,13 @@ export async function POST(req: NextRequest) {
     const trung = await db.runTransaction(async (tx) => {
       const daXuLy = await tx.get(processedRef);
       if (daXuLy.exists) return true;
-      tx.set(ref, banGhi); // KHÔNG merge — xem "ghi đè nguyên khối" ở đầu file
+      // Chặn bản CŨ đến muộn đè bản MỚI (CodeRabbit PR #12): hai lần Share cùng mã trong vài phút,
+      // lần gửi lại của sự kiện cũ tới sau thì phải bỏ. `sharedAt` là ISO do App Thiết kế đặt nên so
+      // chuỗi đúng thứ tự thời gian. Vẫn đánh dấu đã xử lý để lần gửi lại sau không hỏi lại.
+      const hienTai = await tx.get(ref);
+      const sharedAtDangLuu = (hienTai.data() as TienDoThietKeChiTiet | undefined)?.sharedAt || "";
+      const cuHon = !!sharedAtDangLuu && !!banGhi.sharedAt && banGhi.sharedAt < sharedAtDangLuu;
+      if (!cuHon) tx.set(ref, banGhi); // KHÔNG merge — xem "ghi đè nguyên khối" ở đầu file
       tx.set(processedRef, {
         event_type: event.event_type,
         source_app: event.source_app,
