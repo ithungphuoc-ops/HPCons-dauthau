@@ -47,17 +47,19 @@ data: {
   location: string      // diaChi; trống thì ghép "khuCongNghiep, tinhThanh" (bỏ phần rỗng)
 }
 ```
-**Chiều 1 — `tien_do.chia_se`, `source_app = "ptk"`** (Thiết kế → `https://dauthau.hpcore.vn/api/webhook/tien-do-thiet-ke-chi-tiet`), **mỗi dự án một sự kiện**:
+**Chiều 1 — `tien_do.chia_se`, `source_app = "ptk"`** (Thiết kế → `https://dauthau.hpcore.vn/api/webhook/tien-do-thiet-ke-chi-tiet`), **mỗi dự án một sự kiện** — **BẢN 2, sửa 26/09/2026 theo demo bản 02** (`tong-quan-demo/HPCons-DauThau/lien-ket-thiet-ke-2026-09-26-v02/`, Sếp duyệt: "nguyên tiến độ này sẽ qua phòng đấu thầu"). Khi bấm Share, Thiết kế gửi **MỌI dự án đang hiện trên trang Tiến độ, kể cả dự án chưa gắn mã**:
 ```ts
 data: {
-  maDuAn: string        // projectCode bên Thiết kế, đã qua luật mã phòng Đấu thầu
-  tenDuAn: string
+  khoaDuAn: string      // BẮT BUỘC, khớp ^[A-Za-z0-9_-]{1,128}$ — khoá ổn định của dự án bên Thiết kế; làm doc ID bên nhận
+  maDuAn: string        // mã đã chuẩn hoá của BẤT KỲ phòng nào, hoặc "" nếu dự án chưa gắn mã (KHÔNG còn đòi luật YY10xx-HPCS)
+  tenDuAn: string       // BẮT BUỘC không rỗng
   viewMode: 'planned' | 'actual' | 'combined'
   sharedByName: string
-  sharedAt: string      // ISO
-  rows: Array<{ id; title; assigneeName; status; startDate; endDate; overdue: boolean; changeNote; source: 'planned'|'actual' }>
+  sharedAt: string      // ISO — bên nhận bỏ bản có sharedAt CŨ HƠN bản đang lưu (chống bản cũ đến muộn)
+  rows: Array<{ id; title; assigneeName; status; startDate /*ISO*/; endDate /*ISO*/; overdue: boolean; changeNote; source: 'planned'|'actual' }>
 }
 ```
+Bên nhận: `khoaDuAn` sai dạng (vd `../x`) hoặc dạng `__...__` (Firestore cấm) → 400; thiếu `tenDuAn` → 400; lưu `tien_do_thiet_ke_chi_tiet/{khoaDuAn}` (ghi đè, không merge). *Bản 01 (đã thay):* bắt buộc `maDuAn` đạt luật mã phòng Đấu thầu, doc ID `docIdTuMa(maDuAn)`. Bản ghi kiểu bản 01 (không có `khoaDuAn`) bị route đọc bỏ qua — bản 01 chưa từng chạy production.
 
 ## Decisions
 
@@ -69,13 +71,18 @@ data: {
 
 **4. Chỉ DU_AN, khoá = ID tài liệu.** Không dùng mã làm khoá vì mã gõ tay (bài học PKD 17/07/2026: đổi mã → bên Thiết kế đẻ dòng trùng). Hồ sơ cũ không có `loaiBanGhi` được coi là CONG_VIEC → không gửi.
 
-**5. Cổng nhận chi tiết là route MỚI, không sửa route Bearer cũ.** Route cũ có thể đang được ai đó dùng; hai cơ chế xác thực trên cùng một địa chỉ dễ nhầm. Lưu `tien_do_thiet_ke_chi_tiet/{docIdTuMa(maDuAn)}` bằng `set` **không merge** (dòng đã xoá bên Thiết kế phải biến mất bên này — cùng lý do route cũ đã ghi).
+**5. Cổng nhận chi tiết là route MỚI, không sửa route Bearer cũ.** Route cũ có thể đang được ai đó dùng; hai cơ chế xác thực trên cùng một địa chỉ dễ nhầm. Lưu `tien_do_thiet_ke_chi_tiet/{khoaDuAn}` (bản 2; bản 01 là `{docIdTuMa(maDuAn)}`) bằng `set` **không merge** (dòng đã xoá bên Thiết kế phải biến mất bên này — cùng lý do route cũ đã ghi).
 
 **6. Không lưu email người phụ trách** — chỉ tên. Phòng Đấu thầu không cần email để theo dõi.
 
+**7. (Bản 02, 26/09/2026) Hiển thị nguyên trang Tiến độ trong khung "Tiến độ thiết kế — Phòng Thiết kế".** Gom theo dự án, bấm mở/đóng từng công việc, cột như trang Tiến độ bên Thiết kế + cột Gantt theo tuần (nhãn dd-MM đầu tuần, màu theo người, vạch Hôm nay). Bỏ khối "Tiến độ chi tiết công việc" theo từng mã của bản 01 và bảng tóm tắt đọc `/api/tien-do-thiet-ke` (route Bearer giữ nguyên, chỉ gỡ khỏi giao diện). Màu theo người băm theo TÊN (bên này không nhận email) nên có thể khác màu bên Thiết kế.
+
+**8. (Bản 02) Quyền xem dự án chưa gắn mã.** Vai trò khác STAFF thấy mọi bản. STAFF chỉ thấy bản có `maDuAn` khác rỗng và thuộc gói mình được giao (luật `maDuAnChuyenVienDuocXem` sẵn có) — dự án chưa mã không biết thuộc gói nào nên ẩn. `GET /api/tien-do-thiet-ke-chi-tiet` trả kèm `soBiAn` để giao diện nhắc "Đang ẩn N dự án". Sếp duyệt theo mặc định đề xuất ở demo bản 02.
+
 ## Risks / Trade-offs
 
-- **[Rủi ro] Thiết kế chưa gắn mã cho dự án đang chạy** (ví dụ "26-JYULONG-GD3" cột Mã dự án đang "—") → Share không có gì để gửi. Giảm thiểu: chiều 2 làm trước; bên Thiết kế trả thông báo rõ "chưa dự án nào gắn mã Đấu thầu".
+- **[Bản 02 đã xử lý — gửi cả dự án chưa mã, khoá theo `khoaDuAn`; chỉ Chuyên viên không thấy] Thiết kế chưa gắn mã cho dự án đang chạy** (ví dụ "26-JYULONG-GD3" cột Mã dự án đang "—") → Share không có gì để gửi. Giảm thiểu: chiều 2 làm trước; bên Thiết kế trả thông báo rõ "chưa dự án nào gắn mã Đấu thầu".
+- **[Rủi ro] Bên Thiết kế phải đổi theo hợp đồng bản 2** (thêm `khoaDuAn`, gửi cả dự án chưa mã). Gửi theo bản 01 (thiếu `khoaDuAn`) sẽ bị 400 — cần deploy hai bên khớp nhau.
 - **[Rủi ro] Hạn mức Firestore** khi route đọc toàn bộ `projects` mỗi lần gọi → gom nhịp 5 giây + chỉ đọc 1 lần/lượt; số dự án nhỏ (hàng chục).
 - **[Đánh đổi] Không tự xoá bên Thiết kế** → trang Phòng ban có thể còn dự án đã đổi mã. Chấp nhận theo chỉ đạo.
 - **[Rủi ro] Hai phiên cùng làm repo này** (bàn giao IT 19/09) → làm trên nhánh riêng + PR, kiểm `master` trước khi push.
@@ -86,7 +93,7 @@ data: {
 2. Sinh secret mạnh, đặt `WEBHOOK_SECRET_DT_PTK` ở Vercel **cả hai app** + `THIET_KE_WEBHOOK_URL` ở app này; deploy.
 3. Trưởng phòng bấm "Đồng bộ lại sang Thiết kế" một lần để nạp các dự án đang có.
 4. Kiểm: dự án `2610xx` hiện trên trang Phòng ban bên Thiết kế; `260039-HPCS`, `2026.01` không hiện.
-5. Thiết kế gắn mã → bấm Share → bảng chi tiết hiện bên này.
+5. Thiết kế bấm Share → khung Tiến độ thiết kế bên này hiện đủ mọi dự án (kể cả chưa mã) + Gantt (bản 02).
 6. Lùi: gỡ `THIET_KE_WEBHOOK_URL` → route gửi thành "chưa cấu hình", không lỗi nghiệp vụ nào.
 
 ## Open Questions

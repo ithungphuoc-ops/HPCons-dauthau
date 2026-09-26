@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminDb } from "@/src/lib/firebase-admin";
 import { kiemGoiWebhook, type WebhookEvent } from "@/src/lib/webhookHmac";
-import { chuanHoaMaDuAn, laMaPhongDauThau } from "@/src/lib/maPhongBan";
-import { docIdTuMa } from "@/src/lib/tienDoThietKe";
+import { chuanHoaMaDuAn } from "@/src/lib/maPhongBan";
 import {
   COLLECTION_TIEN_DO_THIET_KE_CHI_TIET,
+  LUAT_KHOA_DU_AN,
   type DongTienDoThietKe,
   type TienDoThietKeChiTiet,
 } from "@/src/lib/tienDoThietKeChiTietTypes";
@@ -30,9 +30,15 @@ export const dynamic = "force-dynamic";
  *
  * ===== HÀNH VI =====
  *  - event_id đã xử lý → { ok:true, deduped:true } (chống gửi lại).
- *  - maDuAn chuẩn hoá (bỏ khoảng trắng, HOA), không đạt luật YY10xx-HPCS → 400.
- *  - Ghi đè NGUYÊN KHỐI (set KHÔNG merge) `tien_do_thiet_ke_chi_tiet/{docIdTuMa(maDuAn)}`: dòng
- *    đã xoá bên Thiết kế phải biến mất bên này, merge thì dòng cũ nằm lại vĩnh viễn.
+ *  - HỢP ĐỒNG BẢN 2 (sửa 26/09/2026 theo demo bản 02 Sếp duyệt): Thiết kế gửi MỌI dự án đang hiện
+ *    trên trang Tiến độ, kể cả dự án chưa gắn mã. Nên:
+ *      · `khoaDuAn` BẮT BUỘC, khớp ^[A-Za-z0-9_-]{1,128}$ (khoá ổn định bên Thiết kế) → sai là 400.
+ *        Khoá này làm luôn doc ID — regex chặn "/", ".." nên không thể trỏ sang đường dẫn khác.
+ *      · `tenDuAn` BẮT BUỘC không rỗng → thiếu là 400 (dự án chưa mã thì tên là thứ duy nhất để đọc).
+ *      · `maDuAn` chuẩn hoá (bỏ khoảng trắng, HOA), CHO PHÉP RỖNG, KHÔNG còn đòi luật YY10xx-HPCS:
+ *        mã của phòng nào cũng nhận, chỉ để hiển thị + lọc quyền Chuyên viên.
+ *  - Ghi đè NGUYÊN KHỐI (set KHÔNG merge) `tien_do_thiet_ke_chi_tiet/{khoaDuAn}`: dòng đã xoá bên
+ *    Thiết kế phải biến mất bên này, merge thì dòng cũ nằm lại vĩnh viễn.
  *  - Mỗi dòng lọc theo DANH SÁCH TRẮNG trường → email người phụ trách (assigneeEmail...) không lưu.
  */
 
@@ -100,13 +106,21 @@ export async function POST(req: NextRequest) {
   }
 
   const data = (event.data && typeof event.data === "object" ? event.data : {}) as Record<string, unknown>;
-  const maDuAn = chuanHoaMaDuAn(data.maDuAn);
-  if (!laMaPhongDauThau(maDuAn)) {
+  const khoaDuAn = typeof data.khoaDuAn === "string" ? data.khoaDuAn : "";
+  // Firestore cấm doc ID dạng __...__ (tên dành riêng) — regex cho qua nên chặn thêm ở đây, để
+  // trả 400 rõ ràng thay vì 500 lúc ghi.
+  if (!LUAT_KHOA_DU_AN.test(khoaDuAn) || /^__.*__$/.test(khoaDuAn)) {
     return NextResponse.json(
-      { ok: false, loi: `Mã dự án "${maDuAn}" không thuộc Phòng Đấu thầu (dạng YY10xx-HPCS).` },
+      { ok: false, loi: "data.khoaDuAn thiếu hoặc sai dạng (chỉ chữ, số, _ và -, tối đa 128 ký tự)." },
       { status: 400 },
     );
   }
+  const tenDuAn = chu(data.tenDuAn);
+  if (!tenDuAn) {
+    return NextResponse.json({ ok: false, loi: "data.tenDuAn không được để trống." }, { status: 400 });
+  }
+  // Mã của BẤT KỲ phòng nào, hoặc "" nếu dự án chưa gắn mã — không từ chối theo luật mã nữa.
+  const maDuAn = chuanHoaMaDuAn(data.maDuAn);
   if (!Array.isArray(data.rows)) {
     return NextResponse.json({ ok: false, loi: "data.rows phải là mảng." }, { status: 400 });
   }
@@ -118,8 +132,9 @@ export async function POST(req: NextRequest) {
   const viewMode = data.viewMode === "actual" || data.viewMode === "combined" ? data.viewMode : "planned";
   const nhanLuc = new Date().toISOString();
   const banGhi: TienDoThietKeChiTiet = {
+    khoaDuAn,
     maDuAn,
-    tenDuAn: chu(data.tenDuAn),
+    tenDuAn,
     viewMode,
     sharedByName: chu(data.sharedByName),
     sharedAt: chu(data.sharedAt),
@@ -130,14 +145,14 @@ export async function POST(req: NextRequest) {
   try {
     const db = getAdminDb();
     const processedRef = db.collection(COLLECTION_PROCESSED).doc(event.event_id);
-    const ref = db.collection(COLLECTION_TIEN_DO_THIET_KE_CHI_TIET).doc(docIdTuMa(maDuAn));
+    const ref = db.collection(COLLECTION_TIEN_DO_THIET_KE_CHI_TIET).doc(khoaDuAn);
     // Một giao dịch: tra event_id + ghi dữ liệu + đánh dấu đã xử lý. Đánh dấu trước rồi ghi sau
     // thì ghi lỗi giữa chừng là mất luôn lần Share đó (gửi lại bị coi là trùng); ghi trước rồi
     // đánh dấu sau thì hai lượt gửi trùng đến cùng lúc đều lọt qua.
     const trung = await db.runTransaction(async (tx) => {
       const daXuLy = await tx.get(processedRef);
       if (daXuLy.exists) return true;
-      // Chặn bản CŨ đến muộn đè bản MỚI (CodeRabbit PR #12): hai lần Share cùng mã trong vài phút,
+      // Chặn bản CŨ đến muộn đè bản MỚI (CodeRabbit PR #12): hai lần Share cùng dự án trong vài phút,
       // lần gửi lại của sự kiện cũ tới sau thì phải bỏ. `sharedAt` là ISO do App Thiết kế đặt nên so
       // chuỗi đúng thứ tự thời gian. Vẫn đánh dấu đã xử lý để lần gửi lại sau không hỏi lại.
       const hienTai = await tx.get(ref);
@@ -147,13 +162,14 @@ export async function POST(req: NextRequest) {
       tx.set(processedRef, {
         event_type: event.event_type,
         source_app: event.source_app,
+        khoaDuAn,
         maDuAn,
         processedAt: nhanLuc,
       });
       return false;
     });
     if (trung) return NextResponse.json({ ok: true, deduped: true });
-    return NextResponse.json({ ok: true, maDuAn, soDong: rows.length, nhanLuc });
+    return NextResponse.json({ ok: true, khoaDuAn, maDuAn, soDong: rows.length, nhanLuc });
   } catch (e) {
     return NextResponse.json(
       { ok: false, loi: `Lỗi ghi dữ liệu: ${e instanceof Error ? e.message : "không rõ"}` },

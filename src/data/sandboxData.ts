@@ -1,6 +1,7 @@
 import { Project, ProjectTask, Staff } from '../types';
 import type { DuAnThietKe } from '../lib/tienDoThietKeTypes';
 import type { DuAnTong } from '../lib/duAnTongTypes';
+import type { TienDoThietKeChiTiet } from '../lib/tienDoThietKeChiTietTypes';
 import { mockStaff } from './mockData';
 
 // ===== DANH SÁCH NHÂN SỰ CHO "BẢN THỬ" (chỉ dùng khi chạy máy cá nhân) =====
@@ -504,6 +505,41 @@ export const tienDoThietKeNhap = (): DuAnThietKe[] => [
   },
 ];
 
+
+// ===== TIẾN ĐỘ THIẾT KẾ MẪU — HỢP ĐỒNG BẢN 2 (demo bản 02 Sếp duyệt 26/09/2026) =====
+// Bản chạy thật KHÔNG dùng bộ này — khung đọc /api/tien-do-thiet-ke-chi-tiet (App Thiết kế bấm
+// Share mới có). Dựng đúng như demo: 2 dự án / 8 công việc, một dự án ĐÃ gắn mã, một dự án CHƯA
+// gắn mã (Chuyên viên sẽ không thấy dự án này), 4 dòng trễ hạn.
+export const tienDoThietKeChiTietNhap = (): TienDoThietKeChiTiet[] => {
+  const luc = '2026-09-26T02:30:00.000Z';
+  const dong = (id: string, title: string, assigneeName: string, bd: string, kt: string, status: string, overdue: boolean, changeNote = '') => ({
+    id, title, assigneeName, status, overdue, changeNote,
+    // Mốc 0h giờ Việt Nam dạng ISO UTC — đúng kiểu bên Thiết kế gửi (Timestamp → toISOString).
+    startDate: new Date(`${bd}T00:00:00+07:00`).toISOString(),
+    endDate: new Date(`${kt}T00:00:00+07:00`).toISOString(),
+    source: 'planned' as const,
+  });
+  return [
+    {
+      khoaDuAn: 'nhap-jyulong-gd3', maDuAn: '261008-HPCS', tenDuAn: '[NHÁP] 26-JYULONG-GD3',
+      viewMode: 'planned', sharedByName: 'Trưởng nhóm Thiết kế (mẫu)', sharedAt: luc, nhanLuc: luc,
+      rows: [dong('c1', 'Hồ sơ kiến trúc GĐ3', 'Lê Minh (mẫu)', '2026-08-09', '2026-08-19', 'in_progress', true)],
+    },
+    {
+      khoaDuAn: 'nhap-youde-sikico', maDuAn: '', tenDuAn: '[NHÁP] 26-YOUDE_KCN MH SIKICO',
+      viewMode: 'planned', sharedByName: 'Trưởng nhóm Thiết kế (mẫu)', sharedAt: luc, nhanLuc: luc,
+      rows: [
+        dong('c1', 'Mặt bằng tổng thể', 'Trần Bảo (mẫu)', '2026-07-27', '2026-08-05', 'done', false),
+        dong('c2', 'Kết cấu móng', 'Võ Hải (mẫu)', '2026-08-01', '2026-08-12', 'in_progress', true, 'CĐT đổi tải trọng'),
+        dong('c3', 'Kết cấu khung', 'Võ Hải (mẫu)', '2026-08-06', '2026-08-18', 'in_progress', true),
+        dong('c4', 'Kiến trúc mặt đứng', 'Lê Minh (mẫu)', '2026-08-08', '2026-08-16', 'in_progress', true, 'Rev R2'),
+        dong('c5', 'Điện nước', 'Trần Bảo (mẫu)', '2026-08-10', '2026-08-20', 'in_progress', false),
+        dong('c6', 'PCCC', 'Trần Bảo (mẫu)', '2026-08-12', '2026-08-22', 'in_progress', false),
+        dong('c7', 'Hồ sơ xin phép', 'Lê Minh (mẫu)', '2026-08-15', '2026-08-22', 'todo', false),
+      ],
+    },
+  ];
+};
 
 // ===== DANH MỤC DỰ ÁN MẪU CHO "BẢN THỬ" (chị Trâm chốt 19/09/2026) =====
 // "Ở mục liên kết phòng ban, trên Tiến độ thiết kế, làm cho chị 1 bảng đổ dữ liệu dự án từ App
