@@ -85,6 +85,8 @@ import { reportActivity } from './lib/reportActivity';
 import { sandboxStaff, duAnNhap } from './data/sandboxData';
 import TienDoThietKePanel from './components/TienDoThietKePanel';
 import DanhMucDuAnPanel from './components/DanhMucDuAnPanel';
+import DongBoThietKeNut from './components/DongBoThietKeNut';
+import { goiDongBoThietKe } from './lib/dongBoThietKeClient';
 import { tienDoThietKeNhap, danhMucDuAnNhap } from './data/sandboxData';
 import type { DuAnTong as DuAnTongItemApp } from './lib/duAnTongTypes';
 
@@ -1371,6 +1373,26 @@ export default function App() {
   const lastRemoteProjects = useRef<string | null>(null);
   const lastRemoteStaff = useRef<string | null>(null);
 
+  // ===== TỰ GỬI DỰ ÁN SANG APP THIẾT KẾ (OpenSpec `lien-ket-thiet-ke-dau-thau`, 26/09/2026) =====
+  // Sau mỗi lần đẩy `projects` lên cloud thành công thì "gõ cửa" route máy chủ; route tự đọc dữ
+  // liệu, tự so dấu vân tay và chỉ gửi dự án thật sự đổi. GOM NHỊP 5 GIÂY: sửa liên tiếp nhiều lần
+  // (mỗi lần gõ một ô là một lần lưu) chỉ gọi route một lần — mỗi lượt route đọc cả `projects`,
+  // gọi dồn là tốn hạn mức Firestore. Lỗi chỉ ghi console: liên kết là việc phụ, không được làm
+  // phiền người đang lưu dự án (Trưởng phòng có nút "Đồng bộ lại" để xem tổng kết).
+  const henGioDongBoThietKe = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const henDongBoThietKe = () => {
+    // Chế độ không SSO (Bản thử / Thử-cloud / Bản demo) không có phiên App Tổng → route chắc chắn 401.
+    if (DEV_CHON_VAI_TRO) return;
+    if (henGioDongBoThietKe.current) clearTimeout(henGioDongBoThietKe.current);
+    henGioDongBoThietKe.current = setTimeout(() => {
+      henGioDongBoThietKe.current = null;
+      goiDongBoThietKe()
+        .then(kq => { if (typeof kq.loi === 'number' && kq.loi > 0) console.error('[Liên kết Thiết kế] Có dự án gửi lỗi:', kq.chiTietLoi); })
+        .catch(err => console.error('[Liên kết Thiết kế] Lỗi đồng bộ dự án sang App Thiết kế:', err));
+    }, 5000);
+  };
+  useEffect(() => () => { if (henGioDongBoThietKe.current) clearTimeout(henGioDongBoThietKe.current); }, []);
+
   // Thông báo chuông 🔔 (lưu cloud — mọi vai trò đều nhận theo targetId)
   const [notifs, setNotifs] = useState<AppNotification[]>(() => {
     try { return JSON.parse(localStorage.getItem('erp_notifs') || '[]'); } catch { return []; }
@@ -1948,7 +1970,10 @@ export default function App() {
     if (lastRemoteProjects.current !== null && serialized !== lastRemoteProjects.current) {
       const banCloudTruocDo = lastRemoteProjects.current; // để trả lại nếu đẩy trượt
       lastRemoteProjects.current = serialized;
-      pushCollection('projects', projects).catch(err => {
+      pushCollection('projects', projects).then(kq => {
+        // Chỉ khi thật sự có bản ghi được ghi — lượt "y hệt cloud" (ghi = 0) không đổi gì để gửi.
+        if (kq?.ghi > 0) henDongBoThietKe();
+      }).catch(err => {
         console.error('[Firebase] Lỗi đồng bộ dự án lên cloud:', err);
         // Trả mốc về bản cloud cũ để lần thay đổi kế tiếp còn đẩy lại (không gán null —
         // null nghĩa là "chưa nhận snapshot" và sẽ chặn mọi lần đẩy sau).
@@ -2842,6 +2867,12 @@ export default function App() {
     if (!currentUser || currentUser.role !== 'STAFF') return null;
     return Array.from(new Set(rbacProjects.map(p => (p.projectId || '').trim()).filter(Boolean)));
   }, [currentUser, rbacProjects]);
+  // Mã ô 1 của các DỰ ÁN — cho ô chọn mã ở bảng tiến độ thiết kế chi tiết (panel tự lọc luật mã
+  // YY10xx-HPCS và luật Chuyên viên qua `chiMaDuAn` ở trên).
+  const maDuAnPhongDauThau = useMemo(
+    () => projects.filter(p => p.loaiBanGhi === 'DU_AN').map(p => p.projectId || '').filter(Boolean),
+    [projects],
+  );
 
   // Hồ sơ Quản lý (L2) ĐANG PHỤ TRÁCH (quản lý chính hoặc phụ) — đưa vào file kết xuất của
   // Quản lý để họ báo cáo được cả phần mình quản lý, không chỉ việc giao đích danh cho mình.
@@ -5672,7 +5703,14 @@ export default function App() {
                      qua, bỏ đi vị trí lưu file, chỗ dự án phía trước thêm cột mã dự án."
                     Bản thử dùng dữ liệu dựng sẵn để còn thấy được giao diện; bản chạy thật đọc dữ liệu
                     App Thiết kế đẩy sang qua /api/webhook/tien-do-thiet-ke. */}
-                <TienDoThietKePanel duLieuBanThu={TIEN_DO_TKE_BAN_THU} chiMaDuAn={maDuAnDuocXem} />
+                {/* Nút gửi lại dự án sang App Thiết kế — CHỈ Trưởng phòng (OpenSpec
+                    `lien-ket-thiet-ke-dau-thau`, 26/09/2026). */}
+                {currentUser?.role === 'BOOD' && <DongBoThietKeNut banThu={DEV_CHON_VAI_TRO} />}
+                <TienDoThietKePanel
+                  duLieuBanThu={TIEN_DO_TKE_BAN_THU}
+                  chiMaDuAn={maDuAnDuocXem}
+                  dsMaDuAn={maDuAnPhongDauThau}
+                />
               </div>
             )}
 
