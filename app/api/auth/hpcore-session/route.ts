@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyHpcore, fetchCentralRole, fetchCentralAvatar, fetchCentralFullName, parseCookieHeader, SSO_COOKIE_NAME } from "@/src/lib/hpcore";
 import { getAdminAuth, getAdminDb } from "@/src/lib/firebase-admin";
+import { CHUC_VU_BY_ROLE, tinhChucVuMoi, type Role } from "@/src/lib/phanQuyenLevel";
 
-// VIEWER = Level 4 (chị Trâm chốt 26/07/2026). Phải khai ở đây, nếu không App Tổng gán quyền
-// VIEWER thì route này coi là không hợp lệ và chặn đăng nhập (403).
-type Role = "BOOD" | "MANAGER" | "STAFF" | "VIEWER";
+// VIEWER = Level 4 (chị Trâm chốt 26/07/2026). Role/CHUC_VU_BY_ROLE nay khai chung ở
+// src/lib/phanQuyenLevel.ts (dùng chung với route đổi level app/api/phan-quyen/level) — phải có
+// VIEWER, nếu không App Tổng gán quyền VIEWER thì route này coi là không hợp lệ và chặn (403).
 
 // ===== CHỨC VỤ MẶC ĐỊNH KHI TẠO HỒ SƠ NHÂN SỰ TỪ SSO =====
 // LỖI ĐÃ SỬA 17/08/2026 (chị Trâm báo, kèm ảnh màn "Đội ngũ & KPI"):
@@ -19,12 +20,9 @@ type Role = "BOOD" | "MANAGER" | "STAFF" | "VIEWER";
 // LƯU Ý: đây chỉ là chức vụ MẶC ĐỊNH lúc tạo hồ sơ. Trưởng phòng vẫn sửa lại được trong
 // "Đội ngũ & KPI" (vd đổi thành "Phó phòng"), và `merge: true` bên dưới không ghi đè... —
 // xem ghi chú ở chỗ staffRef.set.
-const CHUC_VU_BY_ROLE: Record<Role, string> = {
-  BOOD: "Trưởng phòng",
-  MANAGER: "Quản lý",
-  STAFF: "Chuyên viên đấu thầu",
-  VIEWER: "Ban giám đốc",
-};
+// Từ 28/09/2026: chức vụ đi theo level mặc định khi level đổi — xem tinhChucVuMoi và ghi chú
+// "NGUỒN QUYỀN" bên dưới.
+// (Bảng CHUC_VU_BY_ROLE: xem src/lib/phanQuyenLevel.ts.)
 
 // Cầu nối SSO: verify phiên App Tổng (account.hpcore.vn) → mint Custom Token cho
 // project Firebase RIÊNG của app đấu thầu → upsert hồ sơ nhân sự với vai trò do
@@ -72,22 +70,23 @@ export async function GET(req: NextRequest) {
     const [, existing] = await Promise.all([ensureAuthUser, staffRef.get()]);
     const cu = existing.data();
 
-    // ===== NGUỒN QUYỀN: BẢNG NHÂN SỰ CỦA APP ĐẤU THẦU (chị Trâm chốt hướng 2 — 17/08/2026) =====
-    // "App đấu thầu giữ bảng quyền riêng, App Tổng chỉ lo đăng nhập."
+    // ===== NGUỒN QUYỀN: APP TỔNG LÀ NGUỒN DUY NHẤT =====
+    // SỬA 28/09/2026 theo demo phan-quyen-theo-app-tong (Sếp duyệt), ĐẢO quyết định 17/08/2026.
+    // Demo: tong-quan-demo/HPCons-DauThau/phan-quyen-theo-app-tong-2026-09-28/index.html
     //
-    // TRƯỚC ĐÂY route này ghi đè `role` và `chucVu` bằng giá trị của App Tổng ở MỖI LẦN đăng nhập.
-    // Hậu quả: Trưởng phòng sửa lại quyền/chức vụ trong "Đội ngũ & KPI" xong, người đó đăng nhập
-    // lại là mất hết — đúng điểm "CÒN TREO" ghi trong BAN-GIAO-2026-07-27.md.
+    // Lịch sử: 17/08/2026 chị Trâm chốt "app đấu thầu giữ bảng quyền riêng" — hồ sơ ĐÃ CÓ thì giữ
+    // nguyên `role` của app, App Tổng không ghi đè. Hệ quả thật (28/09/2026): Sếp cấp "Phòng Đấu
+    // Thầu" Level 1 ở App Tổng mà vào app vẫn là Level 4, còn người đã hạ ở App Tổng vẫn giữ Level 1.
     //
-    // NAY: App Tổng chỉ quyết ĐƯỢC VÀO HAY KHÔNG (đã kiểm ở trên, chưa phân quyền thì 403).
-    // Còn LEVEL và CHỨC VỤ thì:
-    //   · Hồ sơ ĐÃ CÓ  → giữ nguyên giá trị của app đấu thầu, App Tổng không ghi đè.
-    //   · Hồ sơ MỚI    → lấy giá trị App Tổng làm mức khởi đầu, sau đó Trưởng phòng tự chỉnh.
-    //
-    // Đánh đổi đã báo và chị Trâm chấp nhận: quyền ở hai app có thể lệch nhau. Muốn thu quyền
-    // của ai thì bỏ phân quyền app này bên account.hpcore.vn (họ sẽ bị 403 ngay lần đăng nhập sau).
-    const role: Role = (cu?.role as Role) || centralRole;
-    const chucVu: string = cu?.chucVu || CHUC_VU_BY_ROLE[centralRole];
+    // NAY:
+    //   · `role` LUÔN = level App Tổng (app_permissions/{uid}.dauthau) ở MỖI LẦN đăng nhập.
+    //   · Trưởng phòng vẫn nâng/hạ Level 2/3/4 trong "Đội ngũ & KPI", nhưng thay đổi đi qua route máy
+    //     chủ app/api/phan-quyen/level và được ghi THẲNG về App Tổng — nên đăng nhập lại không mất.
+    //   · `chucVu`: chức vụ cũ trống hoặc đúng bằng mặc định của level cũ → đổi sang mặc định của
+    //     level mới; chức vụ Trưởng phòng đã tự đặt khác mặc định (vd "Phó phòng") → GIỮ NGUYÊN.
+    //   · Chưa phân quyền ở App Tổng → 403 như cũ (đã kiểm ở trên).
+    const role: Role = centralRole;
+    const chucVu: string = cu ? tinhChucVuMoi(cu.role, cu.chucVu, centralRole) : CHUC_VU_BY_ROLE[centralRole];
 
     // HỌ TÊN: KHÁC role/chucVu ở trên — Sếp chốt 27/08/2026 (cùng đợt đổi "Thêm tài khoản
     // nhân sự mới" sang chọn người thật từ App Tổng): họ tên là DANH TÍNH, luôn đồng bộ SỐNG

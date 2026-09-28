@@ -32,10 +32,17 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const [usersSnap, staffSnap] = await Promise.all([
+    // Level App Tổng của từng người (28/09/2026, demo phan-quyen-theo-app-tong): hồ sơ tạo mới
+    // trong app phải mang ĐÚNG level App Tổng, không tự đặt. Một truy vấn `in` trên 1 trường —
+    // chỉ đọc những người ĐÃ có quyền dauthau, không cần composite index.
+    const [usersSnap, staffSnap, permSnap] = await Promise.all([
       getHpcoreDb().collection("users").where("isActive", "==", true).get(),
       getAdminDb().collection("staff").get(),
+      getHpcoreDb().collection("app_permissions").where("dauthau", "in", ["BOOD", "MANAGER", "STAFF", "VIEWER"]).get(),
     ]);
+    const levelTheoUid = new Map<string, string>(
+      permSnap.docs.map((d) => [d.id, (d.data() as { dauthau: string }).dauthau])
+    );
 
     // Loại người ĐÃ có hồ sơ trong app này — khớp theo doc id (đúng cho hồ sơ tạo qua
     // luồng mới, id = uid App Tổng) VÀ theo email/username (phòng hờ hồ sơ CŨ tạo tay
@@ -77,6 +84,7 @@ export async function GET(req: NextRequest) {
           username: u.username || u.email?.split("@")[0] || d.id,
           email: u.email || null,
           dept: u.department || u.title || null,
+          levelAppTong: levelTheoUid.get(d.id) ?? null,
         };
       })
       .sort((a, b) => a.name.localeCompare(b.name, "vi"));
