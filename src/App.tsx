@@ -1017,7 +1017,9 @@ export default function App() {
     return seedLogs;
   });
 
-  const logAction = (action: string, details: string, userOverride?: any, relatedStaffIds?: string[]) => {
+  // khongGuiAppTong: dòng nhật ký mà MÁY CHỦ đã tự ghi vào activity_logs của App Tổng (vd đổi level
+  // qua /api/phan-quyen/level) — chỉ thêm vào nhật ký trên máy, không gửi reportActivity lần nữa.
+  const logAction = (action: string, details: string, userOverride?: any, relatedStaffIds?: string[], khongGuiAppTong?: boolean) => {
     const user = userOverride || currentUser;
     if (!user) return;
     const newLog: ActivityLog = {
@@ -1035,7 +1037,7 @@ export default function App() {
       localStorage.setItem('erp_activity_logs', JSON.stringify(updated));
       return updated;
     });
-    reportActivity({ action, entityType: 'dauthau_action', entityId: newLog.id, detail: details });
+    if (!khongGuiAppTong) reportActivity({ action, entityType: 'dauthau_action', entityId: newLog.id, detail: details });
   };
 
   // All personnel taking part in a project (manager + implementers) — used to scope activity-log visibility
@@ -2042,6 +2044,19 @@ export default function App() {
     localStorage.setItem('erp_current_user', JSON.stringify(u));
   }, [fbAuthed, staff, currentUser]);
 
+  // uid owner App Tổng — để "Đội ngũ & KPI" khoá ô level của tài khoản owner (chỉ đổi ở App Tổng)
+  // và mở quyền đổi level cho owner đang xem. Máy chủ vẫn kiểm lại bằng dữ liệu sống.
+  const [ownerIdsAppTong, setOwnerIdsAppTong] = useState<string[]>([]);
+  useEffect(() => {
+    if (!currentUser?.staffId || DEV_CHON_VAI_TRO) return;
+    let huy = false;
+    fetch('/api/phan-quyen/level')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!huy && Array.isArray(d?.ownerIds)) setOwnerIdsAppTong(d.ownerIds); })
+      .catch(() => { /* không có danh sách owner: ô level của owner vẫn bị máy chủ chặn */ });
+    return () => { huy = true; };
+  }, [currentUser?.staffId]);
+
   const handleLogout = () => {
     setCurrentUser(null);
     localStorage.removeItem('erp_current_user');
@@ -2120,7 +2135,7 @@ export default function App() {
   };
 
   // Handle saving staff member updates
-  const handleSaveStaff = (updatedMember: Staff) => {
+  const handleSaveStaff = (updatedMember: Staff, levelDaDoi?: { levelCu: string; levelMoi: string }) => {
     // Họ tên giờ CHỈ do route SSO cập nhật (đồng bộ sống từ App Tổng, xem
     // hpcore-session/route.ts) — StaffEditModal không còn cho sửa tay hoTen, chỉ gửi
     // lại đúng giá trị nó THẤY LÚC MỞ modal. Nếu người này vừa đăng nhập lại trong lúc
@@ -2128,11 +2143,26 @@ export default function App() {
     // mới nhất trong state, KHÔNG lấy từ modal, tránh vô tình ghi đè tên vừa đồng bộ
     // (agent code-review + CodeRabbit phát hiện, PR "Họ tên luôn đồng bộ App Tổng",
     // 27/08/2026).
+    //
+    // LEVEL (`role`) — App Tổng là nguồn duy nhất (demo phan-quyen-theo-app-tong, 28/09/2026):
+    // trình duyệt KHÔNG tự đặt role. Chỉ nhận role mới khi modal vừa đổi QUA MÁY CHỦ
+    // (/api/phan-quyen/level đã ghi App Tổng + staff/{uid}) — lúc đó role trong state khớp đúng
+    // bản cloud, lần đẩy pushCollection sau không ghi lùi level cũ. Còn lại giữ role đang có.
     const updatedStaffList = staff.map(s =>
-      s.id === updatedMember.id ? { ...updatedMember, hoTen: s.hoTen } : s
+      s.id === updatedMember.id
+        ? { ...updatedMember, hoTen: s.hoTen, role: levelDaDoi ? updatedMember.role : s.role }
+        : s
     );
     setStaff(updatedStaffList);
     localStorage.setItem('erp_staff', JSON.stringify(updatedStaffList));
+
+    if (levelDaDoi) {
+      logAction(
+        'Đổi level nhân sự',
+        `Đổi level của ${updatedStaffList.find(s => s.id === updatedMember.id)?.hoTen ?? updatedMember.hoTen}: Level ${nhanLevelSo(levelDaDoi.levelCu)} → Level ${nhanLevelSo(levelDaDoi.levelMoi)} (đã ghi về App Tổng)`,
+        undefined, undefined, true,
+      );
+    }
 
     // Also re-trigger statistics on the updated staff list
     updateStaffStats(projects, updatedStaffList);
@@ -4275,9 +4305,12 @@ export default function App() {
         localStorage.setItem('erp_projects', JSON.stringify(hoSoDoc));
         if (soNhanSu > 0) {
           // Giữ nguyên mật khẩu đang có trên máy — tệp sao lưu cố ý không chứa mật khẩu
+          // Level (`role`) cũng giữ theo hồ sơ đang có — App Tổng là nguồn duy nhất (28/09/2026),
+          // tệp sao lưu cũ không được kéo level của ai lùi/lên.
           const ghepMatKhau = goi.staff.map((s: Staff) => {
             const cu = staff.find(x => x.id === s.id);
-            return cu?.password ? { ...s, password: cu.password } : s;
+            const kq = cu?.password ? { ...s, password: cu.password } : s;
+            return cu?.role ? { ...kq, role: cu.role } : kq;
           });
           setStaff(ghepMatKhau);
           localStorage.setItem('erp_staff', JSON.stringify(ghepMatKhau));
@@ -7075,8 +7108,8 @@ export default function App() {
                                     (member.role || chucVuToRole(member.chucVu)) === 'MANAGER' ? 'bg-brand-warning/15 text-brand-warning' :
                                     'bg-slate-100 text-slate-700 dark:bg-dark-elevated dark:text-slate-400'
                                   }`}>
-                                    {(member.role || chucVuToRole(member.chucVu)) === 'BOOD' ? 'Level 1' :
-                                     (member.role || chucVuToRole(member.chucVu)) === 'MANAGER' ? 'Level 2' : 'Level 3'}
+                                    {/* Trước 28/09/2026 Level 4 hiện nhầm "Level 3" */}
+                                    Level {nhanLevelSo(member.role || chucVuToRole(member.chucVu))}
                                   </span>
                                 </div>
                                 {member.email && (
@@ -7810,7 +7843,9 @@ export default function App() {
           member={editingStaff}
           existingStaff={staff}
           currentUserRole={currentUser?.role}
-          onSave={(updatedMember) => {
+          currentUserId={currentUser?.staffId}
+          ownerIds={ownerIdsAppTong}
+          onSave={(updatedMember, levelDaDoi) => {
             if (isAddingStaff) {
               const updatedStaffList = [...staff, updatedMember];
               setStaff(updatedStaffList);
@@ -7819,7 +7854,7 @@ export default function App() {
               setIsAddingStaff(false);
               triggerToast(`Đã thêm mới tài khoản: ${updatedMember.hoTen}`);
             } else {
-              handleSaveStaff(updatedMember);
+              handleSaveStaff(updatedMember, levelDaDoi);
             }
           }}
           onClose={() => {

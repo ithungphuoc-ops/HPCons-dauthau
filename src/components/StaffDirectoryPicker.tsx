@@ -8,6 +8,8 @@ export interface DirectoryPerson {
   username: string;
   email: string | null;
   dept: string | null;
+  /** Level app Đấu thầu ở App Tổng (app_permissions/{uid}.dauthau), null nếu chưa được cấp. */
+  levelAppTong?: 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER' | null;
 }
 
 interface StaffDirectoryPickerProps {

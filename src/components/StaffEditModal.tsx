@@ -5,6 +5,7 @@ import { downscaleImage } from '../lib/firebase';
 import { X, Save, User } from 'lucide-react';
 import { useModalA11y } from '../utils/useModalA11y';
 import StaffDirectoryPicker, { DirectoryPerson } from './StaffDirectoryPicker';
+import { CHUC_VU_BY_ROLE, NHAN_LEVEL, lyDoKhoaLevel } from '../lib/phanQuyenLevel';
 
 type ChucVu = 'Ban giám đốc' | 'Trưởng phòng' | 'Phó phòng' | 'Quản lý' | 'Chuyên viên đấu thầu' | 'Quản trị hệ thống' | 'Khách (chỉ xem)';
 
@@ -12,11 +13,15 @@ interface StaffEditModalProps {
   member?: Staff | null; // If null/undefined, we are adding a new account
   existingStaff: Staff[];
   currentUserRole?: 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER'; // vai trò người đang thao tác (để giới hạn quyền L2)
-  onSave: (updated: Staff) => void;
+  currentUserId?: string; // uid người đang thao tác — khoá ô level của chính mình
+  ownerIds?: string[]; // uid owner App Tổng (GET /api/phan-quyen/level) — owner chỉ đổi ở App Tổng
+  // levelDaDoi: level vừa được ĐỔI QUA MÁY CHỦ (route /api/phan-quyen/level, đã ghi về App Tổng).
+  // Không có = level không đổi, nơi nhận PHẢI giữ nguyên role đang có (không lấy role từ modal).
+  onSave: (updated: Staff, levelDaDoi?: { levelCu: string; levelMoi: string }) => void;
   onClose: () => void;
 }
 
-export default function StaffEditModal({ member, existingStaff, currentUserRole, onSave, onClose }: StaffEditModalProps) {
+export default function StaffEditModal({ member, existingStaff, currentUserRole, currentUserId, ownerIds = [], onSave, onClose }: StaffEditModalProps) {
   const panelRef = useModalA11y(onClose);
   const isNew = !member;
   // Level 2 (Quản lý) chỉ được tạo tài khoản Chuyên viên (Level 3) và KHÔNG được xem mật khẩu của người khác.
@@ -41,15 +46,32 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
   // + Họ và Tên (Sếp chốt 27/08/2026). id = uid App Tổng, TRÙNG khoá staff/{uid} mà
   // route SSO sẽ dùng khi chính người đó tự đăng nhập sau này — tránh tạo trùng hồ sơ.
   const [pickedPerson, setPickedPerson] = useState<DirectoryPerson | null>(null);
+  const levelTaoMoi = pickedPerson?.levelAppTong ?? null;
   const [chucVu, setChucVu] = useState<ChucVu>(
     member?.chucVu || 'Chuyên viên đấu thầu'
   );
   const [username, setUsername] = useState(member?.username || '');
   const [email, setEmail] = useState(member?.email || '');
   const [mustChangePassword, setMustChangePassword] = useState<boolean>(member?.mustChangePassword ?? isNew);
-  const [role, setRole] = useState<'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER'>(
-    member?.role || chucVuToRole(member?.chucVu)
-  );
+  // ===== LEVEL: APP TỔNG LÀ NGUỒN DUY NHẤT (Sếp duyệt demo 28/09/2026) =====
+  // Demo: tong-quan-demo/HPCons-DauThau/phan-quyen-theo-app-tong-2026-09-28/index.html
+  // · CHỈNH SỬA: đổi level gọi route máy chủ /api/phan-quyen/level (ghi thẳng app_permissions ở
+  //   App Tổng), không tự ghi `role` qua Firestore từ trình duyệt nữa. Chỉ chọn được Level 2/3/4.
+  //   Khoá (kèm lý do) khi người xem không phải Trưởng phòng/owner, dòng của chính mình, hoặc người
+  //   đích là Level 1 / owner — máy chủ vẫn kiểm lại bằng dữ liệu sống.
+  // · TẠO MỚI: level lấy ĐÚNG level App Tổng của người được chọn, không cho tự đặt.
+  const roleGoc: 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER' = member?.role || chucVuToRole(member?.chucVu);
+  const [role, setRole] = useState<'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER'>(roleGoc);
+  const lyDoKhoa = isNew ? '' : lyDoKhoaLevel({
+    nguoiXemRole: currentUserRole,
+    nguoiXemLaOwner: !!currentUserId && ownerIds.includes(currentUserId),
+    nguoiXemUid: currentUserId,
+    nguoiDichUid: member!.id,
+    nguoiDichRole: roleGoc,
+    nguoiDichLaOwner: ownerIds.includes(member!.id),
+  });
+  const [dangLuu, setDangLuu] = useState(false);
+  const [loiLevel, setLoiLevel] = useState('');
   // Quản lý phụ trách (đội ngũ) — chỉ Trưởng phòng (L1) được gán, chỉ áp cho nhân viên Level 3.
   const [quanLyPhuTrachId, setQuanLyPhuTrachId] = useState<string>(member?.quanLyPhuTrachId || '');
   // Danh sách Quản lý (L2) còn làm việc để chọn.
@@ -101,8 +123,10 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
 
   const [errors, setErrors] = useState<{ hoTen?: string; username?: string; email?: string; customId?: string; pickedPerson?: string }>({});
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (dangLuu) return;
+    setLoiLevel('');
     const newErrors: typeof errors = {};
 
     // TẠO MỚI: bắt buộc chọn 1 người thật từ danh bạ App Tổng, không gõ tay nữa.
@@ -124,6 +148,11 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
         );
         if (isDuplicate) {
           newErrors.pickedPerson = 'Người này đã có hồ sơ trong app — thử tải lại trang.';
+        } else if (!pickedPerson.levelAppTong) {
+          // Cấp quyền vào app cho người mới là việc của App Tổng (demo 28/09/2026).
+          newErrors.pickedPerson = 'Người này chưa được cấp quyền app Đấu thầu ở App Tổng — nhờ owner cấp ở account.hpcore.vn trước.';
+        } else if (isManager && pickedPerson.levelAppTong !== 'STAFF') {
+          newErrors.pickedPerson = 'Quản lý chỉ thêm được người có Level 3 (Chuyên viên) ở App Tổng.';
         }
       }
     }
@@ -147,9 +176,37 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
       return;
     }
 
-    // Level 2 khi TẠO MỚI chỉ được tạo Chuyên viên (Level 3) — ép chức danh & quyền để an toàn.
-    const finalChucVu: ChucVu = (isManager && isNew) ? 'Chuyên viên đấu thầu' : chucVu;
-    const finalRole = (isManager && isNew) ? 'STAFF' : role;
+    // TẠO MỚI: level = level App Tổng của người được chọn (đã kiểm có ở trên).
+    // CHỈNH SỬA: level đổi → gọi máy chủ ghi về App Tổng TRƯỚC, lấy role/chucVu máy chủ trả về.
+    let finalRole: 'BOOD' | 'MANAGER' | 'STAFF' | 'VIEWER' = isNew ? levelTaoMoi! : roleGoc;
+    let finalChucVu: ChucVu = (isManager && isNew) ? (CHUC_VU_BY_ROLE[finalRole] as ChucVu) : chucVu;
+    let levelDaDoi: { levelCu: string; levelMoi: string } | undefined;
+    if (!isNew && role !== roleGoc) {
+      if (lyDoKhoa) { setLoiLevel(lyDoKhoa); return; }
+      setDangLuu(true);
+      try {
+        const res = await fetch('/api/phan-quyen/level', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uid: member!.id, level: role }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.ok) {
+          setLoiLevel(data?.message || `Không đổi được level (lỗi ${res.status}).`);
+          setDangLuu(false);
+          return;
+        }
+        finalRole = data.role;
+        // Trưởng phòng tự đổi chức vụ trong cùng lần lưu → giữ chữ đó; không thì theo máy chủ.
+        if (chucVu === (member?.chucVu || 'Chuyên viên đấu thầu') && data.chucVu) finalChucVu = data.chucVu as ChucVu;
+        levelDaDoi = { levelCu: data.levelCu, levelMoi: data.levelMoi };
+      } catch {
+        setLoiLevel('Mất kết nối, chưa đổi được level. Vui lòng thử lại.');
+        setDangLuu(false);
+        return;
+      }
+      setDangLuu(false);
+    }
     const finalId = isNew ? pickedPerson!.id : cleanId;
     const finalHoTen = isNew ? pickedPerson!.name : hoTen.trim();
 
@@ -173,13 +230,12 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
       quanLyPhuTrachId: finalRole === 'STAFF'
         ? (isManager ? member?.quanLyPhuTrachId : (quanLyPhuTrachId || undefined))
         : undefined,
-    });
+    }, levelDaDoi);
   };
 
-  // Đồng bộ quyền theo chức danh (gợi ý mặc định)
+  // Chức danh KHÔNG còn tự kéo level theo (28/09/2026): level do App Tổng giữ, chỉ đổi qua ô Level.
   const handleChucVuChange = (val: ChucVu) => {
     setChucVu(val);
-    setRole(chucVuToRole(val));
   };
 
   return (
@@ -215,6 +271,8 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
                 value={pickedPerson}
                 onChange={(p) => {
                   setPickedPerson(p);
+                  // Chức danh gợi ý theo level App Tổng của người vừa chọn.
+                  if (p?.levelAppTong) setChucVu(CHUC_VU_BY_ROLE[p.levelAppTong] as ChucVu);
                   if (errors.pickedPerson) setErrors(prev => ({ ...prev, pickedPerson: undefined }));
                 }}
                 error={errors.pickedPerson}
@@ -294,20 +352,35 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
               <label className="block text-[9px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
                 Quyền hệ thống (RBAC)
               </label>
+              {isNew ? (
+                // TẠO MỚI: chỉ hiện level App Tổng của người được chọn — không tự đặt.
+                <div className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-dark-elevated/50">
+                  {levelTaoMoi ? NHAN_LEVEL[levelTaoMoi] : (pickedPerson ? 'Chưa có quyền ở App Tổng' : '— chọn nhân sự —')}
+                </div>
+              ) : (
               <select
-                value={(isManager && isNew) ? 'STAFF' : role}
-                onChange={(e) => setRole(e.target.value as any)}
-                disabled={isManager}
+                value={role}
+                onChange={(e) => { setRole(e.target.value as any); setLoiLevel(''); }}
+                disabled={!!lyDoKhoa || dangLuu}
+                title={lyDoKhoa || undefined}
                 className="w-full px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-bold text-slate-700 dark:text-slate-200 bg-white dark:bg-dark-elevated focus:outline-none focus:ring-2 focus:ring-brand-accent disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {/* Thang Level chị Trâm chốt 17/08/2026 — giữ khớp app/api/roles/route.ts */}
-                <option value="BOOD">Level 1 - Trưởng phòng / Phó phòng / Quản trị</option>
-                <option value="MANAGER">Level 2 - Quản lý</option>
-                <option value="STAFF">Level 3 - Nhân viên</option>
-                <option value="VIEWER">Level 4 - Ban giám đốc</option>
+                {/* Thang Level chị Trâm chốt 17/08/2026 — giữ khớp app/api/roles/route.ts.
+                    Level 1 KHÔNG có để chọn: phong/hạ Level 1 chỉ làm ở App Tổng (demo 28/09/2026). */}
+                {roleGoc === 'BOOD' ? (
+                  <option value="BOOD">{NHAN_LEVEL.BOOD}</option>
+                ) : (['MANAGER', 'STAFF', 'VIEWER'] as const).map(v => (
+                  <option key={v} value={v}>{NHAN_LEVEL[v]}</option>
+                ))}
               </select>
-              {isManager && (
-                <p className="text-[9px] text-slate-400 mt-1 leading-tight">Quản lý chỉ tạo được tài khoản Chuyên viên (Level 3).</p>
+              )}
+              <p className="text-[9px] text-slate-400 mt-1 leading-tight">
+                {isNew
+                  ? 'Level lấy theo App Tổng. Đổi sau ở đây (Level 2–4) hoặc ở App Tổng.'
+                  : (lyDoKhoa ? `🔒 ${lyDoKhoa}` : 'Lưu sẽ ghi thẳng về App Tổng.')}
+              </p>
+              {loiLevel && (
+                <p className="text-[10px] text-brand-danger mt-1 leading-tight font-bold">{loiLevel}</p>
               )}
             </div>
           </div>
@@ -355,10 +428,11 @@ export default function StaffEditModal({ member, existingStaff, currentUserRole,
             </button>
             <button 
               type="submit"
+              disabled={dangLuu}
               className="px-4 py-2 bg-brand-primary hover:bg-brand-primary-hover text-white rounded-lg text-xs font-black flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
             >
               <Save className="w-3.5 h-3.5" />
-              {isNew ? 'THÊM MỚI TÀI KHOẢN' : 'LƯU THAY ĐỔI'}
+              {dangLuu ? 'ĐANG LƯU…' : (isNew ? 'THÊM MỚI TÀI KHOẢN' : 'LƯU THAY ĐỔI')}
             </button>
           </div>
         </form>
