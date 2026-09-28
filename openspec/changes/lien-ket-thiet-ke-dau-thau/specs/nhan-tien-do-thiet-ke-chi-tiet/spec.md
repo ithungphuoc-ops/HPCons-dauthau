@@ -15,24 +15,47 @@ Route `POST /api/webhook/tien-do-thiet-ke-chi-tiet` SHALL kiểm chữ ký HMAC-
 - **WHEN** header timestamp mới nhưng `timestamp` trong thân là 1 giờ trước
 - **THEN** trả 401
 
-### Requirement: Lưu tiến độ theo mã dự án, ghi đè nguyên khối
-Với sự kiện `tien_do.chia_se`, hệ thống SHALL chuẩn hoá `maDuAn`, SHALL từ chối (400) nếu mã không đạt luật mã phòng Đấu thầu, và SHALL ghi `tien_do_thiet_ke_chi_tiet/{docIdTuMa(maDuAn)}` bằng thao tác ghi đè không merge gồm `maDuAn`, `tenDuAn`, `viewMode`, `sharedByName`, `sharedAt`, `rows`, `nhanLuc`. Hệ thống SHALL NOT lưu email người phụ trách.
+### Requirement: Lưu tiến độ theo khoá dự án Thiết kế, ghi đè nguyên khối
+Với sự kiện `tien_do.chia_se` (hợp đồng bản 2, sửa 26/09/2026 theo demo bản 02), hệ thống SHALL bắt buộc `khoaDuAn` khớp `^[A-Za-z0-9_-]{1,128}$` và không có dạng `__...__`, SHALL bắt buộc `tenDuAn` không rỗng, SHALL chuẩn hoá `maDuAn` (bỏ khoảng trắng, viết hoa) và SHALL chấp nhận `maDuAn` rỗng hoặc mã của bất kỳ phòng nào (SHALL NOT đòi luật mã phòng Đấu thầu). Hệ thống SHALL ghi `tien_do_thiet_ke_chi_tiet/{khoaDuAn}` bằng thao tác ghi đè không merge gồm `khoaDuAn`, `maDuAn`, `tenDuAn`, `viewMode`, `sharedByName`, `sharedAt`, `rows`, `nhanLuc`, SHALL bỏ qua bản có `sharedAt` cũ hơn bản đang lưu, và SHALL NOT lưu email người phụ trách.
 
 #### Scenario: Công việc bị xoá bên Thiết kế
 - **WHEN** lần Share trước có 8 dòng, lần sau có 7 dòng
 - **THEN** bên Đấu thầu chỉ còn 7 dòng
 
-#### Scenario: Mã không thuộc phòng Đấu thầu
+#### Scenario: Dự án chưa gắn mã
+- **WHEN** `maDuAn` là `""`, `khoaDuAn` và `tenDuAn` hợp lệ
+- **THEN** nhận và lưu bình thường tại `tien_do_thiet_ke_chi_tiet/{khoaDuAn}`
+
+#### Scenario: Mã của phòng khác
 - **WHEN** `maDuAn` là `260039-HPCS`
+- **THEN** nhận và lưu, không từ chối theo luật mã
+
+#### Scenario: Khoá dự án sai dạng
+- **WHEN** `khoaDuAn` là `../x` hoặc bị thiếu
 - **THEN** trả 400, không ghi
 
-### Requirement: Hiển thị bảng chi tiết công việc
-Tab "Liên kết phòng ban", khối Tiến độ thiết kế SHALL có bảng chi tiết theo mã dự án với các cột: Tên công việc, Người thực hiện, Ngày bắt đầu, Ngày kết thúc, Tình trạng, Trễ hạn, Nội dung thay đổi; kèm dòng "Thiết kế chia sẻ lúc … bởi …". Bảng SHALL chỉ xem, và SHALL áp đúng luật lọc hiện có cho Chuyên viên (chỉ thấy mã thuộc gói mình được giao, ghép theo `projectId`).
+#### Scenario: Thiếu tên dự án
+- **WHEN** `tenDuAn` rỗng hoặc thiếu
+- **THEN** trả 400, không ghi
+
+### Requirement: Hiển thị kiểu trang Tiến độ kèm Gantt
+Tab "Liên kết phòng ban", khung "Tiến độ thiết kế — Phòng Thiết kế" SHALL hiển thị mọi bản đã nhận theo kiểu trang Tiến độ bên App Thiết kế: gom theo dự án (dòng dự án gồm mã hoặc "—", tên dự án, số công việc và số trễ hạn, khoảng ngày, trạng thái tổng), bấm để mở/đóng từng công việc; các cột Mã dự án, Dự án, Tên công việc, Người thực hiện, Thời gian, Ngày bắt đầu, Ngày kết thúc, Tình trạng, Nội dung thay đổi và cột Gantt theo tuần (nhãn ngày đầu tuần, thanh màu theo người, vạch "Hôm nay"); chú thích "Màu theo người"; dòng "Thiết kế chia sẻ lúc … bởi …" lấy lần chia sẻ mới nhất; ô tìm theo mã, tên dự án, công việc. Khung SHALL chỉ xem, SHALL cuộn ngang trong khung trên màn hình hẹp mà không làm trang tràn ngang, và SHALL NOT còn khối chi tiết theo từng mã của bản 01.
 
 #### Scenario: Chưa có chia sẻ
-- **WHEN** mã dự án chưa từng được Thiết kế Share
-- **THEN** hiện "Phòng Thiết kế chưa chia sẻ tiến độ cho mã này"
+- **WHEN** App Thiết kế chưa từng Share
+- **THEN** hiện "Phòng Thiết kế chưa chia sẻ tiến độ"
 
-#### Scenario: Chuyên viên xem mã không được giao
-- **WHEN** Chuyên viên không được giao gói nào mang mã đó
-- **THEN** không thấy bảng của mã đó
+#### Scenario: Mở một dự án
+- **WHEN** người dùng bấm vào dòng dự án
+- **THEN** hiện các dòng công việc của dự án đó, dòng trễ hạn chữ đỏ
+
+### Requirement: Quyền xem của Chuyên viên với bản không mã
+`GET /api/tien-do-thiet-ke-chi-tiet` SHALL trả mọi bản cho vai trò khác STAFF. Với STAFF, hệ thống SHALL chỉ trả bản có `maDuAn` khác rỗng và thuộc tập mã gói được giao (ghép theo `projectId`), SHALL NOT trả bản chưa gắn mã, và SHALL trả kèm số bản bị ẩn để giao diện hiện câu nhắc.
+
+#### Scenario: Chuyên viên và dự án chưa mã
+- **WHEN** Chuyên viên mở khung, có một bản `maDuAn` rỗng
+- **THEN** không thấy bản đó, thấy câu nhắc "Đang ẩn 1 dự án chưa có mã hoặc không thuộc gói của bạn"
+
+#### Scenario: Trưởng phòng xem tất cả
+- **WHEN** Trưởng phòng mở khung
+- **THEN** thấy cả bản có mã và bản chưa mã

@@ -27,3 +27,13 @@
 - [ ] 4.3 Chờ App Thiết kế deploy cổng nhận đã sửa, rồi mới đặt biến môi trường production
 - [ ] 4.4 Kiểm thật: bấm "Đồng bộ lại" → dự án `2610xx` hiện trên trang Phòng ban bên Thiết kế; `260039-HPCS`, `2026.01` không hiện
 - [ ] 4.5 Kiểm thật: Thiết kế gắn mã + bấm Share → bảng chi tiết hiện bên này
+
+## 5. Bản 02 — nguyên trang Tiến độ sang Đấu thầu (sửa 26/09/2026 theo demo bản 02 Sếp duyệt)
+
+- [x] 5.1 Cổng nhận: bỏ luật mã `YY10xx`; bắt buộc `khoaDuAn` (regex, chặn `__...__`) + `tenDuAn`; `maDuAn` cho phép rỗng; doc ID = `khoaDuAn`; giữ HMAC/5 phút/header=thân/`ptk`/chống trùng/chặn bản cũ/ghi đè/bỏ email/giới hạn dòng
+- [x] 5.2 `tienDoThietKeChiTietTypes.ts`: thêm `khoaDuAn` + `LUAT_KHOA_DU_AN`
+- [x] 5.3 `GET /api/tien-do-thiet-ke-chi-tiet`: vai trò khác STAFF xem hết; STAFF chỉ bản có mã thuộc gói được giao; trả `soBiAn`; bỏ bản kiểu bản 01
+- [x] 5.4 `TienDoThietKePanel.tsx`: khung kiểu trang Tiến độ + Gantt tuần + vạch Hôm nay + màu theo người + tìm kiếm + câu nhắc Chuyên viên; bỏ khối chi tiết theo mã và bảng tóm tắt `/api/tien-do-thiet-ke`; bỏ prop `dsMaDuAn` ở `App.tsx`; dữ liệu mẫu Bản thử theo hợp đồng bản 2
+- [x] 5.5 Kiểm cục bộ `next start`: 400 `khoaDuAn` sai (`../x`), 400 thiếu `tenDuAn`, 401 các ca chữ ký; ảnh 1280px/375px, trang không tràn ngang ở 375px; `tsc` + `build`
+- [ ] 5.6 App Thiết kế đổi bên gửi theo hợp đồng bản 2 (thêm `khoaDuAn`, gửi cả dự án chưa mã) — phía repo Thiết kế
+- [ ] 5.7 Kiểm thật sau deploy: Share bên Thiết kế → khung hiện đủ dự án + Gantt; Chuyên viên không thấy dự án chưa mã

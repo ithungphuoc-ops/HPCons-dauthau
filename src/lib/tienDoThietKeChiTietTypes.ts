@@ -22,6 +22,12 @@ export type DongTienDoThietKe = {
 };
 
 export type TienDoThietKeChiTiet = {
+  /**
+   * Khoá ổn định của dự án bên App Thiết kế (hợp đồng bản 2, 26/09/2026) — làm doc ID luôn.
+   * Bản ghi kiểu bản 01 (khoá theo mã) không có trường này.
+   */
+  khoaDuAn: string;
+  /** Mã đã chuẩn hoá của BẤT KỲ phòng nào, hoặc "" khi dự án bên Thiết kế chưa gắn mã. */
   maDuAn: string;
   tenDuAn: string;
   viewMode: 'planned' | 'actual' | 'combined';
@@ -30,6 +36,12 @@ export type TienDoThietKeChiTiet = {
   rows: DongTienDoThietKe[];
   nhanLuc: string;    // ISO — bên này đóng dấu lúc nhận
 };
+
+/**
+ * Luật khoá dự án (hợp đồng bản 2): chỉ chữ, số, `_`, `-`, 1–128 ký tự. Chặn `/` và `..` nên dùng
+ * thẳng làm doc ID Firestore được, không trỏ nhầm sang collection con hay đường dẫn khác.
+ */
+export const LUAT_KHOA_DU_AN = /^[A-Za-z0-9_-]{1,128}$/;
 
 /** Collection Firestore (project hpcons-dauthau) — chỉ Admin SDK ghi, qua cổng webhook chi tiết. */
 export const COLLECTION_TIEN_DO_THIET_KE_CHI_TIET = 'tien_do_thiet_ke_chi_tiet';

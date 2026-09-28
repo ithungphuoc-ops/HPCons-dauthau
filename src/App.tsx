@@ -87,7 +87,7 @@ import TienDoThietKePanel from './components/TienDoThietKePanel';
 import DanhMucDuAnPanel from './components/DanhMucDuAnPanel';
 import DongBoThietKeNut from './components/DongBoThietKeNut';
 import { goiDongBoThietKe } from './lib/dongBoThietKeClient';
-import { tienDoThietKeNhap, danhMucDuAnNhap } from './data/sandboxData';
+import { tienDoThietKeChiTietNhap, danhMucDuAnNhap } from './data/sandboxData';
 import type { DuAnTong as DuAnTongItemApp } from './lib/duAnTongTypes';
 
 // ===== BẢN THỬ (chỉ chạy trên máy cá nhân) =====
@@ -139,7 +139,7 @@ const DEV_CHON_VAI_TRO = DEV_SANDBOX || DEV_CLOUD_TEST;
 // Tiến độ thiết kế mẫu cho Bản thử — tính MỘT LẦN ở cấp module, không gọi trong JSX.
 // Gọi trong JSX sẽ sinh mảng mới mỗi lần render, làm effect trong TienDoThietKePanel chạy lại
 // liên tục (setState → render → mảng mới → effect → ...), treo màn hình.
-const TIEN_DO_TKE_BAN_THU = DEV_SANDBOX ? tienDoThietKeNhap() : undefined;
+const TIEN_DO_TKE_BAN_THU = DEV_SANDBOX ? tienDoThietKeChiTietNhap() : undefined;
 const DANH_MUC_DU_AN_BAN_THU = DEV_SANDBOX ? danhMucDuAnNhap() : undefined;
 
 /** Tiền tố id của mục lấy từ Danh mục dự án (App Thông tin dự án) nhưng app này CHƯA có bản ghi. */
@@ -2867,12 +2867,6 @@ export default function App() {
     if (!currentUser || currentUser.role !== 'STAFF') return null;
     return Array.from(new Set(rbacProjects.map(p => (p.projectId || '').trim()).filter(Boolean)));
   }, [currentUser, rbacProjects]);
-  // Mã ô 1 của các DỰ ÁN — cho ô chọn mã ở bảng tiến độ thiết kế chi tiết (panel tự lọc luật mã
-  // YY10xx-HPCS và luật Chuyên viên qua `chiMaDuAn` ở trên).
-  const maDuAnPhongDauThau = useMemo(
-    () => projects.filter(p => p.loaiBanGhi === 'DU_AN').map(p => p.projectId || '').filter(Boolean),
-    [projects],
-  );
 
   // Hồ sơ Quản lý (L2) ĐANG PHỤ TRÁCH (quản lý chính hoặc phụ) — đưa vào file kết xuất của
   // Quản lý để họ báo cáo được cả phần mình quản lý, không chỉ việc giao đích danh cho mình.
@@ -5701,15 +5695,15 @@ export default function App() {
                 {/* ===== TIẾN ĐỘ THIẾT KẾ (chị Trâm chốt 15/09/2026) =====
                     "Đây là giao diện của app thiết kế, em thiết kế lại chỗ liên kết phòng ban đưa tiến độ này
                      qua, bỏ đi vị trí lưu file, chỗ dự án phía trước thêm cột mã dự án."
-                    Bản thử dùng dữ liệu dựng sẵn để còn thấy được giao diện; bản chạy thật đọc dữ liệu
-                    App Thiết kế đẩy sang qua /api/webhook/tien-do-thiet-ke. */}
+                    Bản thử dùng dữ liệu dựng sẵn để còn thấy được giao diện; bản chạy thật đọc bản
+                    App Thiết kế Share sang qua /api/webhook/tien-do-thiet-ke-chi-tiet (bản 02,
+                    26/09/2026: nguyên trang Tiến độ + Gantt, mọi dự án kể cả chưa gắn mã). */}
                 {/* Nút gửi lại dự án sang App Thiết kế — CHỈ Trưởng phòng (OpenSpec
                     `lien-ket-thiet-ke-dau-thau`, 26/09/2026). */}
                 {currentUser?.role === 'BOOD' && <DongBoThietKeNut banThu={DEV_CHON_VAI_TRO} />}
                 <TienDoThietKePanel
                   duLieuBanThu={TIEN_DO_TKE_BAN_THU}
                   chiMaDuAn={maDuAnDuocXem}
-                  dsMaDuAn={maDuAnPhongDauThau}
                 />
               </div>
             )}
