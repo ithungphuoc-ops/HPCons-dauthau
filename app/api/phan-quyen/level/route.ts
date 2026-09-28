@@ -121,19 +121,25 @@ export async function POST(req: NextRequest) {
     const staffRef = adminDb.collection("staff").doc(uidDich);
     const kq = await adminDb.runTransaction(async (tx) => {
       const snap = await tx.get(staffRef);
-      if (!snap.exists) return { coHoSo: false, chucVu: null as string | null };
+      if (!snap.exists) return { coHoSo: false, chucVu: null as string | null, role: levelDaLuu };
+      // Đọc lại App Tổng SAU tx.get(staffRef), trong callback (CodeRabbit PR #14): hai người đổi
+      // cùng một nhân sự gần như cùng lúc thì lượt staff của A có thể commit sau lượt của B và ghi
+      // lùi giá trị cũ. Lấy đúng giá trị App Tổng đang giữ lúc này; transaction staff bị conflict
+      // và chạy lại thì lần đọc mới cũng thấy giá trị mới.
+      const permNay = (await permDichRef.get()).data()?.dauthau;
+      const roleNay: Role = laRole(permNay) ? permNay : levelDaLuu;
       const cu = snap.data() as { role?: string; chucVu?: string };
-      const chucVu = tinhChucVuMoi(cu.role ?? levelCu, cu.chucVu, levelDaLuu);
-      tx.set(staffRef, { role: levelDaLuu, chucVu }, { merge: true });
-      return { coHoSo: true, chucVu };
+      const chucVu = tinhChucVuMoi(cu.role ?? levelCu, cu.chucVu, roleNay);
+      tx.set(staffRef, { role: roleNay, chucVu }, { merge: true });
+      return { coHoSo: true, chucVu, role: roleNay };
     });
     return NextResponse.json({
       ok: true,
       uid: uidDich,
       tenDich,
       levelCu,
-      levelMoi: levelDaLuu,
-      role: levelDaLuu,
+      levelMoi: kq.role,
+      role: kq.role,
       chucVu: kq.chucVu,
       coHoSo: kq.coHoSo,
     });
