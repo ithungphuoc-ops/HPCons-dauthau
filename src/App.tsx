@@ -6243,23 +6243,27 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Danh sách DỰ ÁN CHA: CHỈ Trưởng phòng (Level 1) thấy — xem thông tin, sửa, xóa */}
-                {currentUser.role === 'BOOD' && parentProjects.length > 0 && (
+                {/* Danh sách DỰ ÁN CHA: CHỈ Trưởng phòng (Level 1) thấy — xem thông tin, sửa, xóa.
+                    Chỉ hồ sơ ĐÃ bấm + cộng rồi lưu thật (parentProjectsGoc) — KHÔNG dùng parentProjects
+                    (có gộp thêm bản ghi ảo mượn từ Danh mục App Thông tin dự án), để khối này không bị
+                    lẫn hàng chục dự án "0 công việc" chưa ai động tới (anh chốt 12/10/2026). Ô "Chọn dự
+                    án cha" khi tạo gói thầu mới vẫn dùng parentProjects đầy đủ — không đổi chỗ đó. */}
+                {currentUser.role === 'BOOD' && parentProjectsGoc.length > 0 && (
                   <div className="bg-white dark:bg-dark-card p-4 rounded-xl border border-slate-200/60 dark:border-slate-800 shadow-sm space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2">
                       <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 dark:text-slate-200 flex items-center gap-2">
                         <Building2 className="w-4 h-4 text-brand-accent dark:text-brand-accent-300" />
-                        Danh sách Dự án ({applyStatusFilter(parentProjects, isParentDone).length}/{parentProjects.length})
+                        Danh sách Dự án ({applyStatusFilter(parentProjectsGoc, isParentDone).length}/{parentProjectsGoc.length})
                       </h3>
                       {/* Nút lọc trạng thái dự án */}
                       <StatusFilterPills value={effectiveStatusFilter} onChange={handleProjStatusFilterChange}
-                        counts={{ active: parentProjects.filter(x => !isParentDone(x)).length, done: parentProjects.filter(isParentDone).length, all: parentProjects.length }} />
+                        counts={{ active: parentProjectsGoc.filter(x => !isParentDone(x)).length, done: parentProjectsGoc.filter(isParentDone).length, all: parentProjectsGoc.length }} />
                     </div>
-                    {applyStatusFilter(parentProjects, isParentDone).length === 0 ? (
+                    {applyStatusFilter(parentProjectsGoc, isParentDone).length === 0 ? (
                       <p className="text-center text-[11px] text-slate-400 dark:text-slate-500 py-4 italic">Không có dự án nào ở trạng thái này.</p>
                     ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                      {applyStatusFilter(parentProjects, isParentDone).map(dp => {
+                      {applyStatusFilter(parentProjectsGoc, isParentDone).map(dp => {
                         const childCount = projects.filter(p => p.duAnChaId === dp.id).length;
                         return (
                           <div key={dp.id} className="bg-slate-50/70 dark:bg-dark-bg/40 border border-slate-200/70 dark:border-slate-800 rounded-lg p-3 flex flex-col gap-1.5">
