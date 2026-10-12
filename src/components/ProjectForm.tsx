@@ -509,8 +509,11 @@ export default function ProjectForm({
    * tự lùi bấy nhiêu — một phiếu là đủ cho cả hai. Trước đây phiếu ghi theo hạn PHÒNG nên đọc lên
    * tưởng Quản lý đang xin dời cả phần ngày kiểm tra của Trưởng phòng.
    */
-  /** Trưởng phòng đã TĂNG số ngày kiểm tra so với bản đã lưu → phải có phiếu riêng cho phần này. */
-  const tpTangNgayKiemTra = !!project
+  /** Trưởng phòng đã TĂNG số ngày kiểm tra so với bản đã lưu → phải có phiếu riêng cho phần này.
+   * Dùng project?.id (không phải !!project): bấm "+" ở Danh mục dựng sẵn một bản ghi mượn dữ liệu
+   * để điền form, id rỗng vì CHƯA TỪNG lưu — !!project vẫn ra true nên tưởng nhầm là "bản đã lưu
+   * trước", so hạn ra sai và chặn lưu oan lần đăng ký ĐẦU TIÊN (anh báo lỗi 12/10/2026). */
+  const tpTangNgayKiemTra = !!project?.id
     && soNgayDuyetTP > (project.soNgayDuyetTP ?? 1);
 
   const hanBoPhanHienTai = useMemo(
@@ -693,7 +696,9 @@ export default function ProjectForm({
     return !(project.tasks || []).some(t => Math.max(1, t.vong || 1) === vong);
   }, [project]);
 
-  const daBiDayXaHan = !!project && !laLapKeHoachVongMoi && !!gocTheoBanDaLuu && !!ngayHoanThanhDuKienGoc
+  // Cùng lý do với tpTangNgayKiemTra ở trên: project?.id (không phải !!project) để bản ghi mượn từ
+  // Danh mục (id rỗng, bấm "+" mà ra) không bị coi là "đã có lần lưu trước" (anh báo lỗi 12/10/2026).
+  const daBiDayXaHan = !!project?.id && !laLapKeHoachVongMoi && !!gocTheoBanDaLuu && !!ngayHoanThanhDuKienGoc
     && ngayHoanThanhDuKienGoc > gocTheoBanDaLuu;
 
   // SỬA 08/09/2026 (Sếp chỉnh lại): lý do dời tiến độ phải nhập ĐÚNG Ở MỤC "5. Lịch Sử Dời Tiến Độ"
